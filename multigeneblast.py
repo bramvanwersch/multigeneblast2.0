@@ -19,6 +19,7 @@ from multiprocessing import Process, freeze_support
 import random
 import fileinput
 import subprocess
+import argparse
 
 global GUI
 global OUTBOX
@@ -119,27 +120,186 @@ from tkinter import *
 from tkinter.messagebox import askyesno, showerror
 import shutil
 
-class Options(dict):
-    """Simple options access class, first step to use Optparse"""
-    def __init__(self, indict=None):
-        if indict is None:
-            indict = {}
-        dict.__init__(self, indict)
-        self.__initialized = True
+class Options:
+    """
+    Simple options access class, first step to use Optparse
+    TODO change this to an object that contains a field for each value
+    """
+    def __init__(self):
+        self.db = None
+        self.cores = "all"
+        self.minseqcov = 25
+        self.minpercid = 30
+        self.screenwidth = 1024
+        self.hitspergene = 250
+        self.distancekb = 20000
+        self.muscle = "n"
+        self.startpos = None
+        self.endpos = None
+        self.ingenes = None
+        self.pages = 5
+        self.gui = "n"
+        self.syntenyweight = 0.5
 
-    def __getattr__(self, attr):
-        try:
-            return self.__getitem__(attr)
-        except KeyError:
-            raise AttributeError(attr)
 
-    def __setattr__(self, attr, value):
-        if '_Options__initialized' not in self.__dict__:
-            return dict.__setattr__(self, attr, value)
-        elif attr in self:
-            dict.__setattr__(self, attr, value)
+def get_arguments():
+    parser = argparse.ArgumentParser(description='Run multigeneblast on a '
+                                'specified database using a specified query.',
+                                     epilog="-from, -to and -genes are "
+                                            "mutually exclusive")
+    parser.add_argument("-i", "-in", help="Query file name: GBK/EMBL file for "
+                                "homology search,FASTA file with multiple"
+                                " protein sequences for architecture search",
+                        required=True, type=check_in_file)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("-f", "-from", help="Start position of query region", type=int)
+    #nargs allows one or more arguments
+    group.add_argument("-g", "-genes", help="Accession codes of genes constituting "
+                                      "query multigene module", nargs='+')
+
+    parser.add_argument("-t", "-to", help="End position of query region", type=int,
+                        required=True)
+
+    parser.add_argument("-o", "-out", help="Output folder path in which results will"
+                                     " be stored", type=check_out_folder)
+    parser.add_argument("-db", "-database", help="Blast database to be queried",
+                        required=True, type=check_db_folder)
+
+    parser.add_argument("-c", "-cores", help="Number of parallel CPUs to use for "
+                                       "threading (default: all)",
+                        type=determine_cpu_nr, default="all")
+    parser.add_argument("-hpg", "-hitspergene", help="Number of Blast hits per query "
+                                             "gene to be taken into account "
+                                             "(default: 250), max = 10000",
+                        type=int, choices=range(50,10001), default=250,
+                        metavar="[50 - 10000]")
+    parser.add_argument("-msc", "-minseqcov", help="Minimal %% coverage of a Blast hit"
+                                           " on hit protein sequence to be "
+                                           "taken into account (default: 25)",
+                        type=int, choices=range(0,101), default=25,
+                        metavar="[0 - 100]")
+    parser.add_argument("-mpi", "-minpercid", help="Minimal %% identity of a Blast hit"
+                                           " on hit protein sequence to be "
+                                           "taken into account (default: 30)",
+                        type=int, choices=range(0,101), default=30,
+                        metavar="[0 - 100]")
+    parser.add_argument("-dkb", "-distancekb", help="Maximum kb distance between two"
+                                            " blast hits to be counted as"
+                                            " belonging to the same locus"
+                                            " (default: 10)", default=20,
+                        type=lambda x: int(x * 101), choices=range(0,100),
+                        metavar="[0 - 100]")
+    parser.add_argument("-sw", "-syntenywheight", help="Weight of synteny conservation"
+                                               " in hit sorting score: (default"
+                                               ": 0.5)", type=restricted_float,
+                        default=0.5)
+    parser.add_argument("-m", "-muscle", help="Generate a Muscle multiple sequence"
+                                        " alignments of all hits of each input"
+                                        " gene (default: n)", default="n",
+                        choices=["y","n"])
+    parser.add_argument("-op", "-outpages", help="Maximum number of output pages"
+                                          " (with 50 hits each) to be generated"
+                                          " (default: 5)", type=int, default=5,
+                        choices=range(1,41), metavar="[1 - 40]")
+    name_space = parser.parse_args()
+    #some final checks for certain arguments
+    #make sure this check is done here because the from argument is already checked
+    if (name_space.t is None and name_space.g is None) or \
+            (name_space.t is not None and name_space.g is not None):
+        parser.error("Either specify -to and -from or -genes.")
+    return
+
+def check_in_file(path):
+    try:
+        #make sure relatively defined paths are also correct
+        my_path = os.path.abspath(os.path.dirname(__file__))
+        path = os.path.join(my_path, path)
+
+        assert os.path.exists(path)
+        #the extension of the file
+        ext = os.path.split(path)[1].split(".")[1]
+        assert ext.lower()  in ["gbk","gb","genbank","embl","emb","fasta","fas","fa","fna"]
+        return path
+    except (AssertionError, IndexError):
+        raise argparse.ArgumentTypeError("Please supply input file with valid"
+                                         " GBK / EMBL extension (homology "
+                                         "search) or FASTA extension "
+                                         "(architecture search).")
+
+def check_out_folder(path):
+    try:
+        #make sure relatively defined paths are also correct
+        my_path = os.path.abspath(os.path.dirname(__file__))
+        path = os.path.join(my_path, path)
+
+        path, folder_name = os.path.split(path)
+        assert os.path.exists(path)
+
+        #assert that the folder name does not contain illegal characters
+        assert folder_name.replace("_", "").isalnum()
+        return path
+    except AssertionError:
+        raise argparse.ArgumentTypeError("Output folder does exist or cannot be"
+                                         " created.")
+
+def check_db_folder(path):
+    try:
+        #make sure relatively defined paths are also correct
+        my_path = os.path.abspath(os.path.dirname(__file__))
+        path = os.path.join(my_path, path)
+
+        assert os.path.exists(path)
+        path, db_file = os.path.split(path)
+
+        #make sure the databae file is of the correct file type
+        db_name, ext = db_file.split(".")
+        assert ext in ("pal", "nal")
+        #make sure the db folder contains all files required
+        db_folder = os.listdir(path)
+        #TODO make sure that not more files need to be checked
+        if ext == "pal":
+            assert "{}.{}".format(db_name, "phr") in db_folder
         else:
-            self.__setitem__(attr, value)
+            assert "{}.{}".format(db_name, "nhr") in db_folder
+        return path
+    except (AssertionError, IndexError):
+        raise argparse.ArgumentTypeError("Not all neccesairy data base files exist.")
+
+def determine_cpu_nr(cores):
+    """
+    Determine the number of CPU's needed based on the nr provided by the user.
+
+    :param cores: a string that represents the amount of cores
+    :return: an integer that is between 1 and maximum cores
+
+    the cores can be any integer or 'all'. If 'all' is provided the maximum
+    amount of cores is selected. If a number higher then the maximum number of
+    cores is requested the maximum number is returned.
+    """
+    if cores == "all":
+        try:
+            nrcpus = multiprocessing.cpu_count()
+        except(IOError,OSError,NotImplementedError):
+            nrcpus = 1
+    else:
+        cores = int(cores)
+        try:
+            nrcpus = multiprocessing.cpu_count()
+        except(IOError,OSError,NotImplementedError):
+            nrcpus = 1
+        if cores < nrcpus:
+            nrcpus = cores
+    return nrcpus
+
+def restricted_float(x):
+    try:
+        x = float(x)
+    except ValueError:
+        raise argparse.ArgumentTypeError("{} not a floating-point literal".format(x))
+
+    if x < 0.0 or x > 2.0:
+        raise argparse.ArgumentTypeError("{} not in range [0.0, 2.0]".format(x))
+    return x
 
 ##Functions necessary for this script
 def get_sequence(fasta):
@@ -1498,22 +1658,6 @@ def collect_identifiers(options):
             else:
                 invalidoptions("No '-' in given options or option given twice.")
     return identifiers
-
-def determine_cpu_nr(cores):
-    #Determine number of CPUs used
-    if cores == "all":
-        try:
-            nrcpus = multiprocessing.cpu_count()
-        except(IOError,OSError,NotImplementedError):
-            nrcpus = 1
-    else:
-        try:
-            nrcpus = multiprocessing.cpu_count()
-        except(IOError,OSError,NotImplementedError):
-            nrcpus = 1
-        if cores < nrcpus:
-            nrcpus = cores
-    return nrcpus
 
 def process_identifiers(identifiers, opts, options):
     infile, startpos, endpos, ingenes, outfolder = "n","n","n","n","n"
@@ -3245,8 +3389,11 @@ def move_outputfiles(foldername, pages):
 
 
 def main():
+    #if the GUI is active or not.
     global GUI
+    #path to temporary file directory. This is for windows a Temp directory on the c drive
     global TEMP
+    #path to the multiGeneBlast source files
     global MGBPATH
     os.environ['BLASTDB'] = MGBPATH
 
@@ -3256,8 +3403,10 @@ def main():
 
     opts = Options()
     #Step 1: parse options
-    parse_options(sys.argv, opts)
+    get_arguments()
+    #parse_options(sys.argv, opts)
     print(("Step 1/11: Time since start: " + str((time.time() - starttime))))
+    return
     #Step 2: Read GBK / EMBL file, select genes from requested region and output FASTA file
     proteins, genomic_accnr, dnaseqlength, nucname, querytags, names, seqs, seqdict, arch_search = read_input_file(opts.infile, opts.startpos, opts.endpos, opts.ingenes, opts.gui)
     print(("Step 2/11: Time since start: " + str((time.time() - starttime))))
