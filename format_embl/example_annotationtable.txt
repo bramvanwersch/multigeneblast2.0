@@ -1,0 +1,11 @@
+contig	locus tag	start	end	annotation
+afumigatus6.fasta	AFUA_6G05350	13578	12957	aspartic-type endopeptidase (OpsB), putative
+afumigatus6.fasta	AFUA_6G05340	12578	11957	aspartic-type endopeptidase (OpsB), putative
+afumigatus6.fasta	AFUA_6G05320	18874	20201	purine nucleoside phosphorylase I, inosine and guanosine-specific
+afumigatus6.fasta	AFUA_6G05320	21874	20201	purine nucleoside phosphorylase I, inosine and guanosine-specific
+afumigatus1.fasta	AFUA_1G00100	216	836	MFS monocarboxylate transporter, putative
+afumigatus1.fasta	AFUA_1G00110	3952	4253	hypothetical protein
+afumigatus1.fasta	AFUA_1G00110	4774	4963	hypothetical protein
+afumigatus1.fasta	AFUA_1G00120	6805	6881	hypothetical protein
+afumigatus1.fasta	AFUA_1G00120	6900	7127	hypothetical protein
+afumigatus1.fasta	AFUA_1G00120	7262	7472	hypothetical protein
