@@ -144,7 +144,7 @@ class Options:
         self.minpercid = arguments.mpi
         self.hitspergene = arguments.hpg
         #TODO make sure that the *2 is correct
-        self.distancekb = int(arguments.kb * 100 * 2)
+        self.distancekb = int(arguments.dkb * 100 * 2)
         self.muscle = arguments.m
         self.pages = arguments.op
         self.syntenyweight = arguments.sw
