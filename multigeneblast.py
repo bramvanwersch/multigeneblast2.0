@@ -21,6 +21,8 @@ import fileinput
 import subprocess
 import argparse
 
+#constants
+FASTA_EXTENSIONS = ("fasta","fas","fa","fna")
 global GUI
 global OUTBOX
 global FRAME
@@ -121,32 +123,52 @@ from tkinter.messagebox import askyesno, showerror
 import shutil
 
 class Options:
-    """
-    Simple options access class, first step to use Optparse
-    TODO change this to an object that contains a field for each value
-    """
-    def __init__(self):
-        self.db = None
-        self.cores = "all"
-        self.minseqcov = 25
-        self.minpercid = 30
-        self.screenwidth = 1024
-        self.hitspergene = 250
-        self.distancekb = 20000
-        self.muscle = False
-        self.startpos = None
-        self.endpos = None
-        self.ingenes = None
-        self.pages = 5
-        self.gui = False
-        self.syntenyweight = 0.5
+    def __init__(self, arguments):
+        #the input file
+        self.infile = arguments.i
+        #the output directory
+        self.outdir = arguments.o
+        #the database to use
+        self.db = arguments.db
+        #TODO make sure this gets configured based on the database input
+        self.db_mode = "local"
 
+        self.architecture_mode = self.__check_architecture_mode()
+        #values that define the query
+        self.startpos = arguments.f
+        self.endpos = arguments.t
+        self.ingenes = arguments.g
+
+        self.cores = arguments.c
+        self.minseqcov = arguments.msc
+        self.minpercid = arguments.mpi
+        self.hitspergene = arguments.hpg
+        #TODO make sure that the *2 is correct
+        self.distancekb = int(arguments.kb * 100 * 2)
+        self.muscle = arguments.m
+        self.pages = arguments.op
+        self.syntenyweight = arguments.sw
+
+        #TODO move this value to a more logical place
+        self.screenwidth = 1024
+        self.gui = False
+
+    def __check_architecture_mode(self):
+        """
+        Check if MultiGeneBlast is running in architecture or normal mode.
+
+        :return: Boolean that is True if the infile ends in a fasta extension
+        meaning MultiGeneBlast is running in architecture mode.
+        """
+        if any(self.infile.endswith(ext) for ext in FASTA_EXTENSIONS):
+            return True
+        return False
 
 def get_arguments():
     """
     Parse the command line arguments using argparser.
 
-    :return: an class of parsed arguments
+    :return: an Option object that holds the options specified by the user
     """
     parser = argparse.ArgumentParser(description='Run multigeneblast on a '
                                 'specified database using a specified query.',
@@ -218,14 +240,15 @@ def get_arguments():
 
     #if the -in argument is a fasta file make sure that no -from, -to or genes are defined
     #otherwise make sure that they are defined
-    if (any(name_space.i.endswith(ext) for ext in ("fasta","fas","fa","fna")) and
+    if (any(name_space.i.endswith(ext) for ext in  FASTA_EXTENSIONS) and
         (name_space.t is not None or name_space.f is not None or name_space.g is not None)):
         parser.error("When providing a fasta file (running architecture mode) -f, -t and"
                      " -g arguments cannot be specified")
-    elif (not any(name_space.i.endswith(ext) for ext in ("fasta","fas","fa","fna")) and
+    elif (not any(name_space.i.endswith(ext) for ext in  FASTA_EXTENSIONS) and
         (name_space.t is None and name_space.f is None and name_space.g is None)):
         parser.error("When providing a genbank or embl file -f, -t or -g should be specified")
-    return name_space
+    user_options = Options(name_space)
+    return user_options
 
 def check_in_file(path):
     """
@@ -245,7 +268,7 @@ def check_in_file(path):
         assert os.path.exists(path)
         #the extension of the file
         ext = os.path.split(path)[1].split(".")[1]
-        assert ext.lower()  in ["gbk","gb","genbank","embl","emb","fasta","fas","fa","fna"]
+        assert ext.lower()  in ["gbk","gb","genbank","embl","emb", *FASTA_EXTENSIONS]
         return path
     except (AssertionError, IndexError):
         raise argparse.ArgumentTypeError("Please supply input file with valid"
@@ -3455,9 +3478,8 @@ def main():
     GUI = "n"
     starttime = time.time()
 
-    opts = Options()
-    #Step 1: parse options
-    get_arguments()
+    #Step 1: parse options into an Option Object
+    user_options = get_arguments()
     #parse_options(sys.argv, opts)
     print(("Step 1/11: Time since start: " + str((time.time() - starttime))))
     return
