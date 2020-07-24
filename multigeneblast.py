@@ -20,6 +20,7 @@ import random
 import fileinput
 import subprocess
 import argparse
+import logging
 
 #constants
 FASTA_EXTENSIONS = ("fasta","fas","fa","fna")
@@ -164,6 +165,9 @@ class Options:
             return True
         return False
 
+
+####PARSE OPTIONS####
+
 def get_arguments():
     """
     Parse the command line arguments using argparser.
@@ -290,8 +294,8 @@ def check_out_folder(path):
         my_path = os.path.abspath(os.path.dirname(__file__))
         path = os.path.join(my_path, path)
 
-        path, folder_name = os.path.split(path)
-        assert os.path.exists(path)
+        to_path, folder_name = os.path.split(path)
+        assert os.path.exists(to_path)
 
         #assert that the folder name does not contain illegal characters
         assert folder_name.replace("_", "").isalnum()
@@ -316,13 +320,13 @@ def check_db_folder(path):
         path = os.path.join(my_path, path)
 
         assert os.path.exists(path)
-        path, db_file = os.path.split(path)
+        to_path, db_file = os.path.split(path)
 
         #make sure the databae file is of the correct file type
         db_name, ext = db_file.split(".")
         assert ext in ("pal", "nal")
         #make sure the db folder contains all files required
-        db_folder = os.listdir(path)
+        db_folder = os.listdir(to_path)
         #TODO make sure that not more files need to be checked
         if ext == "pal":
             assert "{}.{}".format(db_name, "phr") in db_folder
@@ -377,6 +381,60 @@ def restricted_float(x):
         raise argparse.ArgumentTypeError("{} not in range [0.0, 2.0]".format(x))
     return x
 
+####READ THE INPUT FILE###
+
+def read_input_file2(user_options):
+    log("Reading and parsing input GenBank file...")
+    #infile = parse_absolute_paths(infile)
+    ext = infile.rpartition(".")[2]
+    if ext.lower() in ["gbk","gb","genbank"]:
+        proteins = gbk2proteins(infile)
+    elif ext.lower() in ["embl","emb"]:
+        proteins = embl2proteins(infile)
+    elif ext.lower() in ["fasta","fas","fa","fna"]:
+        nucname = "Architecture Search FASTA input"
+        genomic_accnr = ""
+        dnaseqlength = 0
+        proteins, querytags, seqdict, names, seqs = generate_architecture_data(infile)
+        writefasta(names,seqs,"query.fasta")
+        arch_search = "y"
+        return proteins, genomic_accnr, dnaseqlength, nucname, querytags, names, seqs, seqdict, arch_search
+    arch_search = "n"
+    genomic_accnr = proteins[1]
+    dnaseqlength = proteins[2]
+    nucname = proteins[3]
+    proteins = proteins[0]
+    querytags = []
+    z = 0
+    names = []
+    seqs = []
+    seqdict = {}
+    if startpos != "N/A" and endpos != "N/A":
+        for i in proteins[0]:
+            seq = proteins[1][z]
+            pstartpos = int(i.split("|")[2].split("-")[0])
+            pendpos = int(i.split("|")[2].split("-")[1])
+            if (pstartpos > startpos and pstartpos < endpos) or (pendpos > startpos and pendpos < endpos):
+                names.append(i)
+                seqs.append(seq)
+                seqdict[i] = seq
+                querytags.append(i.split("|")[4])
+            z += 1
+        if len(names) == 0:
+            log("Error: no genes found within the specified region of the input file.", exit=True)
+    elif ingenes != "N/A":
+        for i in proteins[0]:
+            seq = proteins[1][z]
+            if i.split("|")[4] in ingenes or i.split("|")[6] in ingenes or i.split("|")[6].partition(".")[0] in ingenes or i.split("|")[6].partition(".")[0] in [gene.partition(".")[0] for gene in ingenes] or i.split("|")[7] in ingenes:
+                names.append(i)
+                seqs.append(seq)
+                seqdict[i] = seq
+                querytags.append(i.split("|")[4])
+            z += 1
+        if len(names) == 0:
+            log("Error: no genes found with these names in the input file.", exit=True)
+    writefasta(names,seqs,"query.fasta")
+    return proteins, genomic_accnr, dnaseqlength, nucname, querytags, names, seqs, seqdict, arch_search
 
 ##Functions necessary for this script
 def get_sequence(fasta):
@@ -3480,11 +3538,15 @@ def main():
 
     #Step 1: parse options into an Option Object
     user_options = get_arguments()
-    #parse_options(sys.argv, opts)
-    print(("Step 1/11: Time since start: " + str((time.time() - starttime))))
-    return
+
+    #configure a logger to track what is happening over multiple files, make sure to do this after the
+    #option parsing to save the log at the appropriate place
+    setup_logger(user_options)
+    logging.info("Step 1/11: input has been parsed")
+
     #Step 2: Read GBK / EMBL file, select genes from requested region and output FASTA file
-    proteins, genomic_accnr, dnaseqlength, nucname, querytags, names, seqs, seqdict, arch_search = read_input_file(opts.infile, opts.startpos, opts.endpos, opts.ingenes, opts.gui)
+    proteins, genomic_accnr, dnaseqlength, nucname, querytags, names, seqs, seqdict, arch_search = read_input_file2(user_options)
+    return
     print(("Step 2/11: Time since start: " + str((time.time() - starttime))))
     #Step 3: Run internal BLAST
     internalhomologygroupsdict, seqlengths = internal_blast(opts.minseqcov, opts.minpercid, names, proteins, seqdict, opts.nrcpus)
@@ -3524,6 +3586,28 @@ def main():
 
     #Close log file
     print(("MultiGeneBlast successfully finished in " + str((time.time() - starttime)) + " seconds.\n"))
+
+def setup_logger(user_options):
+
+    try:
+        os.mkdir(user_options.outdir)
+    except FileExistsError:
+        pass
+
+    log_file_loc = "{}{}{}".format(user_options.outdir, os.sep, 'run.log')
+    #make sure that a potentially existing logfile is emptied
+    if os.path.exists(log_file_loc):
+        open(log_file_loc, 'w').close()
+
+    #TODO think about making the level a user definable parameter
+    logging.basicConfig(filename=log_file_loc, level=logging.DEBUG, format='%(levelname)s: %(asctime)s - %(message)s')
+
+    #configure a handler that formats the logged events properly and prints the events to file as well as stdout
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter('%(asctime)s - %(message)s')
+    handler.setFormatter(formatter)
+    logging.getLogger().addHandler(handler)
+    logging.debug('Logger created')
 
 if __name__ == '__main__':
     freeze_support()
