@@ -24,6 +24,8 @@ import logging
 
 #constants
 FASTA_EXTENSIONS = ("fasta","fas","fa","fna")
+EMBL_EXTENSIONS = ("embl","emb")
+GENBANK_EXTENSIONS = ("gbk","gb","genbank")
 global GUI
 global OUTBOX
 global FRAME
@@ -123,6 +125,13 @@ from tkinter import *
 from tkinter.messagebox import askyesno, showerror
 import shutil
 
+class MultiGeneBlastException(Exception):
+    """
+    Create MultiGeneBlastExceptions for error that are expected from MultiGeneBlast
+    """
+    pass
+
+
 class Options:
     def __init__(self, arguments):
         #the input file
@@ -161,7 +170,7 @@ class Options:
         :return: Boolean that is True if the infile ends in a fasta extension
         meaning MultiGeneBlast is running in architecture mode.
         """
-        if any(self.infile.endswith(ext) for ext in FASTA_EXTENSIONS):
+        if any(self.infile.lower().endswith(ext) for ext in FASTA_EXTENSIONS):
             return True
         return False
 
@@ -272,7 +281,7 @@ def check_in_file(path):
         assert os.path.exists(path)
         #the extension of the file
         ext = os.path.split(path)[1].split(".")[1]
-        assert ext.lower()  in ["gbk","gb","genbank","embl","emb", *FASTA_EXTENSIONS]
+        assert ext.lower() in [*GENBANK_EXTENSIONS, *EMBL_EXTENSIONS, *FASTA_EXTENSIONS]
         return path
     except (AssertionError, IndexError):
         raise argparse.ArgumentTypeError("Please supply input file with valid"
@@ -384,21 +393,20 @@ def restricted_float(x):
 ####READ THE INPUT FILE###
 
 def read_input_file2(user_options):
-    log("Reading and parsing input GenBank file...")
-    #infile = parse_absolute_paths(infile)
-    ext = infile.rpartition(".")[2]
-    if ext.lower() in ["gbk","gb","genbank"]:
-        proteins = gbk2proteins(infile)
-    elif ext.lower() in ["embl","emb"]:
-        proteins = embl2proteins(infile)
-    elif ext.lower() in ["fasta","fas","fa","fna"]:
+    logging.info("Starting to parse input file...")
+    if user_options.architecture_mode:
         nucname = "Architecture Search FASTA input"
         genomic_accnr = ""
         dnaseqlength = 0
-        proteins, querytags, seqdict, names, seqs = generate_architecture_data(infile)
-        writefasta(names,seqs,"query.fasta")
+        proteins, querytags, seqdict, names, seqs = generate_architecture_data(user_options.infile)
+        writefasta(names, seqs, "query.fasta")
         arch_search = "y"
         return proteins, genomic_accnr, dnaseqlength, nucname, querytags, names, seqs, seqdict, arch_search
+    elif any(user_options.infile.lower().endswith(ext) for ext in GENBANK_EXTENSIONS):
+        proteins = gbk2proteins(infile)
+    else:
+        proteins = embl2proteins(infile)
+
     arch_search = "n"
     genomic_accnr = proteins[1]
     dnaseqlength = proteins[2]
@@ -435,6 +443,83 @@ def read_input_file2(user_options):
             log("Error: no genes found with these names in the input file.", exit=True)
     writefasta(names,seqs,"query.fasta")
     return proteins, genomic_accnr, dnaseqlength, nucname, querytags, names, seqs, seqdict, arch_search
+
+def generate_architecture_data2(fasta_file):
+    logging.debug("Parsing architecture input file")
+    fasta_entries = fasta_to_dict(fasta_file)
+    querytags = []
+    seqs = []
+    seqlengths = {}
+    seqdict = {}
+    for entry in fasta_entries:
+        if "\n" not in entry or len(entry.partition("\n")[2]) < 2:
+            log("FASTA file wrongly formatted at. Please check your input file.")
+            log("Wrong entry: " + entry.replace("\n",""), exit=True)
+        fname = entry.partition("\n")[0][1:]
+        #Generate name without forbidden characters
+        forbiddencharacters = ["'",'"','=',';',':','[',']','>','<','|','\\',"/",'*','-','_','.',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
+        fname_censored = ""
+        for z in fname:
+            if z not in forbiddencharacters:
+                fname_censored = fname
+        fname = fname_censored.replace(" ","_")[:20].replace('|','_')
+        seq = entry.partition("\n")[2].replace(" ","").replace("\n","")
+        if fname in querytags:
+            log("Non-unique sequence name in input FASTA file. Please reformat and try again.", exit=True)
+        querytags.append(fname)
+        seqs.append(seq)
+        seqlengths[fname] = len(seq)
+        seqdict[fname] = seq
+    #Determine alignment distribution / lengths for display in SVG to put in names as pseudo-locations
+    names = []
+    genedict = {}
+    accessiondict = {}
+    totalnt = 0
+    for tag in querytags:
+        startsite = str(totalnt)
+        fname = "input|c1|" + startsite
+        totalnt += (seqlengths[tag] * 3)
+        endsite = str(totalnt)
+        fname = fname + "-" + endsite + "|+|" + tag + "|" + tag + "|" + tag + "|" + tag
+        seqlengths[fname] = seqlengths[tag]
+        totalnt += 100
+        names.append(fname)
+        accessiondict[tag] = tag
+        genedict[tag] = [startsite, endsite, "+", tag, seqdict[tag], tag, tag]
+    genelist = names
+    proteins = [names, seqs, genelist, genedict, accessiondict]
+    return proteins, querytags, seqdict, names, seqs
+
+def fasta_to_dict(file_name):
+    """
+    Creates a dictionary containing the name of the fasta sequence as key
+    and the sequence as value.
+
+    :param file_name: A string that represents a file path towards a fasta
+    file containing one or more sequences
+    :return: a dictionary with sequence names as keys and the sequence
+    itself as values.
+    """
+    with open(file_name, "r") as f:
+        text = f.read()
+    sequences = {}
+    # do not include the first empty match that results from the split
+    fasta_entries = text.split(">")[1:]
+    if len(fasta_entries) == 0:
+        logging.critical("Invalid fasta format for file '{}'. Exiting...".format(file_name))
+        raise MultiGeneBlastException("Fasta file '{}' does not contain any sequences.".format(file_name))
+    for entry in fasta_entries:
+        lines = entry.split("\n")
+        #make sure not trailing newlines
+        name = lines[0]
+        sequence = "".join(lines[1:]).strip()
+        #skip incomplete entries
+        if len(sequence) == 0:
+            logging.warning("Invalid fasta format for entry '{}' in file '{}'. Skipping...".format(name, file_name))
+        else:
+            sequences[name] = sequence
+    return sequences
+
 
 ##Functions necessary for this script
 def get_sequence(fasta):
@@ -2005,7 +2090,8 @@ def parse_options(args, opts):
 def generate_architecture_data(fastafile):
     try:
         file = open(fastafile,"r")
-    except:
+    #note that this should NOT occur, this should have been checked at the start
+    except FileNotFoundError:
         log("Error: no or invalid input file: " + fastafile, exit=True)
     filetext = file.read()
     filetext = filetext.replace("\r","\n")
@@ -2019,6 +2105,7 @@ def generate_architecture_data(fastafile):
             log("FASTA file wrongly formatted at. Please check your input file.")
             log("Wrong entry: " + entry.replace("\n",""), exit=True)
         fname = entry.partition("\n")[0][1:]
+        print(fname)
         #Generate name without forbidden characters
         forbiddencharacters = ["'",'"','=',';',':','[',']','>','<','|','\\',"/",'*','-','_','.',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
         fname_censored = ""
@@ -2026,6 +2113,7 @@ def generate_architecture_data(fastafile):
             if z not in forbiddencharacters:
                 fname_censored = fname
         fname = fname_censored.replace(" ","_")[:20].replace('|','_')
+        print(fname)
         seq = entry.partition("\n")[2].replace(" ","").replace("\n","")
         if fname in querytags:
             log("Non-unique sequence name in input FASTA file. Please reformat and try again.", exit=True)
@@ -3546,6 +3634,8 @@ def main():
 
     #Step 2: Read GBK / EMBL file, select genes from requested region and output FASTA file
     proteins, genomic_accnr, dnaseqlength, nucname, querytags, names, seqs, seqdict, arch_search = read_input_file2(user_options)
+
+    logging.info("Step 2/11: query input file has been read and parsed")
     return
     print(("Step 2/11: Time since start: " + str((time.time() - starttime))))
     #Step 3: Run internal BLAST
