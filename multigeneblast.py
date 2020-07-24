@@ -133,16 +133,21 @@ class Options:
         self.screenwidth = 1024
         self.hitspergene = 250
         self.distancekb = 20000
-        self.muscle = "n"
+        self.muscle = False
         self.startpos = None
         self.endpos = None
         self.ingenes = None
         self.pages = 5
-        self.gui = "n"
+        self.gui = False
         self.syntenyweight = 0.5
 
 
 def get_arguments():
+    """
+    Parse the command line arguments using argparser.
+
+    :return: an class of parsed arguments
+    """
     parser = argparse.ArgumentParser(description='Run multigeneblast on a '
                                 'specified database using a specified query.',
                                      epilog="-from, -to and -genes are "
@@ -150,24 +155,26 @@ def get_arguments():
     parser.add_argument("-i", "-in", help="Query file name: GBK/EMBL file for "
                                 "homology search,FASTA file with multiple"
                                 " protein sequences for architecture search",
-                        required=True, type=check_in_file)
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("-f", "-from", help="Start position of query region", type=int)
+                        required=True, type=check_in_file, metavar="file path")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("-f", "-from", help="Start position of query region", type=int
+                       , metavar="Int")
     #nargs allows one or more arguments
     group.add_argument("-g", "-genes", help="Accession codes of genes constituting "
-                                      "query multigene module", nargs='+')
+                                      "query multigene module", nargs='+'
+                       , metavar="coma-separted gene identifiers")
 
     parser.add_argument("-t", "-to", help="End position of query region", type=int,
-                        required=True)
+                        metavar="Int")
 
     parser.add_argument("-o", "-out", help="Output folder path in which results will"
-                                     " be stored", type=check_out_folder)
+                                     " be stored", type=check_out_folder, metavar="file path")
     parser.add_argument("-db", "-database", help="Blast database to be queried",
-                        required=True, type=check_db_folder)
+                        required=True, type=check_db_folder, metavar="file path")
 
     parser.add_argument("-c", "-cores", help="Number of parallel CPUs to use for "
                                        "threading (default: all)",
-                        type=determine_cpu_nr, default="all")
+                        type=determine_cpu_nr, default="all", metavar="Int")
     parser.add_argument("-hpg", "-hitspergene", help="Number of Blast hits per query "
                                              "gene to be taken into account "
                                              "(default: 250), max = 10000",
@@ -187,12 +194,12 @@ def get_arguments():
                                             " blast hits to be counted as"
                                             " belonging to the same locus"
                                             " (default: 10)", default=20,
-                        type=lambda x: int(x * 101), choices=range(0,100),
+                        type=int, choices=range(0,100),
                         metavar="[0 - 100]")
     parser.add_argument("-sw", "-syntenywheight", help="Weight of synteny conservation"
                                                " in hit sorting score: (default"
                                                ": 0.5)", type=restricted_float,
-                        default=0.5)
+                        default=0.5, metavar="Float")
     parser.add_argument("-m", "-muscle", help="Generate a Muscle multiple sequence"
                                         " alignments of all hits of each input"
                                         " gene (default: n)", default="n",
@@ -201,15 +208,35 @@ def get_arguments():
                                           " (with 50 hits each) to be generated"
                                           " (default: 5)", type=int, default=5,
                         choices=range(1,41), metavar="[1 - 40]")
+
     name_space = parser.parse_args()
-    #some final checks for certain arguments
-    #make sure this check is done here because the from argument is already checked
-    if (name_space.t is None and name_space.g is None) or \
-            (name_space.t is not None and name_space.g is not None):
-        parser.error("Either specify -to and -from or -genes.")
-    return
+    #some final checks for certain arguments, raise error when appropriate
+    #when defining a from without to or a to without a from
+    if (name_space.f is not None and name_space.t is None) or \
+            (name_space.f is None and name_space.t is not  None):
+        parser.error("When specifying -from also specify -to.")
+
+    #if the -in argument is a fasta file make sure that no -from, -to or genes are defined
+    #otherwise make sure that they are defined
+    if (any(name_space.i.endswith(ext) for ext in ("fasta","fas","fa","fna")) and
+        (name_space.t is not None or name_space.f is not None or name_space.g is not None)):
+        parser.error("When providing a fasta file (running architecture mode) -f, -t and"
+                     " -g arguments cannot be specified")
+    elif (not any(name_space.i.endswith(ext) for ext in ("fasta","fas","fa","fna")) and
+        (name_space.t is None and name_space.f is None and name_space.g is None)):
+        parser.error("When providing a genbank or embl file -f, -t or -g should be specified")
+    return name_space
 
 def check_in_file(path):
+    """
+    Check the provided input file
+
+    :param path: a string that is an absolute or relative path
+    :raises ArgumentTypeError: when the path provided does not exist or the 
+    or the specified file has the wrong extension.
+    :return: the original path
+    """
+
     try:
         #make sure relatively defined paths are also correct
         my_path = os.path.abspath(os.path.dirname(__file__))
@@ -227,6 +254,14 @@ def check_in_file(path):
                                          "(architecture search).")
 
 def check_out_folder(path):
+    """
+    Check the provided output folder
+
+    :param path: a string that is an absolute or relative path
+    :raises ArgumentTypeError: when the path provided does not exist or the
+    specified name for the folder contains illegal characters
+    :return: the original path
+    """
     try:
         #make sure relatively defined paths are also correct
         my_path = os.path.abspath(os.path.dirname(__file__))
@@ -243,6 +278,15 @@ def check_out_folder(path):
                                          " created.")
 
 def check_db_folder(path):
+    """
+    Check the provided database folder to make sure that all the required files
+    are present
+
+    :param path: a string that is an absolute or relative path
+    :raises ArgumentTypeError: when the path provided does not exist or the
+    database folder does not contain all neccesairy files
+    :return: the original path
+    """
     try:
         #make sure relatively defined paths are also correct
         my_path = os.path.abspath(os.path.dirname(__file__))
@@ -263,7 +307,8 @@ def check_db_folder(path):
             assert "{}.{}".format(db_name, "nhr") in db_folder
         return path
     except (AssertionError, IndexError):
-        raise argparse.ArgumentTypeError("Not all neccesairy data base files exist.")
+        raise argparse.ArgumentTypeError("The provided path is incorrect or "
+                                "not all neccesairy data base files exist.")
 
 def determine_cpu_nr(cores):
     """
@@ -276,7 +321,7 @@ def determine_cpu_nr(cores):
     amount of cores is selected. If a number higher then the maximum number of
     cores is requested the maximum number is returned.
     """
-    if cores == "all":
+    if cores.lower() == "all":
         try:
             nrcpus = multiprocessing.cpu_count()
         except(IOError,OSError,NotImplementedError):
@@ -292,6 +337,14 @@ def determine_cpu_nr(cores):
     return nrcpus
 
 def restricted_float(x):
+    """
+    Make sure the float for syntenywheight is inbetween 0.0 and 2.0
+
+    :param x: a string that is a float
+    :raises ArgumentTypeError: when the value is not a float or not inbetween 0
+    and 2
+    :return: the float representation of the string
+    """
     try:
         x = float(x)
     except ValueError:
@@ -300,6 +353,7 @@ def restricted_float(x):
     if x < 0.0 or x > 2.0:
         raise argparse.ArgumentTypeError("{} not in range [0.0, 2.0]".format(x))
     return x
+
 
 ##Functions necessary for this script
 def get_sequence(fasta):
