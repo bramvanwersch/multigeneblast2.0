@@ -26,6 +26,8 @@ import logging
 FASTA_EXTENSIONS = ("fasta","fas","fa","fna")
 EMBL_EXTENSIONS = ("embl","emb")
 GENBANK_EXTENSIONS = ("gbk","gb","genbank")
+
+ILLEGAL_CHARACTERS = ["'",'"','=',';',':','[',']','>','<','|','\\',"/",'*','-','_','.',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
 global GUI
 global OUTBOX
 global FRAME
@@ -125,12 +127,84 @@ from tkinter import *
 from tkinter.messagebox import askyesno, showerror
 import shutil
 
+### GENERAL UTILITY###
+
 class MultiGeneBlastException(Exception):
     """
     Create MultiGeneBlastExceptions for error that are expected from MultiGeneBlast
     """
     pass
 
+
+def remove_illegal_characters(string):
+    """
+    Remove any character from ILLEGAL_CHARACTERS from string
+
+    :param string: a string
+    :return: the string without illegal characters. If no illegal characters
+    are found the originall string is returned
+    """
+    clean_string = ""
+    for letter in string:
+        if letter not in ILLEGAL_CHARACTERS:
+            clean_string += letter
+    return clean_string
+
+def write_fasta(query_proteins, file):
+    """
+    Write a fasta file using a list of Protein objects to the Temp directory of
+    the operating system
+
+    :param query_proteins: a list of Protein objects
+    :param file: the output file
+    """
+    #the working directory is set to a temporary directory
+    try:
+       with open(file,"w") as out_file:
+            for prot in query_proteins:
+                out_file.write(prot.fasta_text())
+    except(IOError,OSError):
+        logging.critical("No fasta file created for sequences with file name {}".format(file))
+        raise MultiGeneBlastException("Cannot open file {}".format(file))
+    logging.debug("Saved file {} at {}.".format(file, os.getcwd()))
+
+def fasta_to_dict(file_name, check_headers = True):
+    """
+    Creates a dictionary containing the name of the fasta sequence as key
+    and the sequence as value.
+
+    :param file_name: A string that represents a file path towards a fasta
+    file containing one or more sequences
+    :param check_headers: Boolean if the headers should be filtered for illegal
+    characters. Default is True
+    :return: a dictionary with sequence names as keys and the sequence
+    itself as values.
+    """
+    with open(file_name, "r") as f:
+        text = f.read()
+    sequences = {}
+    # do not include the first empty match that results from the split
+    fasta_entries = text.split(">")[1:]
+    if len(fasta_entries) == 0:
+        logging.critical("Invalid fasta format for file '{}'. Exiting...".format(file_name))
+        raise MultiGeneBlastException("Fasta file '{}' does not contain any sequences.".format(file_name))
+    for entry in fasta_entries:
+        lines = entry.split("\n")
+
+        #make sure that names do not contain illegal characters.
+        name = remove_illegal_characters(lines[0])
+        #make sure no trailing newlines
+        sequence = "".join(lines[1:]).strip()
+        #skip incomplete entries
+        if len(sequence) == 0:
+            logging.warning("Invalid fasta format for entry '{}' in file '{}'. Skipping...".format(name, file_name))
+        elif name in sequences:
+            logging.warning("Double fasta entry '{}' in file '{}'. Skipping...".format(name, file_name))
+        else:
+            sequences[name] = sequence
+    return sequences
+
+####PARSE OPTIONS####
 
 class Options:
     def __init__(self, arguments):
@@ -165,7 +239,7 @@ class Options:
 
     def __check_architecture_mode(self):
         """
-        Check if MultiGeneBlast is running in architecture or normal mode.
+        Check if MultiGeneBlast is running in architecture or homolgy search mode
 
         :return: Boolean that is True if the infile ends in a fasta extension
         meaning MultiGeneBlast is running in architecture mode.
@@ -173,9 +247,6 @@ class Options:
         if any(self.infile.lower().endswith(ext) for ext in FASTA_EXTENSIONS):
             return True
         return False
-
-
-####PARSE OPTIONS####
 
 def get_arguments():
     """
@@ -395,13 +466,9 @@ def restricted_float(x):
 def read_input_file2(user_options):
     logging.info("Starting to parse input file...")
     if user_options.architecture_mode:
-        nucname = "Architecture Search FASTA input"
-        genomic_accnr = ""
-        dnaseqlength = 0
-        proteins, querytags, seqdict, names, seqs = generate_architecture_data(user_options.infile)
-        writefasta(names, seqs, "query.fasta")
-        arch_search = "y"
-        return proteins, genomic_accnr, dnaseqlength, nucname, querytags, names, seqs, seqdict, arch_search
+        query_proteins = generate_architecture_data2(user_options.infile)
+        write_fasta(query_proteins.values(), "query.fasta")
+        return query_proteins
     elif any(user_options.infile.lower().endswith(ext) for ext in GENBANK_EXTENSIONS):
         proteins = gbk2proteins(infile)
     else:
@@ -444,82 +511,49 @@ def read_input_file2(user_options):
     writefasta(names,seqs,"query.fasta")
     return proteins, genomic_accnr, dnaseqlength, nucname, querytags, names, seqs, seqdict, arch_search
 
+class Protein:
+    def __init__(self, sequence, start, name, strand, id = "", start_header = ""):
+        self.sequence = sequence
+        self.strand = strand
+        self.aa_lenght = len(self.sequence)
+        self.nt_lenght = self.aa_lenght * 3
+
+        #both in nucleotides
+        self.start = start
+        self.stop = self.start + self.nt_lenght
+
+        self.name = name
+        self.id = id
+        self.fasta_header = self.__construct_fasta_header(start_header)
+
+    def __construct_fasta_header(self, start_header):
+        #TODO finsih this
+        header = "{}-{}|{}|{}|{}|{}|{}".format(self.start, self.stop, self.strand, "","","","")
+        return start_header + header
+
+    def fasta_text(self):
+        text = ">{}\n{}\n".format(self.fasta_header, self.sequence)
+        return text
+
+
 def generate_architecture_data2(fasta_file):
-    logging.debug("Parsing architecture input file")
+    logging.debug("Started parsing architecture input file")
+
+    #read the fasta file with headers that do not contain forbidden characters
     fasta_entries = fasta_to_dict(fasta_file)
-    querytags = []
-    seqs = []
-    seqlengths = {}
-    seqdict = {}
-    for entry in fasta_entries:
-        if "\n" not in entry or len(entry.partition("\n")[2]) < 2:
-            log("FASTA file wrongly formatted at. Please check your input file.")
-            log("Wrong entry: " + entry.replace("\n",""), exit=True)
-        fname = entry.partition("\n")[0][1:]
-        #Generate name without forbidden characters
-        forbiddencharacters = ["'",'"','=',';',':','[',']','>','<','|','\\',"/",'*','-','_','.',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
-        fname_censored = ""
-        for z in fname:
-            if z not in forbiddencharacters:
-                fname_censored = fname
-        fname = fname_censored.replace(" ","_")[:20].replace('|','_')
-        seq = entry.partition("\n")[2].replace(" ","").replace("\n","")
-        if fname in querytags:
-            log("Non-unique sequence name in input FASTA file. Please reformat and try again.", exit=True)
-        querytags.append(fname)
-        seqs.append(seq)
-        seqlengths[fname] = len(seq)
-        seqdict[fname] = seq
-    #Determine alignment distribution / lengths for display in SVG to put in names as pseudo-locations
-    names = []
-    genedict = {}
-    accessiondict = {}
-    totalnt = 0
-    for tag in querytags:
-        startsite = str(totalnt)
-        fname = "input|c1|" + startsite
-        totalnt += (seqlengths[tag] * 3)
-        endsite = str(totalnt)
-        fname = fname + "-" + endsite + "|+|" + tag + "|" + tag + "|" + tag + "|" + tag
-        seqlengths[fname] = seqlengths[tag]
-        totalnt += 100
-        names.append(fname)
-        accessiondict[tag] = tag
-        genedict[tag] = [startsite, endsite, "+", tag, seqdict[tag], tag, tag]
-    genelist = names
-    proteins = [names, seqs, genelist, genedict, accessiondict]
-    return proteins, querytags, seqdict, names, seqs
 
-def fasta_to_dict(file_name):
-    """
-    Creates a dictionary containing the name of the fasta sequence as key
-    and the sequence as value.
+    #make for each fasta sequence a protein object and save them in a dictionary
+    total_lenght = 0
+    query_proteins = {}
+    for entry_name in fasta_entries:
+        sequence = fasta_entries[entry_name]
+        entry_protein = Protein(sequence, total_lenght, entry_name, "+")
+        query_proteins[entry_name] = entry_protein
 
-    :param file_name: A string that represents a file path towards a fasta
-    file containing one or more sequences
-    :return: a dictionary with sequence names as keys and the sequence
-    itself as values.
-    """
-    with open(file_name, "r") as f:
-        text = f.read()
-    sequences = {}
-    # do not include the first empty match that results from the split
-    fasta_entries = text.split(">")[1:]
-    if len(fasta_entries) == 0:
-        logging.critical("Invalid fasta format for file '{}'. Exiting...".format(file_name))
-        raise MultiGeneBlastException("Fasta file '{}' does not contain any sequences.".format(file_name))
-    for entry in fasta_entries:
-        lines = entry.split("\n")
-        #make sure not trailing newlines
-        name = lines[0]
-        sequence = "".join(lines[1:]).strip()
-        #skip incomplete entries
-        if len(sequence) == 0:
-            logging.warning("Invalid fasta format for entry '{}' in file '{}'. Skipping...".format(name, file_name))
-        else:
-            sequences[name] = sequence
-    return sequences
-
+        #TODO figure out why the +100. I assume for drawing
+        total_lenght += entry_protein.nt_lenght + 100
+    logging.debug("Finished parsing architecture input file")
+    return query_proteins
 
 ##Functions necessary for this script
 def get_sequence(fasta):
@@ -1105,22 +1139,6 @@ def translate(sequence):
     if  len(protseq) > 0 and protseq[-1] == "*":
         protseq = protseq[:-1]
     return protseq
-
-def writefasta(names,seqs,file):
-    e = 0
-    f = len(names) - 1
-    try:
-        out_file = open(file,"w")
-        while e <= f:
-            out_file.write(">")
-            out_file.write(names[e])
-            out_file.write("\n")
-            out_file.write(seqs[e])
-            out_file.write("\n")
-            e += 1
-        out_file.close()
-    except(IOError,OSError,NotImplementedError):
-        print("FASTA file not created.", file=sys.stderr)
 
 def testaccession(accession):
     #Test if accession number is probably real GenBank/RefSeq acc nr
@@ -2105,7 +2123,6 @@ def generate_architecture_data(fastafile):
             log("FASTA file wrongly formatted at. Please check your input file.")
             log("Wrong entry: " + entry.replace("\n",""), exit=True)
         fname = entry.partition("\n")[0][1:]
-        print(fname)
         #Generate name without forbidden characters
         forbiddencharacters = ["'",'"','=',';',':','[',']','>','<','|','\\',"/",'*','-','_','.',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
         fname_censored = ""
@@ -2113,7 +2130,6 @@ def generate_architecture_data(fastafile):
             if z not in forbiddencharacters:
                 fname_censored = fname
         fname = fname_censored.replace(" ","_")[:20].replace('|','_')
-        print(fname)
         seq = entry.partition("\n")[2].replace(" ","").replace("\n","")
         if fname in querytags:
             log("Non-unique sequence name in input FASTA file. Please reformat and try again.", exit=True)
@@ -2138,7 +2154,8 @@ def generate_architecture_data(fastafile):
         accessiondict[tag] = tag
         genedict[tag] = [startsite, endsite, "+", tag, seqdict[tag], tag, tag]
     genelist = names
-    proteins = [names, seqs, genelist, genedict, accessiondict]
+    proteins = [names, seqs, genelist, geneict, accessiondict]
+    #print(names, seqs)
     return proteins, querytags, seqdict, names, seqs
 
 def parse_absolute_paths(infile):
@@ -3629,11 +3646,11 @@ def main():
 
     #configure a logger to track what is happening over multiple files, make sure to do this after the
     #option parsing to save the log at the appropriate place
-    setup_logger(user_options)
+    setup_logger(user_options.outdir)
     logging.info("Step 1/11: input has been parsed")
 
     #Step 2: Read GBK / EMBL file, select genes from requested region and output FASTA file
-    proteins, genomic_accnr, dnaseqlength, nucname, querytags, names, seqs, seqdict, arch_search = read_input_file2(user_options)
+    query_proteins = read_input_file2(user_options)
 
     logging.info("Step 2/11: query input file has been read and parsed")
     return
@@ -3677,14 +3694,23 @@ def main():
     #Close log file
     print(("MultiGeneBlast successfully finished in " + str((time.time() - starttime)) + " seconds.\n"))
 
-def setup_logger(user_options):
+def setup_logger(outdir):
+    """
+    Function for setting up a logger that will write output to file as well as
+    to sdout.
 
+    :param outdir: output directory specified by the user. this is where the
+    log file should end up.
+    """
+
+    #if the directory exists simply ignore it, that can be expected
+    dir_exists = False
     try:
-        os.mkdir(user_options.outdir)
+        os.mkdir(outdir)
     except FileExistsError:
-        pass
+        dir_exists = True
 
-    log_file_loc = "{}{}{}".format(user_options.outdir, os.sep, 'run.log')
+    log_file_loc = "{}{}{}".format(outdir, os.sep, 'run.log')
     #make sure that a potentially existing logfile is emptied
     if os.path.exists(log_file_loc):
         open(log_file_loc, 'w').close()
@@ -3698,6 +3724,8 @@ def setup_logger(user_options):
     handler.setFormatter(formatter)
     logging.getLogger().addHandler(handler)
     logging.debug('Logger created')
+    if dir_exists:
+        logging.warning("The output directory already exists. Files may be overwritten.")
 
 if __name__ == '__main__':
     freeze_support()
