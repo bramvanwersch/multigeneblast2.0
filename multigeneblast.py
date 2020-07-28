@@ -471,79 +471,63 @@ def read_input_file2(user_options):
     logging.info("Starting to parse input file...")
     if user_options.architecture_mode:
         query_proteins = generate_architecture_data2(user_options.infile)
+        write_fasta(query_proteins.values(), "query.fasta")
+        return query_proteins
     elif any(user_options.infile.lower().endswith(ext) for ext in GENBANK_EXTENSIONS):
-        gb_file = GenbankFile(user_options.infile)
+        gb_file = GenbankFile(user_options.infile, protein_range=[user_options.startpos, user_options.endpos], allowed_proteins=user_options.ingenes)
         query_proteins = gb_file.proteins
     else:
-        #TODO this needs a fix still
-        proteins = embl2proteins(user_options.infile)
+        genbank_file = embl_to_genbank(user_options.infile)
+        gb_file = GenbankFile(user_options.infile, file_text=genbank_file, protein_range=[user_options.startpos, user_options.endpos], allowed_proteins=user_options.ingenes)
+        query_proteins = gb_file.proteins
+
     if len(query_proteins) == 0:
         logging.critical("No proteins found in the provided query. Exiting...")
         raise MultiGeneBlastException("No proteins found in the provided query")
     write_fasta(query_proteins.values(), "query.fasta")
-    for p in query_proteins:
-        print(query_proteins[p].fasta_text())
     return query_proteins
 
-def embl2proteins(emblfile):
+def embl_to_genbank(emblfile):
+    logging.debug("Converting to make embl file {} readable for the GenbankFile object".format(emblfile))
     try:
-        file = open(emblfile,"r")
-    except Exception:
-        print(("Error: no or invalid input file: " + emblfile))
-        sys.exit(1)
-    filetext = file.read()
-    filetext = filetext.replace("\r","\n")
-    if "FT   CDS " not in filetext or ("\nSQ" not in filetext):
-        log("Exit: EMBL file not properly formatted, no sequence found or no " \
-            "CDS annotation found.", exit=True)
-    cdspart = filetext.split("\nSQ  ")[0]
-    #Extract DNA sequence and calculate reverse complement of it
-    dnaseq = parse_dna_from_embl(filetext.split("\nSQ  ")[1])
-    dnaseq = cleandnaseq(dnaseq)
-    sequence = dnaseq
-    if (sequence.count('N') + sequence.count('n') + sequence.count('A') + sequence.count('a') + sequence.count('C') + sequence.count('c') + sequence.count('G') + sequence.count('g') + sequence.count('T') + sequence.count('t')) < (0.5 * len(sequence)):
-        log("Protein GBK/EMBL file provided. Please provide nucleotide " \
-            "GBK/EMBL file.", exit=True)
-    dnaseqlength = len(dnaseq)
-    rc_dnaseq = reverse_complement(dnaseq)
-    if dnaseqlength < 1:
-        log("No sequence found in GBK/EMBL file. Please provide an annotated " \
-            "nucleotide GBK/EMBL file with a DNA sequence.", exit=True)
-    #Extract genes
-    genes = cdspart.split("FT   CDS             ")
-    genes = genes[1:]
-    genesdetails = parsegenes(genes)
-    genelist = genesdetails[0]
-    genedict = genesdetails[1]
-    joinlist = genesdetails[2]
-    joindict = genesdetails[3]
-    accessiondict = genesdetails[4]
-    locustagdict = genesdetails[5]
-    #Locate all genes on DNA sequence and translate to protein sequence
-    proteins = extractprotfasta(genelist, genedict, dnaseq, rc_dnaseq, joinlist, joindict, accessiondict, locustagdict)
-    textlines = filetext.split("SQ   ")[0]
-    textlines = textlines.split("\n")
-    accession = ""
-    definition = ""
-    for i in textlines:
-        if accession == "":
-            if "AC   " in i:
-                j = i.split("AC   ")[1]
-                j = j.replace(" ","")
-                accession = j.split(";")[0]
-                if len(accession) < 4:
-                    accession = ""
-            if definition == "":
-                if "DE   " in i:
-                    j = i.split("DE   ")[1]
-                    definition = j
-    #Test if accession number is probably real GenBank/RefSeq acc nr
-    if testaccession(accession) == "n":
-        accession = ""
-    return [proteins, accession, dnaseqlength, definition]
+        with open(emblfile, "r") as f:
+            file_text = f.read()
+    except Exception as e:
+        logging.critical("Invalid embl file {}. Exiting...".format(emblfile))
+        raise MultiGeneBlastException("Invalid embl file {}.".format(emblfile))
+
+    # make sure to remove potential old occurances of \r. Acts like a \n
+    file_text = file_text.replace("\r", "\n")
+
+    # do a basic check to see if the genbank file is valid
+    if "FT   CDS " not in file_text or ("\nSQ" not in file_text):
+        logging.critical("Embl file {} is not properly formatted or contains no sequences".format(emblfile))
+        raise MultiGeneBlastException("Embl file {} is not properly formatted or contains no sequences".format(emblfile))
+    text_lines = file_text.split("\n")
+    line_count = 0
+    while line_count < len(text_lines):
+        line = text_lines[line_count]
+        if line.startswith("FT"):
+            text_lines[line_count] = line.replace("FT", "  ", 1)
+        if line.startswith("SQ"):
+            text_lines[line_count] = "ORIGIN"
+        elif line.startswith("AC"):
+            text_lines[line_count] = line.replace("AC   ", "ACCESSION   ", 1)
+        elif line.startswith("DE"):
+            #change all the definition lines to make them readable
+            text_lines[line_count] = line.replace("DE   ", "DEFINITION  ", 1)
+            line_count += 1
+            def_line = text_lines[line_count]
+            while not def_line.startswith("XX"):
+                text_lines[line_count] = def_line.replace("DE   ", "            ", 1)
+                line_count += 1
+                def_line = text_lines[line_count]
+        line_count += 1
+    logging.debug("Embl file {} made readable for genbank file object.".format(emblfile))
+    return "\n".join(text_lines)
 
 class Protein:
-    def __init__(self, sequence, start, name, strand, end = None, annotation = "", locus_tag = "", genbank_file = "", start_header = ""):
+    def __init__(self, sequence, start, name, strand, end = None, annotation = "", locus_tag = "", genbank_file = "", protein_id = "", start_header = ""):
         self.sequence = sequence
         self.strand = strand
         self.aa_lenght = len(self.sequence)
@@ -561,6 +545,7 @@ class Protein:
         self.annotation = annotation
 
         self.locus_tag = locus_tag
+        self.protein_id = protein_id
         self.genbank_file = genbank_file
         self.fasta_header = self.__construct_fasta_header(start_header)
 
@@ -573,11 +558,11 @@ class Protein:
         return text
 
 class GenbankFile:
-    def __init__(self, file):
+    def __init__(self, file, file_text = None, protein_range=None, allowed_proteins=None):
         logging.debug("Started parsing genbank file {}.".format(file))
-
-        self.file = file
-        file_text = self.__read_genbank_file(file)
+        if file_text == None:
+            self.file = file
+            file_text = self.__read_genbank_file(file)
         gene_defenitions, dna_sequence = file_text.split("\nORIGIN")
 
         # Extract DNA sequence and calculate complement of it
@@ -593,7 +578,7 @@ class GenbankFile:
         self.__extract_header(gene_information[0])
 
         #exract all the entries from the genbank file
-        self.entries = self.__extract_entries(gene_information[1:])
+        self.entries = self.__extract_entries(gene_information[1:], protein_range, allowed_proteins)
         self.proteins = {entry.protein.name: entry.protein for entry in self.entries}
 
         logging.debug("Finished parsing genbank file {}.".format(file))
@@ -615,20 +600,32 @@ class GenbankFile:
             raise MultiGeneBlastException("Genbank file {} is not properly formatted or contains no sequences".format(self.file))
         return file_text
 
-    def __extract_entries(self, entries):
+    def __extract_entries(self, entries, protein_range, allowed_proteins):
         genbank_entries = []
+
+        #number to check if all allowed proteins have been found or not
+        #this allows the function to stop prematurely if all proteins are found
+        found_proteins = 0
         # ignore the firs hit which is the start of the genbnk file
         for index, gene in enumerate(entries):
             g = GenbankEntry(gene, index + 1, self.dna_sequence, self.c_dna_sequence, self.accession)
-            genbank_entries.append(g)
+            if protein_range[0] != None and g.protein.start >= protein_range[0] and g.protein.stop <= protein_range[1]:
+                genbank_entries.append(g)
+            elif allowed_proteins != None and g.protein.protein_id in allowed_proteins:
+                genbank_entries.append(g)
+                found_proteins += 1
+                if found_proteins >= len(allowed_proteins):
+                    break
+            elif allowed_proteins == None and protein_range == None:
+                genbank_entries.append(g)
         return genbank_entries
 
     def __extract_header(self, header):
         header_lines = header.split("\n")
         for index, line in enumerate(header_lines):
-            if line.lower().startswith("version"):
+            if line.lower().startswith("accession"):
                 # extract the accesion
-                self.accession = line.replace("VERSION     ","")
+                self.accession = line.replace("ACCESSION   ","")
             if line.lower().startswith("definition"):
                 self.definition += line.replace("DEFINITION  ", "").strip()
                 for def_line in header_lines[index + 2:]:
@@ -656,6 +653,7 @@ class GenbankEntry:
 
         self.locus_tag = ""
         self.gene_name = ""
+        self.protein_id = ""
         self.protein_code = ""
         self.annotation = ""
 
@@ -689,7 +687,8 @@ class GenbankEntry:
         #the first location and then the start
         start = locations[0][0]
         return Protein(sequence, start, self.gene_name, strand, start_header="input|c1",
-                       locus_tag=self.locus_tag, annotation=self.annotation, genbank_file=file_accession)
+                       locus_tag=self.locus_tag, annotation=self.annotation, genbank_file=file_accession,
+                       protein_id=self.protein_id)
 
     def __disect_string(self, entry_string, nr):
         #create a list of lines that are part of the coding sequences (CDS)
@@ -700,11 +699,11 @@ class GenbankEntry:
             if line.lower().startswith("codon_start"):
                 self.__codon_start = int(self.__clean_line(line))
             elif line.lower().startswith("protein_id"):
-                protein_id = self.__clean_line(line)
+                self.protein_id = self.__clean_line(line)
             elif line.lower().startswith("locus_tag"):
                 self.locus_tag = self.__clean_line(line)
             elif line.lower().startswith("gene"):
-                gene_name = self.__clean_line(line)
+                self.gene_name = self.__clean_line(line)
             elif line.lower().startswith("translation"):
                 self.protein_code += self.__clean_line(line)
                 for prot_line in cds_part[index + 2:]:
@@ -715,11 +714,11 @@ class GenbankEntry:
 
         #configure the genename with this order, locus tag, gene_name protein_id auto generated name
         if self.locus_tag:
-            self.gene_name = locus_tag
-        elif gene_name:
-            self.gene_name = gene_name
-        elif protein_id:
-            self.gene_name = protein_id
+            self.gene_name = self.locus_tag
+        elif self.gene_name:
+            pass
+        elif self.protein_id:
+            self.gene_name = self.protein_id
         else:
             self.gene_name = "orf {}".format(nr)
 
