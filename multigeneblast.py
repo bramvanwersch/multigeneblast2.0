@@ -211,7 +211,16 @@ def fasta_to_dict(file_name, check_headers = True):
 ####PARSE OPTIONS####
 
 class Options:
+    """
+    Options object for saving all the user defined options aswell as some
+    variables that can be directly calculated from these options like the
+    architecture_mode value
+    """
     def __init__(self, arguments):
+        """
+        :param arguments: an Argparser object containing all the options
+        specified by the user.
+        """
         #the input file
         self.infile = arguments.i
         #the output directory
@@ -320,6 +329,7 @@ def get_arguments():
                         choices=range(1,41), metavar="[1 - 40]")
 
     name_space = parser.parse_args()
+
     #some final checks for certain arguments, raise error when appropriate
     #when defining a from without to or a to without a from
     if (name_space.f is not None and name_space.t is None) or \
@@ -335,6 +345,7 @@ def get_arguments():
     elif (not any(name_space.i.endswith(ext) for ext in  FASTA_EXTENSIONS) and
         (name_space.t is None and name_space.f is None and name_space.g is None)):
         parser.error("When providing a genbank or embl file -f, -t or -g should be specified")
+
     user_options = Options(name_space)
     return user_options
 
@@ -467,10 +478,19 @@ def restricted_float(x):
 
 ####READ THE INPUT FILE###
 
-def read_input_file2(user_options):
+def read_query_file(user_options):
+    """
+    Read the query file supplied by the user. This can be a fasta, genbank or
+    embl file. A fasta version of the file is saved in query.fasta for blasting
+
+    :param user_options: an Option object containing the user defined options
+    :return: a dictionary containing keys for the fasta headers the protein
+    sequences are saved with in the query.fasta file and Protein objects as
+    values
+    """
     logging.info("Starting to parse input file...")
     if user_options.architecture_mode:
-        query_proteins = generate_architecture_data2(user_options.infile)
+        query_proteins = query_proteins_from_fasta(user_options.infile)
         write_fasta(query_proteins.values(), "query.fasta")
         return query_proteins
     elif any(user_options.infile.lower().endswith(ext) for ext in GENBANK_EXTENSIONS):
@@ -484,10 +504,47 @@ def read_input_file2(user_options):
     if len(query_proteins) == 0:
         logging.critical("No proteins found in the provided query. Exiting...")
         raise MultiGeneBlastException("No proteins found in the provided query")
+
     write_fasta(query_proteins.values(), "query.fasta")
+    logging.info("{} proteins have been extracted from the query.".format(len(query_proteins)))
+    return query_proteins
+
+def query_proteins_from_fasta(fasta_file):
+    """
+    Convert a fasta file containing query proteins for architecture search into
+    a dictionary of Protein objects.
+
+    :param fasta_file: a file path to a fasta file
+    :return: a dictionary containing keys for the fasta headers the protein
+    sequences are saved with in the query.fasta file and Protein objects as
+    values
+    """
+    logging.debug("Started parsing architecture input file")
+
+    #read the fasta file with headers that do not contain forbidden characters
+    fasta_entries = fasta_to_dict(fasta_file)
+
+    #make for each fasta sequence a protein object and save them in a dictionary
+    total_lenght = 0
+    query_proteins = {}
+    for entry_name in fasta_entries:
+        sequence = fasta_entries[entry_name]
+        entry_protein = Protein(sequence, total_lenght, entry_name, "+", start_header="input|c1")
+        query_proteins[protein.fasta_header] = entry_protein
+
+        #TODO figure out why the +100. I assume for drawing
+        total_lenght += entry_protein.nt_lenght + 100
+    logging.debug("Finished parsing architecture input file")
     return query_proteins
 
 def embl_to_genbank(emblfile):
+    """
+    Convert an embl file in such a way that the GenbankFile object can read it
+    and convert it appropriately
+
+    :param emblfile: a path to an embl file.
+    :return: a string that can be read by a GenbankFile object
+    """
     logging.debug("Converting to make embl file {} readable for the GenbankFile object".format(emblfile))
     try:
         with open(emblfile, "r") as f:
@@ -499,11 +556,13 @@ def embl_to_genbank(emblfile):
     # make sure to remove potential old occurances of \r. Acts like a \n
     file_text = file_text.replace("\r", "\n")
 
-    # do a basic check to see if the genbank file is valid
+    # do a basic check to see if the embl file is valid
     if "FT   CDS " not in file_text or ("\nSQ" not in file_text):
-        logging.critical("Embl file {} is not properly formatted or contains no sequences".format(emblfile))
+        logging.critical("Embl file {} is not properly formatted or contains no sequences. Exiting...".format(emblfile))
         raise MultiGeneBlastException("Embl file {} is not properly formatted or contains no sequences".format(emblfile))
     text_lines = file_text.split("\n")
+
+    #change certain line starts
     line_count = 0
     while line_count < len(text_lines):
         line = text_lines[line_count]
@@ -527,7 +586,28 @@ def embl_to_genbank(emblfile):
     return "\n".join(text_lines)
 
 class Protein:
-    def __init__(self, sequence, start, name, strand, end = None, annotation = "", locus_tag = "", genbank_file = "", protein_id = "", start_header = ""):
+    """
+    A representation of a protein, containing some optional fields that can or
+    cannot be specified.
+    """
+    def __init__(self, sequence, start, name, strand, end = None, annotation = "",
+                 locus_tag = "", genbank_file = "", protein_id = "", start_header = ""):
+        """
+        :param sequence: a string that is the amino acid sequence of the protein
+        :param start: an integer that is the start coordinate in the the protein
+        in the larger contig it is located
+        :param name: the gene name of the protein
+        :param strand: the + or - strand the protein can be located on
+        :param end: optional parameter to set the stop of the protein manually
+        :param annotation: the optional annotation of the protein, description of
+        function
+        :param locus_tag: an optional locus tag of the protein
+        :param genbank_file: an optional genbank file accesion where the protein
+        originated from
+        :param protein_id: an optional id of the protein
+        :param start_header: the start of the fasta header. This can be used in
+        the case of query proteins to allow certain identifyers
+        """
         self.sequence = sequence
         self.strand = strand
         self.aa_lenght = len(self.sequence)
@@ -550,15 +630,40 @@ class Protein:
         self.fasta_header = self.__construct_fasta_header(start_header)
 
     def __construct_fasta_header(self, start_header):
+        """
+        Construct a fasta header using available class variables
+
+        :param start_header: start of the header, can be ''
+        :return: a string that is the text of the fasta header. Meaning the > is
+        not included
+        """
         header = "{}-{}|{}|{}|{}|{}|{}".format(self.start, self.stop, self.strand, self.name, self.annotation,self.genbank_file, self.locus_tag)
         return start_header + header
 
     def fasta_text(self):
+        """
+        Full fasta entry for writing into a fasta file. Uses the pre computed
+        header and the sequence
+
+        :return: a string that is a complete fasta entry
+        """
         text = ">{}\n{}\n".format(self.fasta_header, self.sequence)
         return text
 
 class GenbankFile:
+    """
+    An Object for easily disecting a genbank file into the individual proteins
+    """
     def __init__(self, file, file_text = None, protein_range=None, allowed_proteins=None):
+        """
+        :param file: a path to a genbank file
+        :param file_text: an optional parameter that will be used as the file text
+        instead of the read version of the file.
+        :param protein_range: an optional range in which proteins can be selected
+        from the file instead of all proteins
+        :param allowed_proteins: a list of protein IDs that can be selected from
+        the genbank file instead of all proteins
+        """
         logging.debug("Started parsing genbank file {}.".format(file))
         if file_text == None:
             self.file = file
@@ -579,11 +684,17 @@ class GenbankFile:
 
         #exract all the entries from the genbank file
         self.entries = self.__extract_entries(gene_information[1:], protein_range, allowed_proteins)
-        self.proteins = {entry.protein.name: entry.protein for entry in self.entries}
+        self.proteins = {entry.protein.fasta_header: entry.protein for entry in self.entries}
 
         logging.debug("Finished parsing genbank file {}.".format(file))
 
     def __read_genbank_file(self, file):
+        """
+        Read a genbank file and check preemptively for invalid files
+
+        :param file: a file path
+        :return: a large string that is the text in the geanbank file
+        """
         try:
             with open(file, "r") as f:
                 file_text = f.read()
@@ -601,6 +712,17 @@ class GenbankFile:
         return file_text
 
     def __extract_entries(self, entries, protein_range, allowed_proteins):
+        """
+        Extract genbank protein entries from a list of strings that contain
+        these entries
+
+        :param entries: a list of strings that contain one CDS entry each
+        :param protein_range: an optional range in which proteins can be selected
+        from the file instead of all proteins
+        :param allowed_proteins: a list of protein IDs that can be selected from
+        the genbank file instead of all proteins
+        :return: a list of GenbakEnrty objects
+        """
         genbank_entries = []
 
         #number to check if all allowed proteins have been found or not
@@ -621,6 +743,13 @@ class GenbankFile:
         return genbank_entries
 
     def __extract_header(self, header):
+        """
+        Disect the header of the genbank file and extract the accesion and
+        definition
+
+        :param header: a string that contains all the information in the header
+        of the genbank file
+        """
         header_lines = header.split("\n")
         for index, line in enumerate(header_lines):
             if line.lower().startswith("accession"):
@@ -644,13 +773,27 @@ class GenbankFile:
 
 
 class GenbankEntry:
+    """
+    Disect a genbank entry and substract allot of potential values.
+    """
     def __init__(self, entry_string, nr, dna_seq, c_dna_seq, file_accession):
+        """
+        :param entry_string: a string that contains a CDS genbank entry
+        :param nr: a unique integer that can be used to create a genename is no
+        name is available
+        :param dna_seq: the dna sequence present in the genbank file
+        :param c_dna_seq: the complement sequence present in the genbank file
+        :param file_accession: the genbank file accession this entry originated
+        from
+        """
         #a list of locations
         self.location = None
+        self.file_accession = file_accession
 
         #relevant attributes that can be present
         self.__codon_start = 1
 
+        #optional parameters that can be found in the entry
         self.locus_tag = ""
         self.gene_name = ""
         self.protein_id = ""
@@ -658,39 +801,17 @@ class GenbankEntry:
         self.annotation = ""
 
         self.__disect_string(entry_string, nr)
-        self.protein = self.__create_protein(dna_seq, c_dna_seq, file_accession)
-
-
-    def __create_protein(self, dna_seq, c_dna_seq, file_accession):
-        #loc is a list of start, stop and True or false for reverse complement or not
-        locations, reverse_complement = self.locations
-        strand = "+"
-        if reverse_complement:
-            strand = "-"
-        #make sure locations are sorted
-        locations.sort()
-
-        #if a sequence is available use that, otherwise extract it
-        if self.protein_code:
-            sequence = self.protein_code
-        else:
-            sequence = ""
-            for loc in self.locations:
-                start, end = loc
-                if reverse_complement:
-                    nc_seq = c_dna_seq[(start - 1) - self.__codon_start - 1 : end]
-                else:
-                    nc_seq = dna_seq[(start - 1) - self.__codon_start - 1 : end]
-                sequence += nc_seq
-            sequence = translate(sequence)
-
-        #the first location and then the start
-        start = locations[0][0]
-        return Protein(sequence, start, self.gene_name, strand, start_header="input|c1",
-                       locus_tag=self.locus_tag, annotation=self.annotation, genbank_file=file_accession,
-                       protein_id=self.protein_id)
+        self.protein = self.__create_protein(dna_seq, c_dna_seq)
 
     def __disect_string(self, entry_string, nr):
+        """
+        Parse the entry_string and try to extract allot of different potentialy
+        available values
+
+        :param entry_string: a string that contains a CDS genbank entry
+        :param nr: a unique integer that can be used to create a genename is no
+        name is available
+        """
         #create a list of lines that are part of the coding sequences (CDS)
         cds_part = self.__CDS_lines(entry_string)
         protein_id = locus_tag = gene_name = None
@@ -726,6 +847,13 @@ class GenbankEntry:
         self.locations = self.__get_locations(cds_part[0].strip())
 
     def __CDS_lines(self, string):
+        """
+        Extract all the CDS location qualifiers form the string. This separates
+        them from other potential qualifiers
+
+        :param string: a string that contains a CDS genbank entry
+        :return: a list of lines that are part of the CDS location qualifier
+        """
         potential_lines = string.split("\n")
         #include the first line always
         lines = [potential_lines[0]]
@@ -736,27 +864,49 @@ class GenbankEntry:
         return lines
 
     def __clean_line(self, line):
+        """
+        Clean a line from the genbank file by removing unwanted characters
+        as well as the name associated with the value
+
+        :param line: a string containing no newlines
+        :return: the cleaned version of the input line
+        """
         #remove unwanted characters and only inlcude the value not the name
         return line.replace("\\", "_").replace("/", "_").replace('"', '').replace(" ","_").split("=")[1]
 
     def __get_locations(self, string):
+        """
+        Find the location in a location string. This can be tricky because of
+        complement and join modifiers.
+        Note: this script does not take the order modifier into account, and i
+        cannot see why that would be neccesairy
 
-        # a list of locations, if they are reverse
-        locations = []
+        :param string: a string that should contain a location of minimal format
+        start..stop
+        :return: a list of lists that holds a list of locations (to take join
+        into account) and a boolean that tells if the locations are on the
+        complement string or not. A location has the format [start, stop] but
+        can be None when no valid location was found
+        """
         if string.startswith("complement"):
             if "join" in string:
                 return self.__disect_join(string)
             else:
                 #split the string without the complement text
-                return [self.__clean_location(string[11:-1])], True
+                return [self.__convert_location(string[11:-1])], True
 
         elif string.startswith("join"):
             return self.__disect_join(string)
         else:
-            return [self.__clean_location(string)], False
-        return locations
+            return [self.__convert_location(string)], False
 
     def __disect_join(self, string):
+        """
+        Disect a location that contains a join statement
+
+        :param string: a location in string format that has a join format
+        :return:
+        """
         #remove the join tag
         string = string[5:-1]
         individual_strings = string.split(",")
@@ -765,15 +915,67 @@ class GenbankEntry:
         for s in individual_strings:
             if "complement" in s:
                 complement = True
-            locations.append(self.__clean_location(s[11:-1]))
+            locations.append(self.__convert_location(s[11:-1]))
         return locations, complement
 
-    def __clean_location(self, s):
+    def __convert_location(self, s):
+        """
+        Convert the location string s of the format start..stop into two integers
+        while removign potential present characters
+
+        :param s: a string containing a location
+        :return: a list of lenght 2 with 2 integers
+        """
         if ".." not in s:
             logging.warning("No valid location found for genbank entry {}".format(self.gene_name))
-        str_locations = s.replace("<", "").replace(">", "").strip().split("..")
-        return list(map(int, str_locations))
+            return None
+        try:
+            str_locations = s.replace("<", "").replace(">", "").strip().split("..")
+            return list(map(int, str_locations))
+        #in case the str locations cannot be converted to integers
+        except AttributeError:
+            logging.warning("No valid location found for genbank entry {}".format(self.gene_name))
+            return None
 
+    def __create_protein(self, dna_seq, c_dna_seq):
+        """
+        Create a Protein object using class variables extracted from the entry
+        string
+
+        :param dna_seq: the dna sequence present in the genbank file
+        :param c_dna_seq: the complement sequence present in the genbank file
+        :return: a Protein object
+        """
+        #loc is a list of start, stop and True or false for reverse complement or not
+        locations, reverse_complement = self.locations
+        strand = "+"
+        if reverse_complement:
+            strand = "-"
+        #make sure locations are sorted
+        locations.sort()
+
+        #if a sequence is available use that, otherwise extract it
+        if self.protein_code:
+            sequence = self.protein_code
+        else:
+            sequence = ""
+            for loc in self.locations:
+                #in case of invalid location skip to the next one.
+                if loc[0] == None:
+                    continue
+                start, end = loc
+                if reverse_complement:
+                    nc_seq = c_dna_seq[(start - 1) - self.__codon_start - 1 : end]
+                else:
+                    nc_seq = dna_seq[(start - 1) - self.__codon_start - 1 : end]
+                sequence += nc_seq
+            sequence = translate(sequence)
+
+        #the first location and then the start
+        start = locations[0][0]
+        return Protein(sequence, start, self.gene_name, strand, start_header="input|c1",
+                       locus_tag=self.locus_tag, annotation=self.annotation, genbank_file=self.file_accession,
+                       protein_id=self.protein_id)
 
 
 def clean_dna_sequence(dna_seq):
@@ -816,25 +1018,6 @@ def complement(seq):
     seq = seq.replace("g", "c").replace("G", "C")
     seq = seq.replace("x", "g").replace("X", "G")
     return seq
-
-def generate_architecture_data2(fasta_file):
-    logging.debug("Started parsing architecture input file")
-
-    #read the fasta file with headers that do not contain forbidden characters
-    fasta_entries = fasta_to_dict(fasta_file)
-
-    #make for each fasta sequence a protein object and save them in a dictionary
-    total_lenght = 0
-    query_proteins = {}
-    for entry_name in fasta_entries:
-        sequence = fasta_entries[entry_name]
-        entry_protein = Protein(sequence, total_lenght, entry_name, "+", start_header="input|c1")
-        query_proteins[entry_name] = entry_protein
-
-        #TODO figure out why the +100. I assume for drawing
-        total_lenght += entry_protein.nt_lenght + 100
-    logging.debug("Finished parsing architecture input file")
-    return query_proteins
 
 ##Functions necessary for this script
 def get_sequence(fasta):
@@ -3185,7 +3368,7 @@ def main():
     logging.info("Step 1/11: input has been parsed")
 
     #Step 2: Read GBK / EMBL file, select genes from requested region and output FASTA file
-    query_proteins = read_input_file2(user_options)
+    query_proteins = read_query_file(user_options)
 
     logging.info("Step 2/11: query input file has been read and parsed")
     return
