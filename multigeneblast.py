@@ -163,7 +163,7 @@ def write_fasta(query_proteins, file):
        with open(file,"w") as out_file:
             for prot in query_proteins:
                 out_file.write(prot.fasta_text())
-    except(IOError,OSError):
+    except Exception:
         logging.critical("No fasta file created for sequences with file name {}".format(file))
         raise MultiGeneBlastException("Cannot open file {}".format(file))
     logging.debug("Saved file {} at {}.".format(file, os.getcwd()))
@@ -180,8 +180,12 @@ def fasta_to_dict(file_name, check_headers = True):
     :return: a dictionary with sequence names as keys and the sequence
     itself as values.
     """
-    with open(file_name, "r") as f:
-        text = f.read()
+    try:
+        with open(file_name, "r") as f:
+            text = f.read()
+    except Exception:
+        logging.critical("Could not read file {}. Exiting...".format(file_name))
+        raise MultiGeneBlastException("The file {} does not exist anymore or cannot be read.".format(file))
     sequences = {}
     # do not include the first empty match that results from the split
     fasta_entries = text.split(">")[1:]
@@ -470,9 +474,10 @@ def read_input_file2(user_options):
         write_fasta(query_proteins.values(), "query.fasta")
         return query_proteins
     elif any(user_options.infile.lower().endswith(ext) for ext in GENBANK_EXTENSIONS):
-        proteins = gbk2proteins(infile)
+        gb_file = GenbankFile(user_options.infile)
+        return gb_file.proteins
     else:
-        proteins = embl2proteins(infile)
+        proteins = embl2proteins(user_options.infile)
 
     arch_search = "n"
     genomic_accnr = proteins[1]
@@ -512,7 +517,7 @@ def read_input_file2(user_options):
     return proteins, genomic_accnr, dnaseqlength, nucname, querytags, names, seqs, seqdict, arch_search
 
 class Protein:
-    def __init__(self, sequence, start, name, strand, id = "", start_header = ""):
+    def __init__(self, sequence, start, name, strand, id = "", end = None, start_header = ""):
         self.sequence = sequence
         self.strand = strand
         self.aa_lenght = len(self.sequence)
@@ -520,14 +525,17 @@ class Protein:
 
         #both in nucleotides
         self.start = start
-        self.stop = self.start + self.nt_lenght
+        if end:
+            self.stop = end
+        else:
+            self.stop = self.start + self.nt_lenght
 
         self.name = name
         self.id = id
         self.fasta_header = self.__construct_fasta_header(start_header)
 
     def __construct_fasta_header(self, start_header):
-        #TODO finsih this
+        #TODO finsih this with all appropriate words in the header
         header = "{}-{}|{}|{}|{}|{}|{}".format(self.start, self.stop, self.strand, "","","","")
         return start_header + header
 
@@ -535,6 +543,251 @@ class Protein:
         text = ">{}\n{}\n".format(self.fasta_header, self.sequence)
         return text
 
+class GenbankFile:
+    def __init__(self, file):
+        logging.debug("Started parsing genbank file {}.".format(file))
+
+        self.file = file
+        file_text = self.__read_genbank_file(file)
+        gene_defenitions, dna_sequence = file_text.split("\nORIGIN")
+
+        # Extract DNA sequence and calculate complement of it
+        self.dna_sequence = clean_dna_sequence(dna_sequence)
+        self.c_dna_sequence = complement(dna_sequence)
+
+        # Extract gene information
+        gene_information = gene_defenitions.split("     CDS             ")
+
+        #exract all the entries from the genbank file
+        self.entries = self.__extract_entries(gene_information[1:])
+
+        #read general information
+        self.accession = ""
+        self.definition = ""
+        self.__extract_header(gene_information[0])
+        self.proteins = {entry.protein.name: entry.protein for entry in self.entries}
+
+        logging.debug("Finished parsing genbank file {}.".format(file))
+
+    def __read_genbank_file(self, file):
+        try:
+            with open(file, "r") as f:
+                file_text = f.read()
+        except Exception as e:
+            logging.critical("Invalid genbank file {}. Exiting...".format(self.file))
+            raise MultiGeneBlastException("Invalid genbank file {}.".format(self.file))
+
+        # make sure to remove potential old occurances of \r. Acts like a \n
+        file_text = file_text.replace("\r", "\n")
+
+        # do a basic check to see if the genbank file is valid
+        if "     CDS             " not in file_text or "\nORIGIN" not in file_text:
+            logging.critical("Genbank file {} is not properly formatted or contains no sequences".format(self.file))
+            raise MultiGeneBlastException("Genbank file {} is not properly formatted or contains no sequences".format(self.file))
+        return file_text
+
+    def __extract_entries(self, entries):
+        genbank_entries = []
+        # ignore the firs hit which is the start of the genbnk file
+        for index, gene in enumerate(entries):
+            g = GenbankEntry(gene, index + 1, self.dna_sequence, self.c_dna_sequence)
+            genbank_entries.append(g)
+        return genbank_entries
+
+    def __extract_header(self, header):
+        accession = ""
+        definition = ""
+        header_lines = header.split("\n")
+        for index, line in enumerate(header_lines):
+            if line.lower().startswith("accession"):
+                # extract the accesion
+                accession = line.replace("ACCESSION   ","")
+            if line.lower().startswith("definition"):
+                definition += line.replace("DEFINITION  ", "").strip()
+                for def_line in header_lines[index + 2:]:
+                    #end of definition line
+                    if not def_line.startswith("    "):
+                        break
+                    definition += def_line.strip()
+        # Test if accession number is probably real GenBank/RefSeq acc nr
+        if testaccession(accession) == "n":
+            logging.debug("Probably invalid GenBank/Refseq accesion found for {}.".format(self.file))
+            accession = ""
+        if accession == "":
+            logging.debug("No valid accesion found for file {}".format(self.file))
+        if definition == "":
+            logging.debug("No definition found for file {}".format(self.file))
+
+
+class GenbankEntry:
+    def __init__(self, entry_string, nr, dna_seq, c_dna_seq):
+        #a list of locations
+        self.location = None
+
+        #relevant attributes that can be present
+        self.__codon_start = 1
+
+        self.gene_name = None
+        self.protein_code = ""
+        self.annotation = ""
+
+        self.__disect_string(entry_string, nr)
+        self.protein = self.__create_protein(dna_seq, c_dna_seq)
+
+
+    def __create_protein(self, dna_seq, c_dna_seq):
+        #loc is a list of start, stop and True or false for reverse complement or not
+        locations, reverse_complement = self.locations
+        strand = "+"
+        if reverse_complement:
+            strand = "-"
+        #make sure locations are sorted
+        locations.sort()
+
+        #if a sequence is available use that, otherwise extract it
+        if self.protein_code:
+            sequence = self.protein_code
+        else:
+            sequence = ""
+            for loc in self.locations:
+                start, end = loc
+                if reverse_complement:
+                    nc_seq = c_dna_seq[(start - 1) - self.__codon_start - 1 : end]
+                else:
+                    nc_seq = dna_seq[(start - 1) - self.__codon_start - 1 : end]
+                sequence += nc_seq
+            sequence = translate(sequence)
+
+        #the first location and then the start
+        start = locations[0][0]
+        return Protein(sequence, start, self.gene_name, strand)
+
+    def __disect_string(self, entry_string, nr):
+        #create a list of lines that are part of the coding sequences (CDS)
+        cds_part = self.__CDS_lines(entry_string)
+        protein_id = locus_tag = gene_name = None
+        for index, line in enumerate(cds_part[1:]):
+            line = line.replace("/","").strip()
+            if line.lower().startswith("codon_start"):
+                self.__codon_start = int(self.__clean_line(line))
+            elif line.lower().startswith("protein_id"):
+                protein_id = self.__clean_line(line)
+            elif line.lower().startswith("locus_tag"):
+                locus_tag = self.__clean_line(line)
+            elif line.lower().startswith("gene"):
+                gene_name = self.__clean_line(line)
+            elif line.lower().startswith("translation"):
+                self.protein_code += self.__clean_line(line)
+                for prot_line in cds_part[index + 2:]:
+                    self.protein_code += prot_line.strip().replace('"', "")
+                break
+            elif line.lower().startswith("product"):
+                self.annotation = self.__clean_line(line)
+
+        #configure the genename with this order, locus tag, gene_name protein_id auto generated name
+        if locus_tag:
+            self.gene_name = locus_tag
+        elif gene_name:
+            self.gene_name = gene_name
+        elif protein_id:
+            self.gene_name = protein_id
+        else:
+            self.gene_name = "orf {}".format(nr)
+
+        #extract the locations
+        self.locations = self.__get_locations(cds_part[0].strip())
+
+    def __CDS_lines(self, string):
+        potential_lines = string.split("\n")
+        #include the first line always
+        lines = [potential_lines[0]]
+        for line in potential_lines[1:]:
+            if not line.startswith("                     "):
+                break
+            lines.append(line)
+        return lines
+
+    def __clean_line(self, line):
+        #remove unwanted characters and only inlcude the value not the name
+        return line.replace("\\", "_").replace("/", "_").replace('"', '').replace(" ","_").split("=")[1]
+
+    def __get_locations(self, string):
+
+        # a list of locations, if they are reverse
+        locations = []
+        if string.startswith("complement"):
+            if "join" in string:
+                return self.__disect_join(string)
+            else:
+                #split the string without the complement text
+                return [self.__clean_location(string[11:-1])], True
+
+        elif string.startswith("join"):
+            return self.__disect_join(string)
+        else:
+            return [self.__clean_location(string)], False
+        return locations
+
+    def __disect_join(self, string):
+        #remove the join tag
+        string = string[5:-1]
+        individual_strings = string.split(",")
+        locations = []
+        complement = False
+        for s in individual_strings:
+            if "complement" in s:
+                complement = True
+            locations.append(self.__clean_location(s[11:-1]))
+        return locations, complement
+
+    def __clean_location(self, s):
+        if ".." not in s:
+            logging.warning("No valid location found for genbank entry {}".format(self.gene_name))
+        str_locations = s.replace("<", "").replace(">", "").strip().split("..")
+        return list(map(int, str_locations))
+
+
+
+def clean_dna_sequence(dna_seq):
+    """
+    Clean a DNA sequence that is formatted like;
+
+          1 atgcggcggg aaatt etc.
+
+    :param dna_seq: a DNA sequence in the afformentioned format as a string
+    :return: a DNA sequence that only contains nucleotides
+    """
+    dna_seq = dna_seq.replace(" ", "")
+    dna_seq = dna_seq.replace("\t", "")
+    dna_seq = dna_seq.replace("\n", "")
+    dna_seq = dna_seq.replace("0", "")
+    dna_seq = dna_seq.replace("1", "")
+    dna_seq = dna_seq.replace("2", "")
+    dna_seq = dna_seq.replace("3", "")
+    dna_seq = dna_seq.replace("4", "")
+    dna_seq = dna_seq.replace("5", "")
+    dna_seq = dna_seq.replace("6", "")
+    dna_seq = dna_seq.replace("7", "")
+    dna_seq = dna_seq.replace("8", "")
+    dna_seq = dna_seq.replace("9", "")
+    dna_seq = dna_seq.replace("/", "")
+    return dna_seq
+
+def complement(seq):
+    """
+    Create the complement strand of a sequence. Use replacing for speed
+
+    :param seq: a DNA sequence as a string
+    :return: the complement of that string
+    """
+    seq = seq.replace("a", "x").replace("A", "X")
+    seq = seq.replace("t", "a").replace("T", "A")
+    seq = seq.replace("x", "t").replace("X", "T")
+
+    seq = seq.replace("c", "x").replace("C", "X")
+    seq = seq.replace("g", "c").replace("G", "C")
+    seq = seq.replace("x", "g").replace("X", "G")
+    return seq
 
 def generate_architecture_data2(fasta_file):
     logging.debug("Started parsing architecture input file")
@@ -577,27 +830,6 @@ def get_sequence(fasta):
         sys.exit(1)
     return seq
 
-def complement(seq):
-    complement = {'a': 't', 'c': 'g', 'g': 'c', 't': 'a', 'n': 'n', 'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A', 'N': 'N'}
-    complseq = []
-    for base in seq:
-        if base in list(complement.keys()):
-            complbase = complement[str(base)]
-            complseq.append(complbase)
-        else:
-            complbase = 'n'
-            complseq.append(complbase)
-    return complseq
-
-def reverse_complement(seq):
-    seq = list(seq)
-    seq.reverse()
-    revcompl = complement(seq)
-    revcomplstr = str()
-    for i in revcompl:
-        revcomplstr = revcomplstr + str(i)
-    return  revcomplstr
-
 def fastaseqlengths(proteins):
     names = proteins[0]
     seqs = proteins[1]
@@ -618,37 +850,37 @@ def parsegenes(genes):
     accessiondict = {}
     locustagdict = {}
     genenr = 0
-    for i in genes:
-        i = i.split("     gene            ")[0]
+    for gene in genes:
+        gene = gene.split("     gene            ")[0]
         join = "no"
         genenr += 1
         #Find gene location info for each gene
-        if "complement" in i.split("\n")[0].lower() and i.split("\n")[0][-1] == ")":
-            location = i.split("\n")[0]
-        elif "complement" in i.split("\n")[0].lower() and i.split("\n")[0][-1] != ")":
-            location = i.split("   /")[0]
+        if "complement" in gene.split("\n")[0].lower() and gene.split("\n")[0][-1] == ")":
+            location = gene.split("\n")[0]
+        elif "complement" in gene.split("\n")[0].lower() and gene.split("\n")[0][-1] != ")":
+            location = gene.split("   /")[0]
             while ")" not in location.replace(" ","")[-3:]:
                 locationlist = location.split("\n")
                 locationlist = locationlist[:-1]
                 location = ""
-                for i in locationlist:
+                for gene in locationlist:
                     location = location + "i"
             location = location.replace("\n","")
             location = location.replace(" ","")
-        elif "join" in i.split("\n")[0].lower() and i.split("\n")[0][-1] == ")":
-            location = i.split("\n")[0]
-        elif "join" in i.split("\n")[0].lower() and i.split("\n")[0][-1] != ")":
-            location = i.split("/")[0]
+        elif "join" in gene.split("\n")[0].lower() and gene.split("\n")[0][-1] == ")":
+            location = gene.split("\n")[0]
+        elif "join" in gene.split("\n")[0].lower() and gene.split("\n")[0][-1] != ")":
+            location = gene.split("/")[0]
             while ")" not in location.replace(" ","")[-3:]:
                 locationlist = location.split("\n")
                 locationlist = locationlist[:-1]
                 location = ""
-                for i in locationlist:
+                for gene in locationlist:
                     location = location + "i"
             location = location.replace("\n","")
             location = location.replace(" ","")
         else:
-            location = i.split("\n")[0]
+            location = gene.split("\n")[0]
         #location info found in embl file, now extract start and end positions
         if "complement" in location.lower():
             location = location.lower()
@@ -698,7 +930,7 @@ def parsegenes(genes):
                 start = location.split("..")[0]
                 start = start.replace("<","")
                 if ".." not in location:
-                    print(("WARNING: CDS feature with faulty coordinates skipped:\n %s" % "     CDS             " + i))
+                    print(("WARNING: CDS feature with faulty coordinates skipped:\n %s" % "     CDS             " + gene))
                     continue
                 end = location.split("..")[1]
                 end = end.replace(">","")
@@ -709,8 +941,8 @@ def parsegenes(genes):
             start = start2
             end = end2
         #Correct for alternative codon start positions
-        if "codon_start=" in i.lower():
-            codonstart = i.lower().split("codon_start=")[1][0]
+        if "codon_start=" in gene.lower():
+            codonstart = gene.lower().split("codon_start=")[1][0]
             if strand == "+":
                 start = str(int(start) +  (int(codonstart) - 1))
             elif strand == "-":
@@ -719,9 +951,9 @@ def parsegenes(genes):
         a = 0
         b = 0
         genename = ""
-        nrlines = len(i.split("\n"))
+        nrlines = len(gene.split("\n"))
         while b == 0:
-            line = i.split("\n")[a]
+            line = gene.split("\n")[a]
             if "protein_id=" in line:
                 genename = (line.split("protein_id=")[1][1:-1]).replace(" ","_")
                 genename = genename.replace("\\","_")
@@ -747,7 +979,7 @@ def parsegenes(genes):
         a = 0
         b = 0
         while b == 0:
-            line = i.split("\n")[a]
+            line = gene.split("\n")[a]
             locustag = ""
             if "locus_tag=" in line:
                 locustag = (line.split("locus_tag=")[1][1:-1]).replace(" ","_")
@@ -770,7 +1002,7 @@ def parsegenes(genes):
         a = 0
         b = 0
         while b == 0:
-            line = i.split("\n")[a]
+            line = gene.split("\n")[a]
             if "gene=" in line:
                 genename = (line.split("gene=")[1][1:-1]).replace(" ","_")
                 genename = genename.replace("\\","_")
@@ -799,7 +1031,7 @@ def parsegenes(genes):
         b = 0
         sequence = ""
         while b < 2:
-            line = i.split("\n")[a]
+            line = gene.split("\n")[a]
             if "translation=" in line:
                 sequence = line.split("translation=")[1][1:]
                 b += 1
@@ -839,7 +1071,7 @@ def parsegenes(genes):
         a = 0
         b = 0
         while b == 0:
-            line = i.split("\n")[a]
+            line = gene.split("\n")[a]
             if "product=" in line:
                 annotation = line.split("product=")[1][1:]
                 annotation = annotation.replace(" ","_")
@@ -871,23 +1103,6 @@ def parsegenes(genes):
             genedict[genename] = [start,end,strand,annotation,sequence,accnr,genename]
         genelist.append(genename)
     return [genelist, genedict, joinlist, joindict, accessiondict, locustagdict]
-
-def cleandnaseq(dnaseq):
-    dnaseq = dnaseq.replace(" ","")
-    dnaseq = dnaseq.replace("\t","")
-    dnaseq = dnaseq.replace("\n","")
-    dnaseq = dnaseq.replace("0","")
-    dnaseq = dnaseq.replace("1","")
-    dnaseq = dnaseq.replace("2","")
-    dnaseq = dnaseq.replace("3","")
-    dnaseq = dnaseq.replace("4","")
-    dnaseq = dnaseq.replace("5","")
-    dnaseq = dnaseq.replace("6","")
-    dnaseq = dnaseq.replace("7","")
-    dnaseq = dnaseq.replace("8","")
-    dnaseq = dnaseq.replace("9","")
-    dnaseq = dnaseq.replace("/","")
-    return dnaseq
 
 def extractprotfasta(genelist,genedict,dnaseq,rc_dnaseq,joinlist,joindict,accessiondict, locustagdict):
     names = []
@@ -1080,6 +1295,7 @@ def embl2proteins(emblfile):
     return [proteins, accession, dnaseqlength, definition]
 
 def translate(sequence):
+    #TODO take a better look at this function, for now it seems fine :)
     #Translation table standard genetic code; according to http://www.ncbi.nlm.nih.gov/Taxonomy/Utils/wprintgc.cgi
     transldict = { 'TTT': 'F', 'TCT': 'S', 'TAT': 'Y', 'TGT': 'C',
                    'TTC': 'F', 'TCC': 'S', 'TAC': 'Y', 'TGC': 'C',
@@ -1141,6 +1357,7 @@ def translate(sequence):
     return protseq
 
 def testaccession(accession):
+    #TODO look into this function at some time
     #Test if accession number is probably real GenBank/RefSeq acc nr
     numbers = list(range(0,10))
     letters = []
@@ -1831,279 +2048,6 @@ def log(message, exit=False, retcode=1, stdout=False):
         logfile.close()
         if exit:
             sys.exit(retcode)
-
-def inputinstructions():
-    return """MultiGeneBlast 1.1.0 arguments:
-
-Usage: multigeneblast [options]
-Options (x is an integer number)
-
--in <file name>       : Query file name: GBK/EMBL file for homology search,
-                        FASTA file with multiple protein sequences for
-                        architecture search
--from <x>             : Start position of query region
--to <x>               : End position of query region
--genes <acc,acc;...>  : Accession codes of genes constituting query
-                        multigene module
--out <folder name>    : Output folder in which results will be stored
--db <db name>         : Blast database to be queried (default: genbank_mf)
--cores <x>            : Number of parallel CPUs to use for threading
-                        (default: all)
--hitspergene          : Number of Blast hits per query gene to be taken
-                        into account (default: 250).
--minseqcov <x>        : Minimal % coverage of a Blast hit on hit protein
-                        sequence to be taken into account (default: 25)
--minpercid <x>        : Minimal % identity of a Blast hit on hit protein
-                        sequence to be taken into account (default: 30)
--distancekb <x>       : Maximum kb distance between two blast hits to be
-                        counted as belonging to the same locus (default: 10)
--syntenyweight <x>    : Weight of synteny conservation in hit sorting score
-                      : (default: 0.5)
--muscle <y/n>         : generate Muscle multiple sequence alignments of
-                        all hits of each input gene  (default: n)
--outpages <x>         : Maximum number of output pages (with 50 hits each)
-                        to be generated  (default: 5)"""
-
-def default_options(opts):
-    #Implement defaults
-    opts.db = "genbank_mf"
-    opts.cores = "all"
-    opts.minseqcov = 25
-    opts.minpercid = 30
-    opts.screenwidth = 1024
-    opts.hitspergene = 250
-    opts.distancekb = 20000
-    opts.muscle = "n"
-    opts.startpos = "N/A"
-    opts.endpos = "N/A"
-    opts.ingenes = "N/A"
-    opts.pages = 5
-    opts.gui = "n"
-    opts.syntenyweight = 0.5
-
-def invalidoptions(argument):
-    print("From the command line, input multigeneblast -help for more information.")
-    if len(argument) > 0:
-        log("Invalid options input: %s" % argument, exit=True)
-
-def collect_identifiers(options):
-    #identify option identifiers
-    identifiers = []
-    for i in options:
-        if i[0] == "-":
-            if i not in identifiers:
-                identifiers.append(i)
-            else:
-                invalidoptions("No '-' in given options or option given twice.")
-    return identifiers
-
-def process_identifiers(identifiers, opts, options):
-    infile, startpos, endpos, ingenes, outfolder = "n","n","n","n","n"
-    genes_tag_used = "n"
-    fromto_tag_used = "n"
-    fastafile = "n"
-    global CURRENTDIR
-    for i in identifiers:
-        if i == "-help" or i == "--help" or i == "-h":
-            print((inputinstructions()))
-            sys.exit(1)
-        else:
-            value = options[options.index(i) + 1].strip()
-            if i == "-from":
-                fromto_tag_used = "y"
-                if genes_tag_used == "y":
-                    print("Please either the -from and -to tags, or the -genes tag to select genes.")
-                    invalidoptions(i)
-                if value.isdigit():
-                    opts.startpos = int(value)
-                    startpos = "y"
-                else:
-                    invalidoptions(i)
-            elif i == "-to":
-                fromto_tag_used = "y"
-                if genes_tag_used == "y":
-                    print("Please either the -from and -to tags, or the -genes tag to select genes.")
-                    invalidoptions(i)
-                if value.isdigit():
-                    opts.endpos = int(value)
-                    endpos = "y"
-                else:
-                    invalidoptions(i)
-            elif i == "-genes":
-                genes_tag_used = "y"
-                if fromto_tag_used == "y":
-                    print("Please either the -from and -to tags, or the -genes tag to select genes.")
-                    invalidoptions(i)
-                if "," in value:
-                    opts.ingenes = [gene for gene in value.split(",") if gene != ""]
-                    ingenes = "y"
-                else:
-                    invalidoptions(i)
-            elif i == "-in":
-                if sys.platform == ('win32') and os.sep not in value:
-                    value = CURRENTDIR + os.sep + value
-                #TODO paths cannot contain spaces
-                elif sys.platform != ('win32') and (os.sep not in value or value[0] != os.sep):
-                    value = CURRENTDIR + os.sep + value
-                root, ext = os.path.splitext(value)
-                if ext.lower() not in [".gbk",".gb",".genbank",".embl",".emb",".fasta",".fas",".fa",".fna"]:
-                    print("Please supply input file with valid GBK / EMBL extension (homology search) or FASTA extension (architecture search).")
-                    invalidoptions(i)
-                if value in os.listdir(".") or (os.sep in value and os.path.exists(value.rpartition(os.sep)[0]) and value.rpartition(os.sep)[2] in os.listdir(value.rpartition(os.sep)[0])):
-                    opts.infile = value
-                    infile = "y"
-                    if ext.lower() in [".fasta",".fas",".fa",".fna"]:
-                        fastafile = "y"
-                else:
-                    print("Specified input file not found...")
-                    invalidoptions(i)
-            elif i == "-out":
-                if not value.replace("_","").replace("_","").replace("..","").replace(os.sep,"").isalnum():
-                    print("Not a valid output folder name. Please use alpha-numerical characters only")
-                    invalidoptions(i)
-                if sys.platform == ('win32') and value.count(os.sep) == 1 and value[0] == os.sep:
-                    invalidoptions(i)
-                opts.outputfolder = value
-                if opts.outputfolder[0] == os.sep and ".." in opts.outputfolder:
-                    invalidoptions(i)
-                elif os.sep in value[0] and not os.path.exists(value.rpartition(os.sep)[0]):
-                    invalidoptions(i)
-                elif os.sep in opts.outputfolder and ".." in opts.outputfolder:
-                    startdir = CURRENTDIR
-                    while ".." in opts.outputfolder:
-                        if ".." not in opts.outputfolder.partition(os.sep)[0]:
-                            invalidoptions(i)
-                        opts.outputfolder = opts.outputfolder.partition(os.sep)[2]
-                        startdir = startdir.rpartition(os.sep)[0]
-                        if len(startdir) < 1:
-                            invalidoptions(i)
-                    if opts.outputfolder[0] == os.sep:
-                        opts.outputfolder = startdir + opts.outputfolder
-                    else:
-                        opts.outputfolder = startdir + os.sep + opts.outputfolder
-                elif os.sep not in opts.outputfolder:
-                    opts.outputfolder = CURRENTDIR + os.sep + opts.outputfolder
-                elif opts.outputfolder[0] == os.sep:
-                    opts.outputfolder = opts.outputfolder
-                elif os.sep in opts.outputfolder and os.sep not in opts.outputfolder[0]:
-                    opts.outputfolder = CURRENTDIR + os.sep + opts.outputfolder
-                else:
-                    invalidoptions(i)
-                if os.path.exists(opts.outputfolder):
-                    print("Warning: Overwriting existing folder")
-                    for xhtmlfile in [filename for filename in os.listdir(opts.outputfolder) if "xhtml" in filename]:
-                        os.remove(opts.outputfolder + os.sep + xhtmlfile)
-                    outfolder = "y"
-                else:
-                    try:
-                        os.mkdir(opts.outputfolder)
-                    except:
-                        invalidoptions(i)
-                    outfolder = "y"
-            elif i == "-db":
-                global MGBPATH
-                global DBPATH
-                value = value.partition(".pal")[0].partition(".nal")[0]
-                if sys.platform == ('win32') and os.sep not in value:
-                    value = CURRENTDIR + os.sep + value
-                elif sys.platform != ('win32') and os.sep not in value or value[0] != os.sep:
-                    value = CURRENTDIR + os.sep + value
-                if not value + ".pal" in os.listdir(MGBPATH) and not value + ".pal" in os.listdir(".") and not value + ".pal" in os.listdir(CURRENTDIR) and not (os.sep in value and os.path.exists(value.rpartition(os.sep)[0]) and value.rpartition(os.sep)[2] + ".pal" in os.listdir(value.rpartition(os.sep)[0])):
-                    if not value + ".phr" in os.listdir(MGBPATH) and not value + ".phr" in os.listdir(".") and not (os.sep in value and os.path.exists(value.rpartition(os.sep)[0]) and value.rpartition(os.sep)[2] + ".phr" in os.listdir(value.rpartition(os.sep)[0])):
-                        if not value + ".nal" in os.listdir(MGBPATH) and not value + ".nal" in os.listdir(".") and not value + ".nal" in os.listdir(CURRENTDIR) and not (os.sep in value and os.path.exists(value.rpartition(os.sep)[0]) and value.rpartition(os.sep)[2] + ".nal" in os.listdir(value.rpartition(os.sep)[0])):
-                            if not value + ".nhr" in os.listdir(MGBPATH) and not value + ".nhr" in os.listdir(".") and not (os.sep in value and os.path.exists(value.rpartition(os.sep)[0]) and value.rpartition(os.sep)[2] + ".nhr" in os.listdir(value.rpartition(os.sep)[0])):
-                                print("Error: Database not found; database should have accompanying .phr, .psq and .pin files.")
-                                invalidoptions(i)
-                opts.db = value
-                if value + ".pal" in os.listdir(MGBPATH) or value + ".nal" in os.listdir(MGBPATH):
-                    DBPATH = MGBPATH
-                elif value + ".pal" in os.listdir(CURRENTDIR) or value + ".nal" in os.listdir(CURRENTDIR):
-                    DBPATH = CURRENTDIR
-                elif value + ".pal" in os.listdir(".") or value + ".nal" in os.listdir("."):
-                    DBPATH = os.getcwd()
-                elif os.sep in value and value[0] != os.sep and os.path.exists(os.getcwd() + os.sep + value.rpartition(os.sep)[0]) and ((value.rpartition(os.sep)[2] + ".pal" in os.listdir(os.getcwd() + os.sep + value.rpartition(os.sep)[0])) or (value.rpartition(os.sep)[2] + ".nal" in os.listdir(os.getcwd() + os.sep + value.rpartition(os.sep)[0]))):
-                    DBPATH = os.getcwd() + os.sep + value.rpartition(os.sep)[0]
-                    opts.db = value.rpartition(os.sep)[2]
-                elif os.sep in value and os.path.exists(value.rpartition(os.sep)[0]) and (value.rpartition(os.sep)[2] + ".pal" in os.listdir(value.rpartition(os.sep)[0]) or value.rpartition(os.sep)[2] + ".nal" in os.listdir(value.rpartition(os.sep)[0])):
-                    DBPATH = value.rpartition(os.sep)[0]
-                    opts.db = value.rpartition(os.sep)[2]
-                else:
-                    print("Error: Database not found; database should have accompanying .phr, .psq and .pin or .nhr, .nsq and .nin files.")
-                    invalidoptions(i)
-                os.environ['BLASTDB'] = DBPATH
-                if opts.db + ".pal" in os.listdir(DBPATH):
-                    opts.dbtype = "prot"
-                elif opts.db + ".nal" in os.listdir(DBPATH):
-                    opts.dbtype = "nucl"
-            elif i == "-cores":
-                if value.isdigit() and int(value) in range(1,1000):
-                    opts.cores = int(value)
-                else:
-                    invalidoptions(i)
-            elif i == "-minseqcov":
-                if value.isdigit() and int(value) in range(0,100):
-                    opts.minseqcov = int(value)
-                else:
-                    invalidoptions(i)
-            elif i == "-minpercid":
-                if value.isdigit() and int(value) in range(0,100):
-                    opts.minpercid = int(value)
-                else:
-                    invalidoptions(i)
-            elif i == "-distancekb":
-                if value.isdigit() and int(value) in range(1,100):
-                    opts.distancekb = int(value) * 1000
-                else:
-                    print("Error: please select a number between 1-100.")
-                    invalidoptions(i)
-            elif i == "-syntenyweight":
-                if (value.isdigit() or (value.count(".") == 1 and value.partition(".")[0].isdigit() and value.partition(".")[2].isdigit())) and float(value) <= 2.0 and float(value) >= 0.0:
-                    opts.syntenyweight = float(value)
-                else:
-                    print("Error: please select a number between 0.0 and 2.0.")
-                    invalidoptions(i)
-            elif i == "-hitspergene":
-                if value.isdigit() and int(value) in range(50,10001):
-                    opts.hitspergene = int(value)
-                else:
-                    print("Error: please select a number between 50-10000.")
-                    invalidoptions(i)
-            elif i == "-muscle":
-                if value == "y" or value == "n":
-                    opts.muscle = value
-                else:
-                    invalidoptions(i)
-            elif i == "-outpages":
-                if value.isdigit() and int(value) in range(0,41):
-                    opts.pages = int(value)
-                else:
-                    print("Error: please select a number between 0-40.")
-                    invalidoptions(i)
-            else:
-                invalidoptions(i)
-    #Stop process if options are provided with a FASTA file that do not belong with it
-    if fastafile == "y" and (genes_tag_used == "y" or fromto_tag_used == "y"):
-        print("Error: -from, -to and -genes tags are incompatible with architecture search (FASTA input)")
-        sys.exit(1)
-    #Stop process if inadequate options are supplied.
-    if infile == "n" or ("n" in [startpos, endpos] and ingenes == "n" and ".fa" not in opts.infile.partition(".")[1] + opts.infile.partition(".")[2]) or outfolder == "n":
-        print("Input error. An input file, an outputfolder and a query region (for EMBL/GBK inputs) must be supplied.")
-        invalidoptions(" ".join(options))
-
-def parse_options(args, opts):
-    #Run GUI if no arguments supplied
-    if len(args) < 2:
-        args = "-h"
-    default_options(opts)
-    #Read user-specified options which may override defaults
-    if len(args) >= 2:
-        options = args
-        if "-" in options[-1] and (args[1] != "-help" and args[1] != "--help" and args[1] != "-h"):
-            invalidoptions(options[-1])
-        identifiers = collect_identifiers(options)
-        process_identifiers(identifiers, opts, options)
-    nrcpus = determine_cpu_nr(opts.cores)
-    opts.nrcpus = nrcpus
 
 def generate_architecture_data(fastafile):
     try:
