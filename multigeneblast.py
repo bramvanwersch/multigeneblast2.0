@@ -10,6 +10,7 @@
 import os
 from os import system
 import sys
+import datetime
 
 sys.path.append('.\\pysvg')
 
@@ -3438,12 +3439,27 @@ def setup_logger(outdir):
 
     #configure a handler that formats the logged events properly and prints the events to file as well as stdout
     handler = logging.StreamHandler(sys.stdout)
-    formatter = logging.Formatter('%(asctime)s - %(message)s')
+    formatter = MyFormatter('%(currentTime)s (%(passedTime)s ms) - %(message)s')
+    formatter
     handler.setFormatter(formatter)
     logging.getLogger().addHandler(handler)
+
     logging.debug('Logger created')
+
     if dir_exists:
         logging.warning("The output directory already exists. Files may be overwritten.")
+
+class MyFormatter(logging.Formatter):
+    MICRO_SECONDS_IN_DAY = 24 * 60 * 60 * 1000
+    def __init__(self, fmt):
+        logging.Formatter.__init__(self, fmt)
+        self._start_time = datetime.datetime.now()
+
+    def format(self, record):
+        difference = datetime.datetime.now() - self._start_time
+        record.passedTime = difference.microseconds / 1000
+        record.currentTime = datetime.datetime.now().time()
+        return super(MyFormatter, self).format(record)
 
 if __name__ == '__main__':
     freeze_support()
