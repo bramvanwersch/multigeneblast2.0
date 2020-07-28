@@ -471,53 +471,79 @@ def read_input_file2(user_options):
     logging.info("Starting to parse input file...")
     if user_options.architecture_mode:
         query_proteins = generate_architecture_data2(user_options.infile)
-        write_fasta(query_proteins.values(), "query.fasta")
-        return query_proteins
     elif any(user_options.infile.lower().endswith(ext) for ext in GENBANK_EXTENSIONS):
         gb_file = GenbankFile(user_options.infile)
-        return gb_file.proteins
+        query_proteins = gb_file.proteins
     else:
+        #TODO this needs a fix still
         proteins = embl2proteins(user_options.infile)
+    if len(query_proteins) == 0:
+        logging.critical("No proteins found in the provided query. Exiting...")
+        raise MultiGeneBlastException("No proteins found in the provided query")
+    write_fasta(query_proteins.values(), "query.fasta")
+    for p in query_proteins:
+        print(query_proteins[p].fasta_text())
+    return query_proteins
 
-    arch_search = "n"
-    genomic_accnr = proteins[1]
-    dnaseqlength = proteins[2]
-    nucname = proteins[3]
-    proteins = proteins[0]
-    querytags = []
-    z = 0
-    names = []
-    seqs = []
-    seqdict = {}
-    if startpos != "N/A" and endpos != "N/A":
-        for i in proteins[0]:
-            seq = proteins[1][z]
-            pstartpos = int(i.split("|")[2].split("-")[0])
-            pendpos = int(i.split("|")[2].split("-")[1])
-            if (pstartpos > startpos and pstartpos < endpos) or (pendpos > startpos and pendpos < endpos):
-                names.append(i)
-                seqs.append(seq)
-                seqdict[i] = seq
-                querytags.append(i.split("|")[4])
-            z += 1
-        if len(names) == 0:
-            log("Error: no genes found within the specified region of the input file.", exit=True)
-    elif ingenes != "N/A":
-        for i in proteins[0]:
-            seq = proteins[1][z]
-            if i.split("|")[4] in ingenes or i.split("|")[6] in ingenes or i.split("|")[6].partition(".")[0] in ingenes or i.split("|")[6].partition(".")[0] in [gene.partition(".")[0] for gene in ingenes] or i.split("|")[7] in ingenes:
-                names.append(i)
-                seqs.append(seq)
-                seqdict[i] = seq
-                querytags.append(i.split("|")[4])
-            z += 1
-        if len(names) == 0:
-            log("Error: no genes found with these names in the input file.", exit=True)
-    writefasta(names,seqs,"query.fasta")
-    return proteins, genomic_accnr, dnaseqlength, nucname, querytags, names, seqs, seqdict, arch_search
+def embl2proteins(emblfile):
+    try:
+        file = open(emblfile,"r")
+    except Exception:
+        print(("Error: no or invalid input file: " + emblfile))
+        sys.exit(1)
+    filetext = file.read()
+    filetext = filetext.replace("\r","\n")
+    if "FT   CDS " not in filetext or ("\nSQ" not in filetext):
+        log("Exit: EMBL file not properly formatted, no sequence found or no " \
+            "CDS annotation found.", exit=True)
+    cdspart = filetext.split("\nSQ  ")[0]
+    #Extract DNA sequence and calculate reverse complement of it
+    dnaseq = parse_dna_from_embl(filetext.split("\nSQ  ")[1])
+    dnaseq = cleandnaseq(dnaseq)
+    sequence = dnaseq
+    if (sequence.count('N') + sequence.count('n') + sequence.count('A') + sequence.count('a') + sequence.count('C') + sequence.count('c') + sequence.count('G') + sequence.count('g') + sequence.count('T') + sequence.count('t')) < (0.5 * len(sequence)):
+        log("Protein GBK/EMBL file provided. Please provide nucleotide " \
+            "GBK/EMBL file.", exit=True)
+    dnaseqlength = len(dnaseq)
+    rc_dnaseq = reverse_complement(dnaseq)
+    if dnaseqlength < 1:
+        log("No sequence found in GBK/EMBL file. Please provide an annotated " \
+            "nucleotide GBK/EMBL file with a DNA sequence.", exit=True)
+    #Extract genes
+    genes = cdspart.split("FT   CDS             ")
+    genes = genes[1:]
+    genesdetails = parsegenes(genes)
+    genelist = genesdetails[0]
+    genedict = genesdetails[1]
+    joinlist = genesdetails[2]
+    joindict = genesdetails[3]
+    accessiondict = genesdetails[4]
+    locustagdict = genesdetails[5]
+    #Locate all genes on DNA sequence and translate to protein sequence
+    proteins = extractprotfasta(genelist, genedict, dnaseq, rc_dnaseq, joinlist, joindict, accessiondict, locustagdict)
+    textlines = filetext.split("SQ   ")[0]
+    textlines = textlines.split("\n")
+    accession = ""
+    definition = ""
+    for i in textlines:
+        if accession == "":
+            if "AC   " in i:
+                j = i.split("AC   ")[1]
+                j = j.replace(" ","")
+                accession = j.split(";")[0]
+                if len(accession) < 4:
+                    accession = ""
+            if definition == "":
+                if "DE   " in i:
+                    j = i.split("DE   ")[1]
+                    definition = j
+    #Test if accession number is probably real GenBank/RefSeq acc nr
+    if testaccession(accession) == "n":
+        accession = ""
+    return [proteins, accession, dnaseqlength, definition]
 
 class Protein:
-    def __init__(self, sequence, start, name, strand, id = "", end = None, start_header = ""):
+    def __init__(self, sequence, start, name, strand, end = None, annotation = "", locus_tag = "", genbank_file = "", start_header = ""):
         self.sequence = sequence
         self.strand = strand
         self.aa_lenght = len(self.sequence)
@@ -530,13 +556,16 @@ class Protein:
         else:
             self.stop = self.start + self.nt_lenght
 
+        #gene name
         self.name = name
-        self.id = id
+        self.annotation = annotation
+
+        self.locus_tag = locus_tag
+        self.genbank_file = genbank_file
         self.fasta_header = self.__construct_fasta_header(start_header)
 
     def __construct_fasta_header(self, start_header):
-        #TODO finsih this with all appropriate words in the header
-        header = "{}-{}|{}|{}|{}|{}|{}".format(self.start, self.stop, self.strand, "","","","")
+        header = "{}-{}|{}|{}|{}|{}|{}".format(self.start, self.stop, self.strand, self.name, self.annotation,self.genbank_file, self.locus_tag)
         return start_header + header
 
     def fasta_text(self):
@@ -558,13 +587,13 @@ class GenbankFile:
         # Extract gene information
         gene_information = gene_defenitions.split("     CDS             ")
 
-        #exract all the entries from the genbank file
-        self.entries = self.__extract_entries(gene_information[1:])
-
         #read general information
         self.accession = ""
         self.definition = ""
         self.__extract_header(gene_information[0])
+
+        #exract all the entries from the genbank file
+        self.entries = self.__extract_entries(gene_information[1:])
         self.proteins = {entry.protein.name: entry.protein for entry in self.entries}
 
         logging.debug("Finished parsing genbank file {}.".format(file))
@@ -590,52 +619,51 @@ class GenbankFile:
         genbank_entries = []
         # ignore the firs hit which is the start of the genbnk file
         for index, gene in enumerate(entries):
-            g = GenbankEntry(gene, index + 1, self.dna_sequence, self.c_dna_sequence)
+            g = GenbankEntry(gene, index + 1, self.dna_sequence, self.c_dna_sequence, self.accession)
             genbank_entries.append(g)
         return genbank_entries
 
     def __extract_header(self, header):
-        accession = ""
-        definition = ""
         header_lines = header.split("\n")
         for index, line in enumerate(header_lines):
-            if line.lower().startswith("accession"):
+            if line.lower().startswith("version"):
                 # extract the accesion
-                accession = line.replace("ACCESSION   ","")
+                self.accession = line.replace("VERSION     ","")
             if line.lower().startswith("definition"):
-                definition += line.replace("DEFINITION  ", "").strip()
+                self.definition += line.replace("DEFINITION  ", "").strip()
                 for def_line in header_lines[index + 2:]:
                     #end of definition line
                     if not def_line.startswith("    "):
                         break
-                    definition += def_line.strip()
+                    self.definition += def_line.strip()
         # Test if accession number is probably real GenBank/RefSeq acc nr
-        if testaccession(accession) == "n":
+        if testaccession(self.accession) == "n":
             logging.debug("Probably invalid GenBank/Refseq accesion found for {}.".format(self.file))
-            accession = ""
-        if accession == "":
+            self.accession = ""
+        if self.accession == "":
             logging.debug("No valid accesion found for file {}".format(self.file))
-        if definition == "":
+        if self.definition == "":
             logging.debug("No definition found for file {}".format(self.file))
 
 
 class GenbankEntry:
-    def __init__(self, entry_string, nr, dna_seq, c_dna_seq):
+    def __init__(self, entry_string, nr, dna_seq, c_dna_seq, file_accession):
         #a list of locations
         self.location = None
 
         #relevant attributes that can be present
         self.__codon_start = 1
 
-        self.gene_name = None
+        self.locus_tag = ""
+        self.gene_name = ""
         self.protein_code = ""
         self.annotation = ""
 
         self.__disect_string(entry_string, nr)
-        self.protein = self.__create_protein(dna_seq, c_dna_seq)
+        self.protein = self.__create_protein(dna_seq, c_dna_seq, file_accession)
 
 
-    def __create_protein(self, dna_seq, c_dna_seq):
+    def __create_protein(self, dna_seq, c_dna_seq, file_accession):
         #loc is a list of start, stop and True or false for reverse complement or not
         locations, reverse_complement = self.locations
         strand = "+"
@@ -660,7 +688,8 @@ class GenbankEntry:
 
         #the first location and then the start
         start = locations[0][0]
-        return Protein(sequence, start, self.gene_name, strand)
+        return Protein(sequence, start, self.gene_name, strand, start_header="input|c1",
+                       locus_tag=self.locus_tag, annotation=self.annotation, genbank_file=file_accession)
 
     def __disect_string(self, entry_string, nr):
         #create a list of lines that are part of the coding sequences (CDS)
@@ -673,7 +702,7 @@ class GenbankEntry:
             elif line.lower().startswith("protein_id"):
                 protein_id = self.__clean_line(line)
             elif line.lower().startswith("locus_tag"):
-                locus_tag = self.__clean_line(line)
+                self.locus_tag = self.__clean_line(line)
             elif line.lower().startswith("gene"):
                 gene_name = self.__clean_line(line)
             elif line.lower().startswith("translation"):
@@ -685,7 +714,7 @@ class GenbankEntry:
                 self.annotation = self.__clean_line(line)
 
         #configure the genename with this order, locus tag, gene_name protein_id auto generated name
-        if locus_tag:
+        if self.locus_tag:
             self.gene_name = locus_tag
         elif gene_name:
             self.gene_name = gene_name
@@ -800,7 +829,7 @@ def generate_architecture_data2(fasta_file):
     query_proteins = {}
     for entry_name in fasta_entries:
         sequence = fasta_entries[entry_name]
-        entry_protein = Protein(sequence, total_lenght, entry_name, "+")
+        entry_protein = Protein(sequence, total_lenght, entry_name, "+", start_header="input|c1")
         query_proteins[entry_name] = entry_protein
 
         #TODO figure out why the +100. I assume for drawing
@@ -842,386 +871,6 @@ def fastaseqlengths(proteins):
         a += 1
     return seqlengths
 
-def parsegenes(genes):
-    genedict = {}
-    genelist = []
-    joinlist = []
-    joindict = {}
-    accessiondict = {}
-    locustagdict = {}
-    genenr = 0
-    for gene in genes:
-        gene = gene.split("     gene            ")[0]
-        join = "no"
-        genenr += 1
-        #Find gene location info for each gene
-        if "complement" in gene.split("\n")[0].lower() and gene.split("\n")[0][-1] == ")":
-            location = gene.split("\n")[0]
-        elif "complement" in gene.split("\n")[0].lower() and gene.split("\n")[0][-1] != ")":
-            location = gene.split("   /")[0]
-            while ")" not in location.replace(" ","")[-3:]:
-                locationlist = location.split("\n")
-                locationlist = locationlist[:-1]
-                location = ""
-                for gene in locationlist:
-                    location = location + "i"
-            location = location.replace("\n","")
-            location = location.replace(" ","")
-        elif "join" in gene.split("\n")[0].lower() and gene.split("\n")[0][-1] == ")":
-            location = gene.split("\n")[0]
-        elif "join" in gene.split("\n")[0].lower() and gene.split("\n")[0][-1] != ")":
-            location = gene.split("/")[0]
-            while ")" not in location.replace(" ","")[-3:]:
-                locationlist = location.split("\n")
-                locationlist = locationlist[:-1]
-                location = ""
-                for gene in locationlist:
-                    location = location + "i"
-            location = location.replace("\n","")
-            location = location.replace(" ","")
-        else:
-            location = gene.split("\n")[0]
-        #location info found in embl file, now extract start and end positions
-        if "complement" in location.lower():
-            location = location.lower()
-            location = location.split("complement(")[1][:-1]
-            if "join(" in location.lower():
-                join = "yes"
-                location = location.lower()
-                location2 = location.split("join(")[1][:-1]
-                start = location2.split(",")[0]
-                start = start.split("..")[0]
-                start = start.replace("<","")
-                end = location2.split(",")[-1]
-                if ".." in end:
-                    end = end.split("..")[1]
-                end = end.replace(">","")
-                joinedparts = location2.split(",")
-                joinedparts2 = []
-                for j in joinedparts:
-                    newjoinedpart = j.replace("<","")
-                    newjoinedpart = newjoinedpart.replace(">","")
-                    joinedparts2.append(newjoinedpart)
-            else:
-                start = location.split("..")[0]
-                start = start.replace("<","")
-                end = location.split("..")[1]
-                end = end.replace(">","")
-            strand = "-"
-        else:
-            if "join(" in location.lower():
-                join = "yes"
-                location = location.lower()
-                location2 = location.split("join(")[1][:-1]
-                start = location2.split(",")[0]
-                start = start.split("..")[0]
-                start = start.replace("<","")
-                end = location2.split(",")[-1]
-                if ".." in end:
-                    end = end.split("..")[1]
-                end = end.replace(">","")
-                joinedparts = location2.split(",")
-                joinedparts2 = []
-                for j in joinedparts:
-                    newjoinedpart = j.replace("<","")
-                    newjoinedpart = newjoinedpart.replace(">","")
-                    joinedparts2.append(newjoinedpart)
-            else:
-                start = location.split("..")[0]
-                start = start.replace("<","")
-                if ".." not in location:
-                    print(("WARNING: CDS feature with faulty coordinates skipped:\n %s" % "     CDS             " + gene))
-                    continue
-                end = location.split("..")[1]
-                end = end.replace(">","")
-            strand = "+"
-        if int(start) > int(end):
-            start2 = end
-            end2 = start
-            start = start2
-            end = end2
-        #Correct for alternative codon start positions
-        if "codon_start=" in gene.lower():
-            codonstart = gene.lower().split("codon_start=")[1][0]
-            if strand == "+":
-                start = str(int(start) +  (int(codonstart) - 1))
-            elif strand == "-":
-                end = str(int(end) - (int(codonstart) - 1))
-        #Find gene name for each gene, preferably locus_tag, than gene, than protein_ID
-        a = 0
-        b = 0
-        genename = ""
-        nrlines = len(gene.split("\n"))
-        while b == 0:
-            line = gene.split("\n")[a]
-            if "protein_id=" in line:
-                genename = (line.split("protein_id=")[1][1:-1]).replace(" ","_")
-                genename = genename.replace("\\","_")
-                genename = genename.replace("/","_")
-                genename = genename.replace('"','')
-                b += 1
-            elif "protein_id=" in line.lower():
-                genename = (line.lower().split("protein_id=")[1][1:-1]).replace(" ","_")
-                genename = genename.replace("\\","_")
-                genename = genename.replace("/","_")
-                genename = genename.replace('"','')
-                b += 1
-            elif a == (nrlines - 1):
-                genename = ""
-                b += 1
-            else:
-                a += 1
-        if len(genename) > 1:
-            accnr = genename
-        else:
-            accnr = "no_accession_number_found"
-        #Find gene name or locus tag
-        a = 0
-        b = 0
-        while b == 0:
-            line = gene.split("\n")[a]
-            locustag = ""
-            if "locus_tag=" in line:
-                locustag = (line.split("locus_tag=")[1][1:-1]).replace(" ","_")
-                locustag = locustag.replace("\\","_")
-                locustag = locustag.replace("/","_")
-                locustag = locustag.replace('"','')
-                b += 1
-            elif "locus_tag=" in line.lower():
-                locustag = (line.lower().split("locus_tag=")[1][1:-1]).replace(" ","_")
-                locustag = locustag.replace("\\","_")
-                locustag = locustag.replace("/","_")
-                locustag = locustag.replace('"','')
-                b += 1
-            elif a == (nrlines - 1):
-                if locustag == "":
-                    locustag = "none"
-                b += 1
-            else:
-                a += 1
-        a = 0
-        b = 0
-        while b == 0:
-            line = gene.split("\n")[a]
-            if "gene=" in line:
-                genename = (line.split("gene=")[1][1:-1]).replace(" ","_")
-                genename = genename.replace("\\","_")
-                genename = genename.replace("/","_")
-                genename = genename.replace('"','')
-                b += 1
-            elif "gene=" in line.lower():
-                genename = (line.lower().split("gene=")[1][1:-1]).replace(" ","_")
-                genename = genename.replace("\\","_")
-                genename = genename.replace("/","_")
-                genename = genename.replace('"','')
-                b += 1
-            elif a == (nrlines - 1):
-                if genename == "":
-                    genename = "none"
-                b += 1
-            else:
-                a += 1
-        if locustag != "none":
-            locustagdict[accnr.rpartition(".")[0]] = locustag
-        if accnr == "no_accession_number_found" and locustag != "none":
-            accnr = locustag
-            genename = locustag
-        #Find sequence for each gene
-        a = 0                                             ###Not all gbks contain protein sequences as translations, therefore sequences from gene clusters are now extracted from the database at a later stage if sequence is not in gbk
-        b = 0
-        sequence = ""
-        while b < 2:
-            line = gene.split("\n")[a]
-            if "translation=" in line:
-                sequence = line.split("translation=")[1][1:]
-                b += 1
-                a += 1
-                if line.count('"') > 1:
-                    sequence = line.split("translation=")[1][1:-1]
-                    b = 2
-            elif "translation=" in line.lower():
-                sequence = line.lower().split("translation=")[1][1:]
-                b += 1
-                a += 1
-                if line.count('"') > 1:
-                    sequence = line.lower().split("translation=")[1][1:-1]
-                    b = 2
-            elif a == (nrlines - 2) or a == (nrlines - 1):
-                sequence = ""
-                b = 2
-            elif b == 1:
-                if '"' in line:
-                    seqline = line.replace(" ","")
-                    seqline = seqline.split('"')[0]
-                    sequence = sequence + seqline
-                    b += 1
-                else:
-                    seqline = line.replace(" ","")
-                    sequence = sequence + seqline
-                a += 1
-            else:
-                a += 1
-        sequence = sequence.upper()
-        #Quality-check sequence
-        forbiddencharacters = ["'",'"','=',';',':','[',']','>','<','|','\\',"/",'*','-','_','.',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
-        for z in forbiddencharacters:
-            if z in sequence:
-                sequence = ""
-        #Find annotation for each gene
-        a = 0
-        b = 0
-        while b == 0:
-            line = gene.split("\n")[a]
-            if "product=" in line:
-                annotation = line.split("product=")[1][1:]
-                annotation = annotation.replace(" ","_")
-                if annotation[-1] == '"':
-                    annotation = annotation[:-1]
-                b += 1
-            elif "product=" in line.lower():
-                annotation = line.lower().split("product=")[1][1:]
-                annotation = annotation.replace(" ","_")
-                if annotation[-1] == '"':
-                    annotation = annotation[:-1]
-                b += 1
-            elif a == (nrlines - 1):
-                annotation = "not_annotated"
-                b += 1
-            else:
-                a += 1
-        accessiondict[genename] = accnr
-        if join == "yes":
-            joinlist.append(genename)
-            joindict[genename] = joinedparts2
-        #Remove illegal chars
-        illegal_chars  = '''!"#$%&()*+,:;=>?@[]^`'{|} '''
-        genename = "".join([char for char in genename if char not in illegal_chars])
-        if len(genename) < 2:
-            genename = "orf" + "_" + str(genenr)
-        #Save data to dictionary
-        if len(genename) > 1:
-            genedict[genename] = [start,end,strand,annotation,sequence,accnr,genename]
-        genelist.append(genename)
-    return [genelist, genedict, joinlist, joindict, accessiondict, locustagdict]
-
-def extractprotfasta(genelist,genedict,dnaseq,rc_dnaseq,joinlist,joindict,accessiondict, locustagdict):
-    names = []
-    seqs = []
-    for i in genelist:
-        genename = i
-        if genename in locustagdict:
-            locustag = locustagdict[genename]
-        elif genename.partition(".")[0] in locustagdict:
-            locustag = locustagdict[genename.partition(".")[0]]
-        elif genename.partition(".")[0] in accessiondict and accessiondict[genename].partition(".")[0] in locustagdict:
-            locustag = locustagdict[accessiondict[genename].partition(".")[0]]
-        elif genename in accessiondict and accessiondict[genename] in locustagdict:
-            locustag = locustagdict[accessiondict[genename]]
-        else:
-            locustag = "no_locus_tag"
-        #If suitable translation found in gbk, use that
-        if len(genedict[i][4]) > 5:
-            protseq = genedict[i][4]
-            i = genedict[i]
-        #If no suitable translation found in gbk, extract from DNA sequence
-        else:
-            i = genedict[i]
-            y = int(i[0])
-            z = int(i[1])
-            if i[2] == "+":
-                if genename in joinlist:
-                    geneseq = ""
-                    for j in joindict[genename]:
-                        partstart = int(j.split("..")[0])
-                        if ".." in j:
-                            partend = int(j.split("..")[1])
-                        else:
-                            partend = int(j)
-                        geneseqpart = dnaseq[(partstart - 1):partend]
-                        geneseq = geneseq + geneseqpart
-                else:
-                    geneseq = dnaseq[(y - 1):z]
-                protseq = translate(geneseq)
-            elif i[2] == "-":
-                if genename in joinlist:
-                    geneseq = ""
-                    joinlistrev = joindict[genename]
-                    joinlistrev.reverse()
-                    for j in joinlistrev:
-                        partstart = int(j.split("..")[0])
-                        if ".." in j:
-                            partend = int(j.split("..")[1])
-                        else:
-                            partend = int(j)
-                        geneseqpart = rc_dnaseq[(len(rc_dnaseq) - partend):(len(rc_dnaseq) - partstart + 1)]
-                        geneseq = geneseq + geneseqpart
-                else:
-                    geneseq = rc_dnaseq[(len(rc_dnaseq) - z):(len(rc_dnaseq) - y + 1)]
-                protseq = translate(geneseq)
-        genedict[genename] = i[:-1] + [locustag]
-        name = "input" + "|" + "c1" + "|" + i[0] + "-" + i[1] + "|" + i[2] + "|" + genename + "|" + i[3] + "|" + i[5] + "|" + locustag
-        seqs.append(protseq)
-        names.append(name)
-    proteins = [names,seqs,genelist,genedict,accessiondict]
-    return proteins
-
-def gbk2proteins(gbkfile):
-    try:
-        file = open(gbkfile,"r")
-    except:
-        print(("Error: no or invalid input file: " + gbkfile))
-        sys.exit(1)
-    filetext = file.read()
-    filetext = filetext.replace("\r","\n")
-    if "     CDS             " not in filetext or "\nORIGIN" not in filetext:
-        print("Exit: GBK file not properly formatted, no sequence found")
-        sys.exit(1)
-    cdspart = filetext.split("\nORIGIN")[0]
-    #Extract DNA sequence and calculate reverse complement of it
-    dnaseq = filetext.split("\nORIGIN")[1]
-    dnaseq = cleandnaseq(dnaseq)
-    dnaseqlength = len(dnaseq)
-    rc_dnaseq = reverse_complement(dnaseq)
-    #Extract genes
-    genes = cdspart.split("     CDS             ")
-    genes = genes[1:]
-    genesdetails = parsegenes(genes)
-    genelist = genesdetails[0]
-    genedict = genesdetails[1]
-    joinlist = genesdetails[2]
-    joindict = genesdetails[3]
-    accessiondict = genesdetails[4]
-    locustagdict = genesdetails[5]
-    #Locate all genes on DNA sequence and translate to protein sequence
-    proteins = extractprotfasta(genelist, genedict, dnaseq, rc_dnaseq, joinlist, joindict, accessiondict, locustagdict)
-    textlines = filetext.split("\n//")[0]
-    textlines = textlines.split("\n")
-    accession = ""
-    definition = ""
-    definitionfound = "n"
-    for i in textlines:
-        if accession == "":
-            if "LOCUS       " in i:
-                j = i.split("LOCUS       ")[1]
-                accession = j.split(" ")[0]
-                if len(accession) < 4:
-                    accession = ""
-        if definition == "":
-            if "DEFINITION  " in i:
-                j = i.split("DEFINITION  ")[1]
-                definition = j
-                definitionfound = "y"
-        if definitionfound == "y":
-            if "            " in i:
-                definitionfound = "n"
-                definition = definition + i.split("           ")[1]
-            else:
-                definitionfound = "n"
-    #Test if accession number is probably real GenBank/RefSeq acc nr
-    if testaccession(accession) == "n":
-        accession = ""
-    return [proteins, accession, dnaseqlength, definition]
-
 def parse_dna_from_embl(embl_string):
     "Parse DNA sequence from EMBL input"
     seq_array = []
@@ -1236,63 +885,6 @@ def parse_dna_from_embl(embl_string):
         seq_array.append(line)
 
     return "".join(seq_array)
-
-def embl2proteins(emblfile):
-    try:
-        file = open(emblfile,"r")
-    except:
-        print(("Error: no or invalid input file: " + emblfile))
-        sys.exit(1)
-    filetext = file.read()
-    filetext = filetext.replace("\r","\n")
-    if "FT   CDS " not in filetext or ("\nSQ" not in filetext):
-        log("Exit: EMBL file not properly formatted, no sequence found or no " \
-            "CDS annotation found.", exit=True)
-    cdspart = filetext.split("\nSQ  ")[0]
-    #Extract DNA sequence and calculate reverse complement of it
-    dnaseq = parse_dna_from_embl(filetext.split("\nSQ  ")[1])
-    dnaseq = cleandnaseq(dnaseq)
-    sequence = dnaseq
-    if (sequence.count('N') + sequence.count('n') + sequence.count('A') + sequence.count('a') + sequence.count('C') + sequence.count('c') + sequence.count('G') + sequence.count('g') + sequence.count('T') + sequence.count('t')) < (0.5 * len(sequence)):
-        log("Protein GBK/EMBL file provided. Please provide nucleotide " \
-            "GBK/EMBL file.", exit=True)
-    dnaseqlength = len(dnaseq)
-    rc_dnaseq = reverse_complement(dnaseq)
-    if dnaseqlength < 1:
-        log("No sequence found in GBK/EMBL file. Please provide an annotated " \
-            "nucleotide GBK/EMBL file with a DNA sequence.", exit=True)
-    #Extract genes
-    genes = cdspart.split("FT   CDS             ")
-    genes = genes[1:]
-    genesdetails = parsegenes(genes)
-    genelist = genesdetails[0]
-    genedict = genesdetails[1]
-    joinlist = genesdetails[2]
-    joindict = genesdetails[3]
-    accessiondict = genesdetails[4]
-    locustagdict = genesdetails[5]
-    #Locate all genes on DNA sequence and translate to protein sequence
-    proteins = extractprotfasta(genelist, genedict, dnaseq, rc_dnaseq, joinlist, joindict, accessiondict, locustagdict)
-    textlines = filetext.split("SQ   ")[0]
-    textlines = textlines.split("\n")
-    accession = ""
-    definition = ""
-    for i in textlines:
-        if accession == "":
-            if "AC   " in i:
-                j = i.split("AC   ")[1]
-                j = j.replace(" ","")
-                accession = j.split(";")[0]
-                if len(accession) < 4:
-                    accession = ""
-            if definition == "":
-                if "DE   " in i:
-                    j = i.split("DE   ")[1]
-                    definition = j
-    #Test if accession number is probably real GenBank/RefSeq acc nr
-    if testaccession(accession) == "n":
-        accession = ""
-    return [proteins, accession, dnaseqlength, definition]
 
 def translate(sequence):
     #TODO take a better look at this function, for now it seems fine :)
