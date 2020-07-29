@@ -3365,12 +3365,11 @@ def main():
 
     #configure a logger to track what is happening over multiple files, make sure to do this after the
     #option parsing to save the log at the appropriate place
-    setup_logger(user_options.outdir)
+    setup_logger(user_options.outdir, starttime)
     logging.info("Step 1/11: input has been parsed")
 
     #Step 2: Read GBK / EMBL file, select genes from requested region and output FASTA file
     query_proteins = read_query_file(user_options)
-
     logging.info("Step 2/11: query input file has been read and parsed")
     return
     print(("Step 2/11: Time since start: " + str((time.time() - starttime))))
@@ -3413,13 +3412,15 @@ def main():
     #Close log file
     print(("MultiGeneBlast successfully finished in " + str((time.time() - starttime)) + " seconds.\n"))
 
-def setup_logger(outdir):
+def setup_logger(outdir, starttime):
     """
     Function for setting up a logger that will write output to file as well as
     to sdout.
 
     :param outdir: output directory specified by the user. this is where the
     log file should end up.
+    :param starttime: the time the program was started. The logger is created
+    slightly later.
     """
 
     #if the directory exists simply ignore it, that can be expected
@@ -3439,7 +3440,7 @@ def setup_logger(outdir):
 
     #configure a handler that formats the logged events properly and prints the events to file as well as stdout
     handler = logging.StreamHandler(sys.stdout)
-    formatter = MyFormatter('%(currentTime)s (%(passedTime)s ms) - %(message)s')
+    formatter = MyFormatter('%(currentTime)s (%(passedTime)s sec) - %(message)s', starttime=starttime)
     formatter
     handler.setFormatter(formatter)
     logging.getLogger().addHandler(handler)
@@ -3450,14 +3451,13 @@ def setup_logger(outdir):
         logging.warning("The output directory already exists. Files may be overwritten.")
 
 class MyFormatter(logging.Formatter):
-    MICRO_SECONDS_IN_DAY = 24 * 60 * 60 * 1000
-    def __init__(self, fmt):
+    def __init__(self, fmt, starttime=time.time()):
         logging.Formatter.__init__(self, fmt)
-        self._start_time = datetime.datetime.now()
+        self._start_time = starttime
 
     def format(self, record):
-        difference = datetime.datetime.now() - self._start_time
-        record.passedTime = difference.microseconds / 1000
+        #difference = datetime.datetime.now() - self._start_time
+        record.passedTime = "{:.3f}".format(time.time() - self._start_time)
         record.currentTime = datetime.datetime.now().time()
         return super(MyFormatter, self).format(record)
 
