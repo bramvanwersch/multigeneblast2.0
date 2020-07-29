@@ -531,7 +531,7 @@ def query_proteins_from_fasta(fasta_file):
     for entry_name in fasta_entries:
         sequence = fasta_entries[entry_name]
         entry_protein = Protein(sequence, total_lenght, entry_name, "+", start_header="input|c1")
-        query_proteins[protein.fasta_header] = entry_protein
+        query_proteins[protein.name] = entry_protein
 
         #TODO figure out why the +100. I assume for drawing
         total_lenght += entry_protein.nt_lenght + 100
@@ -622,7 +622,7 @@ class Protein:
             self.stop = self.start + self.nt_lenght
 
         #gene name
-        self.name = name
+        self.name = remove_illegal_characters(name)
         self.annotation = annotation
 
         self.locus_tag = locus_tag
@@ -638,8 +638,8 @@ class Protein:
         :return: a string that is the text of the fasta header. Meaning the > is
         not included
         """
-        header = "{}-{}|{}|{}|{}|{}|{}".format(self.start, self.stop, self.strand, self.name, self.annotation,self.genbank_file, self.locus_tag)
-        return start_header + header
+        header = "{}-{}|{}|{}|{}|{}|{}".format(self.start, self.stop, self.strand, self.name, self.annotation,self.protein_id, self.locus_tag)
+        return "{}|{}".format(start_header, header)
 
     def fasta_text(self):
         """
@@ -648,7 +648,7 @@ class Protein:
 
         :return: a string that is a complete fasta entry
         """
-        text = ">{}\n{}\n".format(self.fasta_header, self.sequence)
+        text = ">{}\n{}\n".format(self.name, self.sequence)
         return text
 
 class GenbankFile:
@@ -685,9 +685,24 @@ class GenbankFile:
 
         #exract all the entries from the genbank file
         self.entries = self.__extract_entries(gene_information[1:], protein_range, allowed_proteins)
-        self.proteins = {entry.protein.fasta_header: entry.protein for entry in self.entries}
+        self.proteins = self.__get_unique_proteins()
 
         logging.debug("Finished parsing genbank file {}.".format(file))
+
+    def __get_unique_proteins(self):
+        """
+        Make sure that you retrieve a unique list of named proteins after names
+        have been cleaned for illegal characters
+
+        :return: a dictionary of protein objects
+        """
+        protein_dict = {}
+        for entry in self.entries:
+            if entry.protein.name in protein_dict:
+                logging.warning("Double fasta entry '{}' in file '{}'. Skipping...".format(entry.protein.name, self.file))
+            else:
+                protein_dict[entry.protein.name] = entry.protein
+        return protein_dict
 
     def __read_genbank_file(self, file):
         """
@@ -1042,18 +1057,6 @@ def get_sequence(fasta):
         sys.exit(1)
     return seq
 
-def fastaseqlengths(proteins):
-    names = proteins[0]
-    seqs = proteins[1]
-    seqlengths = {}
-    a = 0
-    for i in names:
-        seq = seqs[a]
-        seqlength = len(seq)
-        seqlengths[i] = seqlength
-        a += 1
-    return seqlengths
-
 def parse_dna_from_embl(embl_string):
     "Parse DNA sequence from EMBL input"
     seq_array = []
@@ -1154,6 +1157,86 @@ def testaccession(accession):
         test = "n"
     return test
 
+def internal_blast(user_options, query_proteins):
+    #Run BLAST on gene cluster proteins of each cluster on itself to find internal homologs, store groups of homologs - including singles - in a dictionary as a list of lists accordingly
+    logging.info("Finding internal homologs...")
+    internalhomologygroupsdict = {}
+    clusternumber = 1
+
+    #Make Blast db for using the sequences saved in query.fasta in the previous step
+    #TODO when running this again after a crash with a different database, a new database is
+    #not created. This is problematic because it can lead to inconsistent nameing
+    make_blast_db_command = "{}\\exec_new\\makeblastdb.exe -in query.fasta -out query.fasta -dbtype prot".format(CURRENTDIR)
+    try:
+        run_commandline_command(make_blast_db_command, max_retries=5)
+    except MultiGeneBlastException:
+        raise MultiGeneBlastException("Data base can not be created. The input query is most likely invalid.")
+
+    #Run and parse BLAST search
+    blast_search_command = "{}\\exec_new\\blastp.exe  -db query.fasta -query query.fasta -outfmt 6" \
+                           " -max_target_seqs 1000 -evalue 1e-05 -out internal_input.out" \
+                           " -num_threads {}".format(CURRENTDIR, user_options.cores)
+    try:
+        run_commandline_command(blast_search_command, max_retries=5)
+    except MultiGeneBlastException:
+        raise MultiGeneBlastException("Data base can not be created. The input query is most likely invalid.")
+
+    try:
+        with open("internal_input.out","r") as f:
+            blastoutput = f.read()
+    except Exception:
+        logging.critical("Something went wrong reading the blast output file. Exiting...")
+        raise MultiGeneBlastException("Something went wrong reading the blast output file.")
+
+    iblastinfo = blastparse(user_options, query_proteins, blastoutput)
+    iblastdict = iblastinfo[0]
+    #find and store internal homologs
+    groups = []
+    for j in names:
+        frame_update()
+        if j in iblastdict:
+            hits = iblastdict[j][0]
+            group = []
+            for k in hits:
+                if k[:2] == "h_":
+                    group.append(k[2:])
+                elif k.count("|") > 4:
+                    group.append(k.split("|")[4])
+                else:
+                    group.append(k)
+            if j.split("|")[4] not in group:
+                group.append(j.split("|")[4])
+            x = 0
+            for l in groups:
+                for m in group:
+                    if m in l:
+                        del groups[x]
+                        for n in l:
+                            if n not in group:
+                                group.append(n)
+                        break
+                x += 1
+            group.sort()
+            groups.append(group)
+        else:
+            groups.append([j.split("|")[4]])
+    internalhomologygroupsdict[clusternumber] = groups
+    return internalhomologygroupsdict, seqlengths
+
+def run_commandline_command(command, max_retries = 5):
+    new_env = os.environ.copy()
+    command_stdout = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=new_env)
+    command_stdout = command_stdout.stdout.read()
+    retries = 0
+    while "error" in str(command_stdout.lower()):
+        if max_retries >= retries:
+            logging.critical("Command {} keeps returing an error. Exiting...".format(command))
+            raise MultiGeneBlastException()
+        logging.debug("The following command {} returned the following error {}. Retrying: {}/{}".format(command, command_stdout, retries, max_retries))
+        command_stdout = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=new_env)
+        command_stdout = command_stdout.stdout.read()
+        retries += 1
+
 def sortdictkeysbyvalues(dict):
     items = [(value, key) for key, value in list(dict.items())]
     items.sort()
@@ -1176,112 +1259,75 @@ def sortdictkeysbyvaluesrevv(dict):
     items.reverse()
     return [value for value, key in items]
 
-def blastparse(blasttext, minseqcoverage, minpercidentity, seqlengths, seqdict, dbname, dbtype):
-    blastdict = {}
-    querylist = []
-    blastlines = blasttext.split("\n")[:-1]
-    #Filter for best blast hits (of one query on each subject)
+class BlastResult:
+    """
+    Simply makes it easier to see what values are used for comparissons
+    See also http://www.metagenomics.wiki/tools/blast/blastn-output-format-6
+    """
+    def __init__(self, tabs, query_protein):
+        self.line = tabs
+
+        #protein object that is the query
+        self.query_protein = query_protein
+
+        self.query = tabs[0]
+        self.subject = tabs[1]
+        self.percent_identity = float(tabs[2])
+        self.allignment_lenght = int(tabs[3])
+        #number of mismatches
+        self.mismatch = int(tabs[4])
+        #number of gap openings
+        self.gapopen = int(tabs[5])
+
+        #allignment in query
+        self.query_start = int(tabs[6])
+        self.query_stop = int(tabs[7])
+
+        #allignment in subject
+        self.subject_start = int(tabs[8])
+        self.subject_stop = int(tabs[9])
+
+        #expected value
+        self.evalue = float(tabs[10])
+        self.bit_score = float(tabs[11])
+
+        # calculated values
+        #percentage of the query that is covered by the subject
+        self.percent_coverage = self.allignment_lenght / self.query_protein.aa_lenght * 100
+
+    def __str__(self):
+        return str("\t".join(self.line))
+
+
+def blastparse(user_options, query_proteins, blast_output):
+
+    #remove the last split. It is an empty line
+    blast_lines = blast_output.split("\n")[:-1]
+
+    #Filter for unique blast comparissons
     query_subject_combinations = []
-    blastlines2 = []
-    for i in blastlines:
-        tabs = i.split("\t")
+    unique_blast_results = {}
+    for line in blast_lines:
+        tabs = line.split("\t")
         query = tabs[0]
         subject = tabs[1]
-        query_subject_combination = query + "_" + subject
-        if query_subject_combination in query_subject_combinations:
-            pass
-        else:
+        query_subject_combination = query + subject
+        if not (query_subject_combination in query_subject_combinations):
             query_subject_combinations.append(query_subject_combination)
-            blastlines2.append(i)
-    blastlines = blastlines2
-    frame_update()
-    #Filters blastlines to get rid of hits that do not meet criteria
-    blastlines2 = []
-    for i in blastlines:
-        tabs = i.split("\t")
-        query = tabs[0]
-        subject = tabs[1]
-        perc_ident = int(tabs[2].split(".")[0])
-        alignmentlength = float(tabs[3])
-        evalue = str(tabs[10])
-        blastscore = int(tabs[11].split(".")[0])
-        if query in seqlengths:
-            perc_coverage = (float(tabs[3]) / seqlengths[query]) * 100
-        else:
-            perc_coverage = 0
-            print(seqlengths)
-            print(("Error: no sequence length found for", query))
-            sys.exit()
-        if perc_ident > minpercidentity and (perc_coverage > minseqcoverage or alignmentlength > 40):
-            blastlines2.append(i)
-    blastlines = blastlines2
-    #Goes through the blastlines. For each query, creates a querydict and hitlist, and adds these to the blastdict when finding the next query
-    firstquery = "y"
-    hitnr = 1
-    for i in blastlines:
-        frame_update()
-        tabs = i.split("\t")
-        query = tabs[0]
-        if dbtype == "prot":
-            subject = tabs[1].split("|")[3].split(".")[0]
-        else:
-            subject = tabs[1] + "_" + str(hitnr)
-        internalblast = "n"
-        if subject == "+" or subject == "-":
-            internalblast = "y"
-            subject = tabs[1].split("|")[4].split(".")[0]
-        perc_ident = int(tabs[2].split(".")[0])
-        alignmentlength = float(tabs[3])
-        hit_start = str(tabs[8])
-        hit_end = str(tabs[9])
-        evalue = str(tabs[10])
-        blastscore = int(tabs[11].split(".")[0])
-        if query in seqlengths:
-            perc_coverage = (float(tabs[3]) / seqlengths[query]) * 100
-        else:
-            seqlength = len(seqdict[query.split("|")[4]])
-            perc_coverage = (float(tabs[3]) / seqlength) * 100
-        if firstquery == "y": #Only until the first blastline with good hit
-            if dbtype == "nucl" or testaccession(subject) == "y" or internalblast == "y":
-                firstquery = "n"
-                querylist.append(query)
-                subjectlist = []
-                querydict = {}
-                subjectlist.append(subject)
-                querydict[subject] = [perc_ident,blastscore,perc_coverage,evalue,hit_start,hit_end]
-                last_query = query
-        elif i == blastlines[-1]: #Only for the last blastline
-            if query not in querylist:
-                if dbtype == "nucl" or testaccession(subject) == "y" or internalblast == "y":
-                    blastdict[last_query] = [subjectlist,querydict]
-                    querylist.append(query)
-                    subjectlist = []
-                    querydict = {}
-                    subjectlist.append(subject)
-                    querydict[subject] = [perc_ident,blastscore,perc_coverage,evalue,hit_start,hit_end]
-                    blastdict[query] = [subjectlist,querydict]
-                    querylist.append(query)
+            blast_result = BlastResult(tabs, query_proteins[query])
+            unique_blast_results[blast_result.query + blast_result.subject] = blast_result
+
+    #Filters blastlines to get rid of hits that do not meet criteria and save
+    #hits that do in a dictionary that links a protein name to BlastHit objects.
+    internal_homolog_dict = {}
+    for result in unique_blast_results.values():
+        if result.percent_identity > user_options.minpercid and\
+           result.percent_coverage > user_options.minseqcov:
+            if result.query not in internal_homolog_dict:
+                internal_homolog_dict[result.query] = [unique_blast_results[result.query + result.subject]]
             else:
-                if dbtype == "nucl" or testaccession(subject) == "y" or internalblast == "y":
-                    subjectlist.append(subject)
-                    querydict[subject] = [perc_ident,blastscore,perc_coverage,evalue,hit_start,hit_end]
-                    blastdict[query] = [subjectlist,querydict]
-        else: #For all but the first and last blastlines
-            if query not in querylist:
-                if dbtype == "nucl" or testaccession(subject) == "y" or internalblast == "y" or "genbank" not in dbname:
-                    blastdict[last_query] = [subjectlist,querydict]
-                    querylist.append(query)
-                    subjectlist = []
-                    querydict = {}
-                    subjectlist.append(subject)
-                    querydict[subject] = [perc_ident,blastscore,perc_coverage,evalue,hit_start,hit_end]
-                    last_query = query
-            else:
-                if dbtype == "nucl" or testaccession(subject) == "y" or internalblast == "y" or "genbank" not in dbname:
-                    subjectlist.append(subject)
-                    querydict[subject] = [perc_ident,blastscore,perc_coverage,evalue,hit_start,hit_end]
-        hitnr += 1
-    return [blastdict,querylist]
+                internal_homolog_dict[result.query].append(unique_blast_results[result.query + result.subject])
+    return internal_homolog_dict
 
 def generate_rgbscheme(nr):
     usablenumbers = [1,2,4,8,12,18,24,32,48,64,10000]
@@ -1824,59 +1870,6 @@ def log(message, exit=False, retcode=1, stdout=False):
         if exit:
             sys.exit(retcode)
 
-def generate_architecture_data(fastafile):
-    try:
-        file = open(fastafile,"r")
-    #note that this should NOT occur, this should have been checked at the start
-    except FileNotFoundError:
-        log("Error: no or invalid input file: " + fastafile, exit=True)
-    filetext = file.read()
-    filetext = filetext.replace("\r","\n")
-    fasta_entries = [">" + entry.replace("\n\n","\n").replace("\n\n","\n") for entry in filetext.split(">")][1:]
-    querytags = []
-    seqs = []
-    seqlengths = {}
-    seqdict = {}
-    for entry in fasta_entries:
-        if "\n" not in entry or len(entry.partition("\n")[2]) < 2:
-            log("FASTA file wrongly formatted at. Please check your input file.")
-            log("Wrong entry: " + entry.replace("\n",""), exit=True)
-        fname = entry.partition("\n")[0][1:]
-        #Generate name without forbidden characters
-        forbiddencharacters = ["'",'"','=',';',':','[',']','>','<','|','\\',"/",'*','-','_','.',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
-        fname_censored = ""
-        for z in fname:
-            if z not in forbiddencharacters:
-                fname_censored = fname
-        fname = fname_censored.replace(" ","_")[:20].replace('|','_')
-        seq = entry.partition("\n")[2].replace(" ","").replace("\n","")
-        if fname in querytags:
-            log("Non-unique sequence name in input FASTA file. Please reformat and try again.", exit=True)
-        querytags.append(fname)
-        seqs.append(seq)
-        seqlengths[fname] = len(seq)
-        seqdict[fname] = seq
-    #Determine alignment distribution / lengths for display in SVG to put in names as pseudo-locations
-    names = []
-    genedict = {}
-    accessiondict = {}
-    totalnt = 0
-    for tag in querytags:
-        startsite = str(totalnt)
-        fname = "input|c1|" + startsite
-        totalnt += (seqlengths[tag] * 3)
-        endsite = str(totalnt)
-        fname = fname + "-" + endsite + "|+|" + tag + "|" + tag + "|" + tag + "|" + tag
-        seqlengths[fname] = seqlengths[tag]
-        totalnt += 100
-        names.append(fname)
-        accessiondict[tag] = tag
-        genedict[tag] = [startsite, endsite, "+", tag, seqdict[tag], tag, tag]
-    genelist = names
-    proteins = [names, seqs, genelist, geneict, accessiondict]
-    #print(names, seqs)
-    return proteins, querytags, seqdict, names, seqs
-
 def parse_absolute_paths(infile):
     #Parse absolute paths if found
     originalfilename = infile
@@ -1947,75 +1940,6 @@ def read_input_file(infile, startpos, endpos, ingenes, gui, outbox=None, frame=N
     writefasta(names,seqs,"query.fasta")
     return proteins, genomic_accnr, dnaseqlength, nucname, querytags, names, seqs, seqdict, arch_search
 
-def internal_blast(minseqcoverage, minpercidentity, names, proteins, seqdict, nrcpus):
-    #Run BLAST on gene cluster proteins of each cluster on itself to find internal homologs, store groups of homologs - including singles - in a dictionary as a list of lists accordingly
-    log("Finding internal homologs..")
-    internalhomologygroupsdict = {}
-    clusternumber = 1
-    #Make Blast db for internal search
-    makeblastdbcommand = "{}\\exec\\makeblastdb -in query.fasta -out query.fasta -dbtype prot".format(CURRENTDIR)
-    new_env = os.environ.copy()
-    makeblastdb_stdout = subprocess.Popen(makeblastdbcommand, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=new_env)
-    makeblastdb_stdout = makeblastdb_stdout.stdout.read()
-    z = 0
-    while "error" in str(makeblastdb_stdout.lower()):
-        log(makeblastdb_stdout)
-        log("Error running BLAST. Retrying...")
-        makeblastdb_stdout = subprocess.Popen(makeblastdbcommand, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=new_env)
-        makeblastdb_stdout = makeblastdb_stdout.stdout.read()
-        if z > 2:
-            log("Error generating internal Blast database, exiting. Please check your system.", exit=True)
-        z += 1
-    #Run and parse BLAST search
-    blastsearch = "{}\\exec\\blastp  -db query.fasta -query query.fasta -outfmt 6 -max_target_seqs 1000 -evalue 1e-05 -out internal_input.out -num_threads {}".format(CURRENTDIR, str(nrcpus))
-    new_env = os.environ.copy()
-    blast_stdout = subprocess.Popen(blastsearch, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=new_env)
-    blast_stdout = blast_stdout.stdout.read()
-    z = 0
-    while "error" in str(blast_stdout.lower()):
-        log(blast_stdout)
-        log("Error running BLAST. Retrying...")
-        blast_stdout = subprocess.Popen(blastsearch, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=new_env)
-        blast_stdout = blast_stdout.stdout.read()
-        if z > 2:
-            log("Error running Blast, exiting. Please check your system.", exit=True)
-        z += 1
-    blastoutput = open("internal_input.out","r").read()
-    seqlengths = fastaseqlengths(proteins)
-    iblastinfo = blastparse(blastoutput, minseqcoverage, minpercidentity, seqlengths, seqdict, "internal", "prot")
-    iblastdict = iblastinfo[0]
-    #find and store internal homologs
-    groups = []
-    for j in names:
-        frame_update()
-        if j in iblastdict:
-            hits = iblastdict[j][0]
-            group = []
-            for k in hits:
-                if k[:2] == "h_":
-                    group.append(k[2:])
-                elif k.count("|") > 4:
-                    group.append(k.split("|")[4])
-                else:
-                    group.append(k)
-            if j.split("|")[4] not in group:
-                group.append(j.split("|")[4])
-            x = 0
-            for l in groups:
-                for m in group:
-                    if m in l:
-                        del groups[x]
-                        for n in l:
-                            if n not in group:
-                                group.append(n)
-                        break
-                x += 1
-            group.sort()
-            groups.append(group)
-        else:
-            groups.append([j.split("|")[4]])
-    internalhomologygroupsdict[clusternumber] = groups
-    return internalhomologygroupsdict, seqlengths
 
 def runblast(args, dbtype):
     #return ##CAN BE UNCOMMENTED TEMPORARILY FOR FAST TESTING
@@ -3366,16 +3290,16 @@ def main():
     #configure a logger to track what is happening over multiple files, make sure to do this after the
     #option parsing to save the log at the appropriate place
     setup_logger(user_options.outdir, starttime)
-    logging.info("Step 1/11: input has been parsed")
+    logging.info("Step 1/11: Input has been parsed")
 
     #Step 2: Read GBK / EMBL file, select genes from requested region and output FASTA file
     query_proteins = read_query_file(user_options)
-    logging.info("Step 2/11: query input file has been read and parsed")
-    return
-    print(("Step 2/11: Time since start: " + str((time.time() - starttime))))
+    logging.info("Step 2/11: Query input file has been read and parsed")
     #Step 3: Run internal BLAST
-    internalhomologygroupsdict, seqlengths = internal_blast(opts.minseqcov, opts.minpercid, names, proteins, seqdict, opts.nrcpus)
+    internalhomologygroupsdict, seqlengths = internal_blast(user_options, query_proteins)
+    logging.info("Step 3/11: Finished running internal blast")
     print(("Step 3/11: Time since start: " + str((time.time() - starttime))))
+    return
     #Step 4: Run BLAST on genbank_mf database
     blastoutput = db_blast(names, seqs, opts.db, opts.nrcpus, opts.hitspergene, opts.dbtype)
     print(("Step 4/11: Time since start: " + str((time.time() - starttime))))
