@@ -104,7 +104,8 @@ else:
         TEMP = APPDATA
 #Set other environment variables
 os.environ['EXEC'] = MGBPATH + os.sep + "exec"
-os.environ['PATH'] = os.environ['EXEC'] + os.pathsep + os.environ['PATH']
+os.environ['PATH'] = APPDATA + os.pathsep + os.environ['EXEC'] + os.pathsep + os.environ['PATH']
+
 
 from pysvg.filter import *
 from pysvg.gradient import *
@@ -151,18 +152,18 @@ def remove_illegal_characters(string):
             clean_string += letter
     return clean_string
 
-def write_fasta(query_proteins, file):
+def write_fasta(protein_list, file):
     """
     Write a fasta file using a list of Protein objects to the Temp directory of
     the operating system
 
-    :param query_proteins: a list of Protein objects
+    :param protein_list: a list of Protein objects
     :param file: the output file
     """
     #the working directory is set to a temporary directory
     try:
        with open(file,"w") as out_file:
-            for prot in query_proteins:
+            for prot in protein_list:
                 out_file.write(prot.fasta_text())
     except Exception:
         logging.critical("No fasta file created for sequences with file name {}".format(file))
@@ -227,9 +228,9 @@ class Options:
         #the output directory
         self.outdir = arguments.o
         #the database to use
-        self.db = arguments.db
         #TODO make sure this gets configured based on the database input
         self.db_mode = "local"
+        self.dbtype, self.db = self.__configure_db_and_type(arguments.db)
 
         self.architecture_mode = self.__check_architecture_mode()
         #values that define the query
@@ -261,6 +262,18 @@ class Options:
         if any(self.infile.lower().endswith(ext) for ext in FASTA_EXTENSIONS):
             return True
         return False
+
+    def __configure_db_and_type(self, database_path):
+        to_path, db_file = os.path.split(database_path)
+        #very important to configure. Otherwise BLAST+ cannot find database files
+        os.environ['BLASTDB'] = to_path
+
+        # make sure the databae file is of the correct file type
+        dbname, ext = db_file.split(".")
+        if ext == "pal":
+            return "prot", dbname
+        elif ext == "nal":
+            return "nucl", dbname
 
 def get_arguments():
     """
@@ -1174,7 +1187,7 @@ def internal_blast(user_options, query_proteins):
     #Make Blast db for using the sequences saved in query.fasta in the previous step
     #TODO when running this again after a crash with a different database, a new database
     #TODO continue: not created. This is problematic because it can lead to inconsistent nameing
-    make_blast_db_command = "{}\\exec_new\\makeblastdb.exe -in query.fasta -out query.fasta -dbtype prot".format(CURRENTDIR)
+    make_blast_db_command = "{}\\exec_new\\makeblastdb.exe -in query.fasta -out query_db -dbtype prot".format(CURRENTDIR)
     logging.debug("Started making blast database...")
     try:
         run_commandline_command(make_blast_db_command, max_retries=5)
@@ -1183,7 +1196,7 @@ def internal_blast(user_options, query_proteins):
     logging.debug("Finished making blast database.")
 
     #Run and parse BLAST search
-    blast_search_command = "{}\\exec_new\\blastp.exe  -db query.fasta -query query.fasta -outfmt 6" \
+    blast_search_command = "{}\\exec_new\\blastp.exe  -db query_db -query query.fasta -outfmt 6" \
                            " -max_target_seqs 1000 -evalue 1e-05 -out internal_input.out" \
                            " -num_threads {}".format(CURRENTDIR, user_options.cores)
 
@@ -1191,7 +1204,7 @@ def internal_blast(user_options, query_proteins):
     try:
         run_commandline_command(blast_search_command, max_retries=5)
     except MultiGeneBlastException:
-        raise MultiGeneBlastException("Data base can not be created. The input query is most likely invalid.")
+        raise MultiGeneBlastException("Running blast when finding internal homologs returns multiple errors.")
     logging.debug("Finished running blastp.")
 
     try:
@@ -1227,7 +1240,7 @@ def internal_blast(user_options, query_proteins):
     internal_homolog_lists = [list(group) for group in groups]
     return internal_homolog_lists
 
-def run_commandline_command(command, max_retries = 5):
+def run_commandline_command(command, max_retries = 5, go = False):
     """
     Run a command line command that can be repeadet when a error is returned.
     This function is meant to run the BLAST+ command line tools
@@ -1244,10 +1257,10 @@ def run_commandline_command(command, max_retries = 5):
     command_stdout = command_stdout.stdout.read()
     retries = 0
     while "error" in str(command_stdout.lower()):
-        if max_retries >= retries:
+        logging.debug("The following command {} returned the following error {}. Retrying: {}/{}".format(command, command_stdout, retries, max_retries))
+        if max_retries <= retries:
             logging.critical("Command {} keeps returing an error. Exiting...".format(command))
             raise MultiGeneBlastException()
-        logging.debug("The following command {} returned the following error {}. Retrying: {}/{}".format(command, command_stdout, retries, max_retries))
         command_stdout = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=new_env)
         command_stdout = command_stdout.stdout.read()
         retries += 1
@@ -1361,6 +1374,42 @@ def blast_parse(user_options, query_proteins, blast_output):
                 internal_homolog_dict[result.query].append(unique_blast_results[result.query + result.subject])
     logging.debug("Finished parsing blast output.")
     return internal_homolog_dict
+
+def db_blast(query_proteins, user_options):
+    """
+    Run blast agianst the user defined database
+
+    :param query_proteins: a dictionary of Protein objects
+    :param user_options: an Option object with user options
+    :return: the blast output
+    """
+    logging.info("Running NCBI BLAST+ searches on the provided database {}..".format(user_options.db))
+    if user_options.dbtype == "prot":
+        command_start = "{}\\exec_new\\blastp.exe".format(CURRENTDIR)
+    else:
+        command_start = "{}\\exec_new\\tblastn.exe".format(CURRENTDIR)
+    complete_command = "{} -db {} -query {}\\query.fasta -outfmt 6 -max_target_seqs" \
+                       " {} -evalue 1e-05 -out {}\\input.out -num_threads {}"\
+        .format(command_start, user_options.db, os.getcwd(), user_options.hitspergene,
+                CURRENTDIR, user_options.cores)
+
+    logging.debug("Started blasting against the provided database...")
+    db_blast_process = Process(target=run_commandline_command, args=[complete_command, 5, True])
+    try:
+        db_blast_process.start()
+        while db_blast_process.is_alive():
+            continue
+    except MultiGeneBlastException:
+        raise MultiGeneBlastException("Blasting against the provided database returns multiple errors.")
+    logging.debug("Finished blasting")
+
+    try:
+        with open("input.out","r") as f:
+            blastoutput = f.read()
+    except:
+        logging.critical("Cannot open the file that contains the database blast output. Exiting...")
+        raise MultiGeneBlastException("Cannot open the file that contains the database blast output.")
+    return blastoutput
 
 def generate_rgbscheme(nr):
     usablenumbers = [1,2,4,8,12,18,24,32,48,64,10000]
@@ -1885,24 +1934,6 @@ def clusterblastresults(queryclusternumber,hitclusternumbers,queryclusterdata,co
             a += 1
     return [s,[qdata,hdata,strandsbalancedict,savedpositions]]
 
-def log(message, exit=False, retcode=1, stdout=False):
-    if GUI == "y":
-        OUTBOX.text_insert(message + "\n")
-        FRAME.update()
-        if exit:
-            sys.exit(retcode)
-    else:
-        "Log to stderr and logfile and optionally exit"
-        if stdout:
-            print(message)
-        else:
-            print(message, file=sys.stderr)
-        logfile = open('multigeneblast.log', 'a', 1)
-        logfile.write(message + '\n')
-        logfile.close()
-        if exit:
-            sys.exit(retcode)
-
 def parse_absolute_paths(infile):
     #Parse absolute paths if found
     originalfilename = infile
@@ -1913,65 +1944,6 @@ def parse_absolute_paths(infile):
         #if os.getcwd() != originalfilename[:lastpos] and os.getcwd() != originalfilename[:lastpos].replace("/","\\"):
         #  shutil.copyfile(originalfilename, infile)
     return infile
-
-def read_input_file(infile, startpos, endpos, ingenes, gui, outbox=None, frame=None):
-    global GUI
-    GUI = gui
-    global OUTBOX
-    OUTBOX = outbox
-    global FRAME
-    FRAME = frame
-    log("Reading and parsing input GenBank file...")
-    #infile = parse_absolute_paths(infile)
-    ext = infile.rpartition(".")[2]
-    if ext.lower() in ["gbk","gb","genbank"]:
-        proteins = gbk2proteins(infile)
-    elif ext.lower() in ["embl","emb"]:
-        proteins = embl2proteins(infile)
-    elif ext.lower() in ["fasta","fas","fa","fna"]:
-        nucname = "Architecture Search FASTA input"
-        genomic_accnr = ""
-        dnaseqlength = 0
-        proteins, querytags, seqdict, names, seqs = generate_architecture_data(infile)
-        writefasta(names,seqs,"query.fasta")
-        arch_search = "y"
-        return proteins, genomic_accnr, dnaseqlength, nucname, querytags, names, seqs, seqdict, arch_search
-    arch_search = "n"
-    genomic_accnr = proteins[1]
-    dnaseqlength = proteins[2]
-    nucname = proteins[3]
-    proteins = proteins[0]
-    querytags = []
-    z = 0
-    names = []
-    seqs = []
-    seqdict = {}
-    if startpos != "N/A" and endpos != "N/A":
-        for i in proteins[0]:
-            seq = proteins[1][z]
-            pstartpos = int(i.split("|")[2].split("-")[0])
-            pendpos = int(i.split("|")[2].split("-")[1])
-            if (pstartpos > startpos and pstartpos < endpos) or (pendpos > startpos and pendpos < endpos):
-                names.append(i)
-                seqs.append(seq)
-                seqdict[i] = seq
-                querytags.append(i.split("|")[4])
-            z += 1
-        if len(names) == 0:
-            log("Error: no genes found within the specified region of the input file.", exit=True)
-    elif ingenes != "N/A":
-        for i in proteins[0]:
-            seq = proteins[1][z]
-            if i.split("|")[4] in ingenes or i.split("|")[6] in ingenes or i.split("|")[6].partition(".")[0] in ingenes or i.split("|")[6].partition(".")[0] in [gene.partition(".")[0] for gene in ingenes] or i.split("|")[7] in ingenes:
-                names.append(i)
-                seqs.append(seq)
-                seqdict[i] = seq
-                querytags.append(i.split("|")[4])
-            z += 1
-        if len(names) == 0:
-            log("Error: no genes found with these names in the input file.", exit=True)
-    writefasta(names,seqs,"query.fasta")
-    return proteins, genomic_accnr, dnaseqlength, nucname, querytags, names, seqs, seqdict, arch_search
 
 
 def runblast(args, dbtype):
@@ -1993,44 +1965,7 @@ def runblast(args, dbtype):
             sys.exit(1)
         z += 1
 
-def db_blast(names, seqs, db, nrcpus, hitspergene, dbtype="prot"):
-    ##Run BLAST on genbank_mf database
-    log("Running NCBI BLAST+ searches on GenBank database..")
-    queryclusternames = names
-    queryclusterseqs = seqs
-    writefasta(queryclusternames,queryclusterseqs,"input.fasta")
-    #blastsearch = "blastp  -db " + db + " -query input.fasta -outfmt 6 -max_target_seqs 1000 -num_descriptions 1000 -num_alignments 500 -evalue 1e-05 -out input.out -num_threads " + str(nrcpus)
-    #blast_stdout = os.popen4(blastsearch)  ##CAN BE COMMENTED OUT TEMPORARILY FOR FAST TESTING
-    #blast_stdout = blast_stdout[1].read()
-    #z = 0
-    #while "error" in blast_stdout.lower():
-    #  log(blast_stdout)
-    #  log("Error running BLAST. Retrying...")
-    #  blast_stdout = os.popen4(blastsearch)  ##CAN BE COMMENTED OUT TEMPORARILY FOR FAST TESTING
-    #  blast_stdout = blast_stdout[1].read()
-    #  if z > 2:
-    #    log("Error running Blast, exiting. Please check your system.", exit=True)
-    #  z += 1
-    args = "-db " + db + " -query input.fasta -outfmt 6 -max_target_seqs " + str(hitspergene) + " -evalue 1e-05 -out input.out -num_threads " + str(nrcpus)
-    mgbprocess = Process(target=runblast, args=[args, dbtype])
-    mgbprocess.start()
-    while True:
-        processrunning = "n"
-        if mgbprocess.is_alive():
-            processrunning = "y"
-        if processrunning == "y" and GUI == "y":
-            FRAME.update()
-        elif processrunning == "y":
-            pass
-        else:
-            break
-    try:
-        blastoutputfile = open("input.out","r")
-    except:
-        log("Error while execution NCBI Blast: no output file generated", exit=True)
-    blastoutput = blastoutputfile.read()
-    blastoutputfile.close()
-    return blastoutput
+
 
 def parse_blast(blastoutput, minseqcoverage, minpercidentity, seqlengths, seqdict, dbname, dbtype):
     #Read BLAST output and parse
@@ -3331,9 +3266,10 @@ def main():
     #Step 3: Run internal BLAST
     internal_homolg_lists = internal_blast(user_options, query_proteins)
     logging.info("Step 3/11: Finished running internal blast")
-    return
     #Step 4: Run BLAST on genbank_mf database
-    blastoutput = db_blast(names, seqs, opts.db, opts.nrcpus, opts.hitspergene, opts.dbtype)
+    blastoutput = db_blast(query_proteins, user_options)
+    logging.info("Step 4/11: Finished running blast on the specified database.")
+    return
     print(("Step 4/11: Time since start: " + str((time.time() - starttime))))
     #Step 5: Parse BLAST output
     blastdict, querylist = parse_blast(blastoutput, opts.minseqcov, opts.minpercid, seqlengths, seqdict, opts.db, opts.dbtype)
