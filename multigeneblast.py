@@ -1158,28 +1158,41 @@ def testaccession(accession):
     return test
 
 def internal_blast(user_options, query_proteins):
-    #Run BLAST on gene cluster proteins of each cluster on itself to find internal homologs, store groups of homologs - including singles - in a dictionary as a list of lists accordingly
+    """
+    Run an internal blast of the query against itself.
+
+    :param user_options: an Option object containing user specified options
+    :param query_proteins: a dictionary of Protein objects saved by gene_name
+    :return: a dictionary of blast results grouped around results that have
+    returned blast hits against one another that are at least of a certain
+    coverage and identity as defined by the user.
+    """
     logging.info("Finding internal homologs...")
     internalhomologygroupsdict = {}
     clusternumber = 1
 
     #Make Blast db for using the sequences saved in query.fasta in the previous step
-    #TODO when running this again after a crash with a different database, a new database is
-    #not created. This is problematic because it can lead to inconsistent nameing
+    #TODO when running this again after a crash with a different database, a new database
+    #TODO continue: not created. This is problematic because it can lead to inconsistent nameing
     make_blast_db_command = "{}\\exec_new\\makeblastdb.exe -in query.fasta -out query.fasta -dbtype prot".format(CURRENTDIR)
+    logging.debug("Started making blast database...")
     try:
         run_commandline_command(make_blast_db_command, max_retries=5)
     except MultiGeneBlastException:
         raise MultiGeneBlastException("Data base can not be created. The input query is most likely invalid.")
+    logging.debug("Finished making blast database.")
 
     #Run and parse BLAST search
     blast_search_command = "{}\\exec_new\\blastp.exe  -db query.fasta -query query.fasta -outfmt 6" \
                            " -max_target_seqs 1000 -evalue 1e-05 -out internal_input.out" \
                            " -num_threads {}".format(CURRENTDIR, user_options.cores)
+
+    logging.debug("Running blastp...")
     try:
         run_commandline_command(blast_search_command, max_retries=5)
     except MultiGeneBlastException:
         raise MultiGeneBlastException("Data base can not be created. The input query is most likely invalid.")
+    logging.debug("Finished running blastp.")
 
     try:
         with open("internal_input.out","r") as f:
@@ -1188,42 +1201,44 @@ def internal_blast(user_options, query_proteins):
         logging.critical("Something went wrong reading the blast output file. Exiting...")
         raise MultiGeneBlastException("Something went wrong reading the blast output file.")
 
-    iblastinfo = blastparse(user_options, query_proteins, blastoutput)
-    iblastdict = iblastinfo[0]
-    #find and store internal homologs
+    #extract blast hits into a dictionary
+    blast_dict = blast_parse(user_options, query_proteins, blastoutput)
     groups = []
-    for j in names:
-        frame_update()
-        if j in iblastdict:
-            hits = iblastdict[j][0]
-            group = []
-            for k in hits:
-                if k[:2] == "h_":
-                    group.append(k[2:])
-                elif k.count("|") > 4:
-                    group.append(k.split("|")[4])
-                else:
-                    group.append(k)
-            if j.split("|")[4] not in group:
-                group.append(j.split("|")[4])
-            x = 0
-            for l in groups:
-                for m in group:
-                    if m in l:
-                        del groups[x]
-                        for n in l:
-                            if n not in group:
-                                group.append(n)
-                        break
-                x += 1
-            group.sort()
+    for key in blast_dict:
+        #create a set to automatically filter for duplicates
+        group = {key}
+        for blast_result in blast_dict[key]:
+            group.add(blast_result.subject)
+
+        #make sure that a no member of the new group is present in any of the
+        #current groups. If that is the case add to current groups, else make
+        #new group
+        added = False
+        for present_group in groups:
+            for value in present_group:
+                if value in group:
+                    present_group.update(group)
+                    added = True
+                    break
+        if not added:
             groups.append(group)
-        else:
-            groups.append([j.split("|")[4]])
-    internalhomologygroupsdict[clusternumber] = groups
-    return internalhomologygroupsdict, seqlengths
+
+    #make the sets into lists
+    internal_homolog_lists = [list(group) for group in groups]
+    return internal_homolog_lists
 
 def run_commandline_command(command, max_retries = 5):
+    """
+    Run a command line command that can be repeadet when a error is returned.
+    This function is meant to run the BLAST+ command line tools
+
+    :param command: a string that can be deployed on the command line as a
+    command
+    :param max_retries: The maximum amount of times the program should retry the
+    command when an error is returned
+    :raises MultiGeneBlastError: when the command returned max_retries amount of
+    errors
+    """
     new_env = os.environ.copy()
     command_stdout = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=new_env)
     command_stdout = command_stdout.stdout.read()
@@ -1237,6 +1252,7 @@ def run_commandline_command(command, max_retries = 5):
         command_stdout = command_stdout.stdout.read()
         retries += 1
 
+#TODO see where these are used
 def sortdictkeysbyvalues(dict):
     items = [(value, key) for key, value in list(dict.items())]
     items.sort()
@@ -1265,6 +1281,11 @@ class BlastResult:
     See also http://www.metagenomics.wiki/tools/blast/blastn-output-format-6
     """
     def __init__(self, tabs, query_protein):
+        """
+        :param tabs: is a list values in a line of blast output split on \t
+        :param query_protein: a Protein object that corresponds to the query
+        protein that was put in.
+        """
         self.line = tabs
 
         #protein object that is the query
@@ -1299,8 +1320,19 @@ class BlastResult:
         return str("\t".join(self.line))
 
 
-def blastparse(user_options, query_proteins, blast_output):
+def blast_parse(user_options, query_proteins, blast_output):
+    """
+    Parse the output of a blast search using BlastResult objects.
 
+    :param user_options: a Option object containing the options supplied by the user
+    :param query_proteins: a dictionary that links gene_names against Protein objects
+    :param blast_output: the output produced by NCBI BLAST+ blastp algorithm version
+    2.2.18
+    :return: a dictionary that contains a key for every query that had a siginificant
+    blast result with the values being BlastResult objects that have the key as
+    query and are above user defined treshholds.
+    """
+    logging.debug("Started parsing blast output...")
     #remove the last split. It is an empty line
     blast_lines = blast_output.split("\n")[:-1]
 
@@ -1327,6 +1359,7 @@ def blastparse(user_options, query_proteins, blast_output):
                 internal_homolog_dict[result.query] = [unique_blast_results[result.query + result.subject]]
             else:
                 internal_homolog_dict[result.query].append(unique_blast_results[result.query + result.subject])
+    logging.debug("Finished parsing blast output.")
     return internal_homolog_dict
 
 def generate_rgbscheme(nr):
@@ -2002,7 +2035,7 @@ def db_blast(names, seqs, db, nrcpus, hitspergene, dbtype="prot"):
 def parse_blast(blastoutput, minseqcoverage, minpercidentity, seqlengths, seqdict, dbname, dbtype):
     #Read BLAST output and parse
     log("Blast search finished. Parsing results...")
-    blastinfo = blastparse(blastoutput, minseqcoverage, minpercidentity, seqlengths, seqdict, dbname, dbtype)
+    blastinfo = blast_parse(blastoutput, minseqcoverage, minpercidentity, seqlengths, seqdict, dbname, dbtype)
     blastdict = blastinfo[0]
     if len(list(blastdict.keys())) == 0:
         log("No BLAST hits found above significance tresholds. Exiting MultiGeneBlast...", exit=True)
@@ -3296,9 +3329,8 @@ def main():
     query_proteins = read_query_file(user_options)
     logging.info("Step 2/11: Query input file has been read and parsed")
     #Step 3: Run internal BLAST
-    internalhomologygroupsdict, seqlengths = internal_blast(user_options, query_proteins)
+    internal_homolg_lists = internal_blast(user_options, query_proteins)
     logging.info("Step 3/11: Finished running internal blast")
-    print(("Step 3/11: Time since start: " + str((time.time() - starttime))))
     return
     #Step 4: Run BLAST on genbank_mf database
     blastoutput = db_blast(names, seqs, opts.db, opts.nrcpus, opts.hitspergene, opts.dbtype)
