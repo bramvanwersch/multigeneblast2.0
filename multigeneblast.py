@@ -1413,10 +1413,25 @@ def db_blast(query_proteins, user_options):
     return blastoutput
 
 def parse_db_blast(user_options, query_proteins, blast_output):
+    """
+    Wrapper function for blast_parse where an exit can be catched if no blast
+    results are returned
+
+    :param user_options: a Option object containing the options supplied by the user
+    :param query_proteins: a dictionary that links gene_names against Protein objects
+    :param blast_output: the output produced by NCBI BLAST+ blastp algorithm version
+    2.2.18
+    :return: a dictionary that contains a key for every query that had a siginificant
+    blast result with the values being BlastResult objects that have the key as
+    query and are above user defined treshholds.
+    """
     blast_dict = blast_parse(user_options, query_proteins, blast_output)
     if len(blast_dict) == 0:
         logging.info("No blast hits encountered against the provided database."
-                     " Extiting...")
+                     " Maybe try and lower min_percentage_identity ({}) or "
+                     "minimum_sequence_coverage ({})"
+                     " Extiting...".format(user_options.minpercid,
+                                           user_options.minseqcov))
         sys.exit(0)
     return blast_dict
 
