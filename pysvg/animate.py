@@ -166,14 +166,14 @@ class animate(BaseShape, CoreAttrib, ConditionalAttrib, ExternalAttrib, Animatio
         BaseElement.__init__(self, 'animate')
         self.setKWARGS(**kwargs)
         
-class set(BaseShape, CoreAttrib, ConditionalAttrib, ExternalAttrib, AnimationEventsAttrib, AnimationAttrib, AnimationAttributeAttrib, AnimationTimingAttrib):
+class Set(BaseShape, CoreAttrib, ConditionalAttrib, ExternalAttrib, AnimationEventsAttrib, AnimationAttrib, AnimationAttributeAttrib, AnimationTimingAttrib):
     """
     Class representing the set element of an svg doc.
     """
     def __init__(self, **kwargs):
         BaseElement.__init__(self, 'set')
         self.setKWARGS(**kwargs)
-        
+
     def set_to(self, toField):
         self._attributes['to'] = toField
     def get_to(self):
