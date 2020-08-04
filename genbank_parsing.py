@@ -1,6 +1,6 @@
 import logging
 from string import ascii_letters
-ILLEGAL_CHARACTERS = ["'",'"','=',';',':','[',']','>','<','|','\\',"/",'*','-','_','.',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
+ILLEGAL_CHARACTERS = ["'",'"','=',';',':','[',']','>','<','|','\\',"/",'*','-','.',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
 
 
 class Protein:
@@ -8,6 +8,7 @@ class Protein:
     A representation of a protein, containing some optional fields that can or
     cannot be specified.
     """
+    HEADER_SEPARATOR = "^"
     def __init__(self, sequence, start, name, strand, end = None, annotation = "",
                  locus_tag = "", genbank_file = "", protein_id = "", start_header = ""):
         """
@@ -55,8 +56,10 @@ class Protein:
         :return: a string that is the text of the fasta header. Meaning the > is
         not included
         """
-        header = "{}-{}|{}|{}|{}|{}|{}".format(self.start, self.stop, self.strand, self.name, self.annotation,self.protein_id, self.locus_tag)
-        return "{}|{}".format(start_header, header)
+        header = "{}-{}{sep}{}{sep}{}{sep}{}{sep}{}{sep}{}".format(self.start, self.stop, self.strand, self.name, self.annotation,self.protein_id, self.locus_tag,sep = self.HEADER_SEPARATOR)
+        if start_header == '':
+            return "{}{sep}{}".format(self.genbank_file, sep = self.HEADER_SEPARATOR)
+        return "{}{sep}{}".format(start_header, header, sep = self.HEADER_SEPARATOR)
 
     def fasta_text(self):
         """
@@ -91,6 +94,12 @@ class GenbankFile:
 
         logging.debug("Finished parsing genbank file {}.".format(file))
 
+    def fasta_text(self):
+        text = ""
+        for protein in self.proteins.values():
+            text += protein.fasta_text()
+        return text
+
     def __list_proteins(self):
         protein_dict = {}
         for contig in self.contigs:
@@ -103,8 +112,6 @@ class GenbankFile:
                 else:
                     protein_dict[prot.name] = prot
         return protein_dict
-
-
 
     def __read_genbank_file(self, file):
         """

@@ -10,9 +10,27 @@ import http.client
 from http.client import BadStatusLine,HTTPException
 import time
 
+# def reverse_complement(sequence, frame=None, outbox=None, GUI="n"):
+#     complement = string.maketrans('atcgn', 'tagcn')
+#     return sequence.lower().translate(complement)[::-1]
+
+
 def reverse_complement(sequence, frame=None, outbox=None, GUI="n"):
-    complement = string.maketrans('atcgn', 'tagcn')
-    return sequence.lower().translate(complement)[::-1]
+  """
+  Create the complement strand of a sequence. Use replacing for speed
+
+  :param seq: a DNA sequence as a string
+  :return: the complement of that string
+  """
+  complement = sequence
+  complement = complement.replace("a", "x").replace("A", "X")
+  complement = complement.replace("t", "a").replace("T", "A")
+  complement = complement.replace("x", "t").replace("X", "T")
+
+  complement = complement.replace("c", "x").replace("C", "X")
+  complement = complement.replace("g", "c").replace("G", "C")
+  complement = complement.replace("x", "g").replace("X", "G")
+  return sequence.lower().translate(complement)[::-1]
 
 def parsegenes(genes, filetype="genbank_derived", frame=None, outbox=None, GUI="n", nr=0):
   genedict = {}
@@ -460,6 +478,7 @@ def writefasta(names,seqs,out_file):
   f = len(names) - 1
   try:
     while e <= f:
+
       out_file.write(">")
       out_file.write(names[e])
       out_file.write("\n")
@@ -765,6 +784,9 @@ def parse_gbk_embl(args, dbname, frame=None, outbox=None, GUI="n"):
       entrynr += 1
   if GUI == "y":
     frame.update()
+
+    #TODO this needs a change for sure
+  allnames = [name.split("|")[3] for name in allnames]
   writefasta(allnames,allseqs,outputfile)
   if len(allnames) == 0:
     if GUI == "y":
@@ -883,6 +905,8 @@ def nucparse_gbk_embl_fasta(args, dbname, frame=None, outbox=None, GUI="n"):
     frame.update()
   writefasta(allnames,allseqs,outputfile)
   outputfile.close()
+  with open(dbname + "_dbbuild.fasta","r") as f:
+    print(f.read())
   return descriptions
 
 def get_sequence(entry, allnames, seqfile, entrynr, entrytype, dbname):

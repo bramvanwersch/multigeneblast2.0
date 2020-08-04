@@ -44,7 +44,7 @@ def generate_genecords_tar(dbname, frame=None, outbox=None, GUI="n"):
       frame.update()
     if len(i) > 0:
       i = i.replace(">","").replace("\n","")
-      tabs = i.split("|")
+      tabs = i.split("^")
       protein = tabs[3]
       genome = tabs[0]
       tag = genome[:5].upper()
@@ -91,18 +91,18 @@ def generate_genecords_tar(dbname, frame=None, outbox=None, GUI="n"):
   #sortedgenecordskeylist = sortdictkeysbyvalues(genecordslistdict)
 
   #Archive directory as TAR file and remove original directory
-  try:
-    if GUI == "y":
-      frame.update()
-    tar = tarfile.open(dbname + ".cords.tar", "w")
-    tar.add("genecords")
-    tar.close()
-  except:
-    print("Could not create TAR file from genecords folder. Please create archive manually.")
-    log("Could not create TAR file from genecords folder. Please create archive manually.", exit=True)
-  if GUI == "y":
-    frame.update()
-  try:
-    shutil.rmtree("genecords")
-  except:
-    pass
+  # try:
+  #   if GUI == "y":
+  #     frame.update()
+  #   tar = tarfile.open(dbname + ".cords.tar", "w")
+  #   tar.add("genecords")
+  #   tar.close()
+  # except:
+  #   print("Could not create TAR file from genecords folder. Please create archive manually.")
+  #   log("Could not create TAR file from genecords folder. Please create archive manually.", exit=True)
+  # if GUI == "y":
+  #   frame.update()
+  # try:
+  #   shutil.rmtree("genecords")
+  # except:
+  #   pass

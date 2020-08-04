@@ -18,6 +18,8 @@ def generate_proteininfo_tar(dbname, frame=None, outbox=None, GUI="n"):
   #Create proteininfo directory if nonexistent
   try:
     os.mkdir("proteininfo")
+    print(os.getcwd())
+    print("trigger?")
   except:
     pass
 
@@ -31,7 +33,7 @@ def generate_proteininfo_tar(dbname, frame=None, outbox=None, GUI="n"):
     if len(i) > 0:
       if z < 10000:
         i = i.replace(">","").replace("\n","")
-        tabs = i.split("|")
+        tabs = i.split("^")
         protein = tabs[3]
         genome = tabs[0]
         illegal_chars  = '''!"#$%&()*+,:;=>?@[]^`'{|} '''
@@ -102,10 +104,13 @@ def generate_proteininfo_tar(dbname, frame=None, outbox=None, GUI="n"):
     except(IOError):
       outfile = open("proteininfo" + os.sep + j + ".pickle","wb")
       pickle.dump(proteininfodict[j],outfile)
+
       outfile.close()
       del proteininfodict[j]
 
   #Archive directory as TAR file and remove original directory
+  # with open("proteininfo" + os.sep + j + ".pickle", "r") as f:
+  #   print(f.read())
   if GUI == "y":
     frame.update()
   try:

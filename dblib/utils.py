@@ -102,7 +102,7 @@ def makeblastdb(dbname, infile, dbtype):
   makeblastdbcommand = "makeblastdb -dbtype " + dbtype + " -out " + dbname + " -in " + infile
   output = subprocess.Popen(makeblastdbcommand, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=new_env)
   output = output.stdout.read()
-  if "Error" in output:
+  if "Error" in str(output):
     if "it is empty" in output:
       print("Error making BLAST database; no suitable sequences found in input.")
       log("Error making BLAST database; no suitable sequences found in input.", exit=True)

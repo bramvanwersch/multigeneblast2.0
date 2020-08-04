@@ -104,10 +104,14 @@ def main():
         args = args[1:]
     inputfiles, dbname = parse_options(args)
     logfile = open("makedb.log","w")
+    #TODO this only takes one file now allow multiple
+    gb_file = GenbankFile(inputfiles[0])
+    with open(dbname + "_dbbuild.fasta", "w") as f:
+        f.write(gb_file.fasta_text())
 
     #Create FASTA database
     print("Creating FASTA file")
-    descriptions = parse_gbk_embl(inputfiles, dbname)
+    # descriptions = parse_gbk_embl(inputfiles, dbname)
 
     #Create Blast database
     print("Constructing Blast+ database")
@@ -120,10 +124,9 @@ def main():
     #Create genbank_mf_all_descrs.txt file
     print(("Generating " + dbname + "_all_descr.txt file"))
     descrfile = open(dbname + "_all_descrs.txt","w")
-    descrkeys = list(descriptions.keys())
-    descrkeys.sort()
-    for key in descrkeys:
-        descrfile.write(key + "\t" + descriptions[key] + "\n")
+
+    for contig in gb_file.contigs:
+        descrfile.write(contig.accession + "\t" + contig.definition + "\n")
     descrfile.close()
     #Create Blast database and TAR archives
     if "\n" not in open(dbname + "_dbbuild.fasta","r").read():
@@ -134,13 +137,11 @@ def main():
 
     #TODO test this properly for multiple files
     for file in inputfiles:
-        gb_file = GenbankFile(file)
         with open(dbname + ".pickle", "wb") as f:
             pickle.dump(gb_file, f)
 
     #Clean up
     clean_up(dbname)
-    return
 
 
 if __name__ == "__main__":
