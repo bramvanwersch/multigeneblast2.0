@@ -102,7 +102,7 @@ class GenbankFile:
 
     def __list_proteins(self):
         protein_dict = {}
-        for contig in self.contigs:
+        for contig in self.contigs.values():
             prots = contig.proteins.values()
             for prot in prots:
                 if prot.name in protein_dict:
@@ -137,10 +137,10 @@ class GenbankFile:
         return file_text
 
     def __create_contigs(self, text, protein_range, allowed_proteins):
-        contigs = []
+        contigs = {}
         for cont in text.split("//\n")[:-1]:
-            contig = Contig(cont,protein_range, allowed_proteins)
-            contigs.append(contig)
+            contig = Contig(cont, protein_range, allowed_proteins)
+            contigs[contig.accession] = contig
         return contigs
 
 
@@ -163,7 +163,6 @@ class Contig:
         #exract all the entries from the genbank file
         self.entries = self.__extract_entries(gene_information[1:], dna_sequence, c_dna_sequence, protein_range, allowed_proteins)
         self.proteins = self.__get_unique_proteins()
-
 
     def __get_unique_proteins(self):
         """
@@ -215,7 +214,7 @@ class Contig:
 
     def __extract_header(self, header):
         """
-        Disect the header of the genbank file and extract the accesion and
+        Disect the header of the contig and extract the accesion and
         definition
 
         :param header: a string that contains all the information in the header

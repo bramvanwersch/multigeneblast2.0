@@ -125,7 +125,7 @@ def main():
     print(("Generating " + dbname + "_all_descr.txt file"))
     descrfile = open(dbname + "_all_descrs.txt","w")
 
-    for contig in gb_file.contigs:
+    for contig in gb_file.contigs.values():
         descrfile.write(contig.accession + "\t" + contig.definition + "\n")
     descrfile.close()
     #Create Blast database and TAR archives
