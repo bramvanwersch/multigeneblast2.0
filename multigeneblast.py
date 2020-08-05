@@ -129,6 +129,8 @@ from tkinter import *
 from tkinter.messagebox import askyesno, showerror
 import shutil
 
+from genbank_parsing import GenbankFile
+
 ### GENERAL UTILITY###
 
 class MultiGeneBlastException(Exception):
@@ -599,454 +601,6 @@ def embl_to_genbank(emblfile):
     logging.debug("Embl file {} made readable for genbank file object.".format(emblfile))
     return "\n".join(text_lines)
 
-class Protein:
-    """
-    A representation of a protein, containing some optional fields that can or
-    cannot be specified.
-    """
-    def __init__(self, sequence, start, name, strand, end = None, annotation = "",
-                 locus_tag = "", genbank_file = "", protein_id = "", start_header = ""):
-        """
-        :param sequence: a string that is the amino acid sequence of the protein
-        :param start: an integer that is the start coordinate in the the protein
-        in the larger contig it is located
-        :param name: the gene name of the protein
-        :param strand: the + or - strand the protein can be located on
-        :param end: optional parameter to set the stop of the protein manually
-        :param annotation: the optional annotation of the protein, description of
-        function
-        :param locus_tag: an optional locus tag of the protein
-        :param genbank_file: an optional genbank file accesion where the protein
-        originated from
-        :param protein_id: an optional id of the protein
-        :param start_header: the start of the fasta header. This can be used in
-        the case of query proteins to allow certain identifyers
-        """
-        self.sequence = sequence
-        self.strand = strand
-        self.aa_lenght = len(self.sequence)
-        self.nt_lenght = self.aa_lenght * 3
-
-        #both in nucleotides
-        self.start = start
-        if end:
-            self.stop = end
-        else:
-            self.stop = self.start + self.nt_lenght
-
-        #gene name
-        self.name = remove_illegal_characters(name)
-        self.annotation = annotation
-
-        self.locus_tag = locus_tag
-        self.protein_id = protein_id
-        self.genbank_file = genbank_file
-        self.fasta_header = self.__construct_fasta_header(start_header)
-
-    def __construct_fasta_header(self, start_header):
-        """
-        Construct a fasta header using available class variables
-
-        :param start_header: start of the header, can be ''
-        :return: a string that is the text of the fasta header. Meaning the > is
-        not included
-        """
-        header = "{}-{}|{}|{}|{}|{}|{}".format(self.start, self.stop, self.strand, self.name, self.annotation,self.protein_id, self.locus_tag)
-        return "{}|{}".format(start_header, header)
-
-    def fasta_text(self):
-        """
-        Full fasta entry for writing into a fasta file. Uses the pre computed
-        header and the sequence
-
-        :return: a string that is a complete fasta entry
-        """
-        text = ">{}\n{}\n".format(self.name, self.sequence)
-        return text
-
-class GenbankFile:
-    """
-    An Object for easily disecting a genbank file into the individual proteins
-    """
-    def __init__(self, file, file_text = None, protein_range=None, allowed_proteins=None):
-        """
-        :param file: a path to a genbank file
-        :param file_text: an optional parameter that will be used as the file text
-        instead of the read version of the file.
-        :param protein_range: an optional range in which proteins can be selected
-        from the file instead of all proteins
-        :param allowed_proteins: a list of protein IDs that can be selected from
-        the genbank file instead of all proteins
-        """
-        logging.debug("Started parsing genbank file {}.".format(file))
-        if file_text == None:
-            self.file = file
-            file_text = self.__read_genbank_file(file)
-        gene_defenitions, dna_sequence = file_text.split("\nORIGIN")
-
-        # Extract DNA sequence and calculate complement of it
-        self.dna_sequence = clean_dna_sequence(dna_sequence)
-        self.c_dna_sequence = complement(dna_sequence)
-
-        # Extract gene information
-        gene_information = gene_defenitions.split("     CDS             ")
-
-        #read general information
-        self.accession = ""
-        self.definition = ""
-        self.__extract_header(gene_information[0])
-
-        #exract all the entries from the genbank file
-        self.entries = self.__extract_entries(gene_information[1:], protein_range, allowed_proteins)
-        self.proteins = self.__get_unique_proteins()
-
-        logging.debug("Finished parsing genbank file {}.".format(file))
-
-    def __get_unique_proteins(self):
-        """
-        Make sure that you retrieve a unique list of named proteins after names
-        have been cleaned for illegal characters
-
-        :return: a dictionary of protein objects
-        """
-        protein_dict = {}
-        for entry in self.entries:
-            if entry.protein.name in protein_dict:
-                logging.warning("Double fasta entry '{}' in file '{}'. Skipping...".format(entry.protein.name, self.file))
-            else:
-                protein_dict[entry.protein.name] = entry.protein
-        return protein_dict
-
-    def __read_genbank_file(self, file):
-        """
-        Read a genbank file and check preemptively for invalid files
-
-        :param file: a file path
-        :return: a large string that is the text in the geanbank file
-        """
-        try:
-            with open(file, "r") as f:
-                file_text = f.read()
-        except Exception as e:
-            logging.critical("Invalid genbank file {}. Exiting...".format(self.file))
-            raise MultiGeneBlastException("Invalid genbank file {}.".format(self.file))
-
-        # make sure to remove potential old occurances of \r. Acts like a \n
-        file_text = file_text.replace("\r", "\n")
-
-        # do a basic check to see if the genbank file is valid
-        if "     CDS             " not in file_text or "\nORIGIN" not in file_text:
-            logging.critical("Genbank file {} is not properly formatted or contains no sequences".format(self.file))
-            raise MultiGeneBlastException("Genbank file {} is not properly formatted or contains no sequences".format(self.file))
-        return file_text
-
-    def __extract_entries(self, entries, protein_range, allowed_proteins):
-        """
-        Extract genbank protein entries from a list of strings that contain
-        these entries
-
-        :param entries: a list of strings that contain one CDS entry each
-        :param protein_range: an optional range in which proteins can be selected
-        from the file instead of all proteins
-        :param allowed_proteins: a list of protein IDs that can be selected from
-        the genbank file instead of all proteins
-        :return: a list of GenbakEnrty objects
-        """
-        genbank_entries = []
-
-        #number to check if all allowed proteins have been found or not
-        #this allows the function to stop prematurely if all proteins are found
-        found_proteins = 0
-        # ignore the firs hit which is the start of the genbnk file
-        for index, gene in enumerate(entries):
-            g = GenbankEntry(gene, index + 1, self.dna_sequence, self.c_dna_sequence, self.accession)
-            if protein_range[0] != None and g.protein.start >= protein_range[0] and g.protein.stop <= protein_range[1]:
-                genbank_entries.append(g)
-            elif allowed_proteins != None and g.protein.protein_id in allowed_proteins:
-                genbank_entries.append(g)
-                found_proteins += 1
-                if found_proteins >= len(allowed_proteins):
-                    break
-            elif allowed_proteins == None and protein_range == None:
-                genbank_entries.append(g)
-        return genbank_entries
-
-    def __extract_header(self, header):
-        """
-        Disect the header of the genbank file and extract the accesion and
-        definition
-
-        :param header: a string that contains all the information in the header
-        of the genbank file
-        """
-        header_lines = header.split("\n")
-        for index, line in enumerate(header_lines):
-            if line.lower().startswith("accession"):
-                # extract the accesion
-                self.accession = line.replace("ACCESSION   ","")
-            if line.lower().startswith("definition"):
-                self.definition += line.replace("DEFINITION  ", "").strip()
-                for def_line in header_lines[index + 2:]:
-                    #end of definition line
-                    if not def_line.startswith("    "):
-                        break
-                    self.definition += def_line.strip()
-        # Test if accession number is probably real GenBank/RefSeq acc nr
-        if testaccession(self.accession) == "n":
-            logging.debug("Probably invalid GenBank/Refseq accesion found for {}.".format(self.file))
-            self.accession = ""
-        if self.accession == "":
-            logging.debug("No valid accesion found for file {}".format(self.file))
-        if self.definition == "":
-            logging.debug("No definition found for file {}".format(self.file))
-
-
-class GenbankEntry:
-    """
-    Disect a genbank entry and substract allot of potential values.
-    """
-    def __init__(self, entry_string, nr, dna_seq, c_dna_seq, file_accession):
-        """
-        :param entry_string: a string that contains a CDS genbank entry
-        :param nr: a unique integer that can be used to create a genename is no
-        name is available
-        :param dna_seq: the dna sequence present in the genbank file
-        :param c_dna_seq: the complement sequence present in the genbank file
-        :param file_accession: the genbank file accession this entry originated
-        from
-        """
-        #a list of locations
-        self.location = None
-        self.file_accession = file_accession
-
-        #relevant attributes that can be present
-        self.__codon_start = 1
-
-        #optional parameters that can be found in the entry
-        self.locus_tag = ""
-        self.gene_name = ""
-        self.protein_id = ""
-        self.protein_code = ""
-        self.annotation = ""
-
-        self.__disect_string(entry_string, nr)
-        self.protein = self.__create_protein(dna_seq, c_dna_seq)
-
-    def __disect_string(self, entry_string, nr):
-        """
-        Parse the entry_string and try to extract allot of different potentialy
-        available values
-
-        :param entry_string: a string that contains a CDS genbank entry
-        :param nr: a unique integer that can be used to create a genename is no
-        name is available
-        """
-        #create a list of lines that are part of the coding sequences (CDS)
-        cds_part = self.__CDS_lines(entry_string)
-        protein_id = locus_tag = gene_name = None
-        for index, line in enumerate(cds_part[1:]):
-            line = line.replace("/","").strip()
-            if line.lower().startswith("codon_start"):
-                self.__codon_start = int(self.__clean_line(line))
-            elif line.lower().startswith("protein_id"):
-                self.protein_id = self.__clean_line(line)
-            elif line.lower().startswith("locus_tag"):
-                self.locus_tag = self.__clean_line(line)
-            elif line.lower().startswith("gene"):
-                self.gene_name = self.__clean_line(line)
-            elif line.lower().startswith("translation"):
-                self.protein_code += self.__clean_line(line)
-                for prot_line in cds_part[index + 2:]:
-                    self.protein_code += prot_line.strip().replace('"', "")
-                break
-            elif line.lower().startswith("product"):
-                self.annotation = self.__clean_line(line)
-
-        #configure the genename with this order, locus tag, gene_name protein_id auto generated name
-        if self.locus_tag:
-            self.gene_name = self.locus_tag
-        elif self.gene_name:
-            pass
-        elif self.protein_id:
-            self.gene_name = self.protein_id
-        else:
-            self.gene_name = "orf {}".format(nr)
-
-        #extract the locations
-        self.locations = self.__get_locations(cds_part[0].strip())
-
-    def __CDS_lines(self, string):
-        """
-        Extract all the CDS location qualifiers form the string. This separates
-        them from other potential qualifiers
-
-        :param string: a string that contains a CDS genbank entry
-        :return: a list of lines that are part of the CDS location qualifier
-        """
-        potential_lines = string.split("\n")
-        #include the first line always
-        lines = [potential_lines[0]]
-        for line in potential_lines[1:]:
-            if not line.startswith("                     "):
-                break
-            lines.append(line)
-        return lines
-
-    def __clean_line(self, line):
-        """
-        Clean a line from the genbank file by removing unwanted characters
-        as well as the name associated with the value
-
-        :param line: a string containing no newlines
-        :return: the cleaned version of the input line
-        """
-        #remove unwanted characters and only inlcude the value not the name
-        return line.replace("\\", "_").replace("/", "_").replace('"', '').replace(" ","_").split("=")[1]
-
-    def __get_locations(self, string):
-        """
-        Find the location in a location string. This can be tricky because of
-        complement and join modifiers.
-        Note: this script does not take the order modifier into account, and i
-        cannot see why that would be neccesairy
-
-        :param string: a string that should contain a location of minimal format
-        start..stop
-        :return: a list of lists that holds a list of locations (to take join
-        into account) and a boolean that tells if the locations are on the
-        complement string or not. A location has the format [start, stop] but
-        can be None when no valid location was found
-        """
-        if string.startswith("complement"):
-            if "join" in string:
-                return self.__disect_join(string)
-            else:
-                #split the string without the complement text
-                return [self.__convert_location(string[11:-1])], True
-
-        elif string.startswith("join"):
-            return self.__disect_join(string)
-        else:
-            return [self.__convert_location(string)], False
-
-    def __disect_join(self, string):
-        """
-        Disect a location that contains a join statement
-
-        :param string: a location in string format that has a join format
-        :return:
-        """
-        #remove the join tag
-        string = string[5:-1]
-        individual_strings = string.split(",")
-        locations = []
-        complement = False
-        for s in individual_strings:
-            if "complement" in s:
-                complement = True
-            locations.append(self.__convert_location(s[11:-1]))
-        return locations, complement
-
-    def __convert_location(self, s):
-        """
-        Convert the location string s of the format start..stop into two integers
-        while removign potential present characters
-
-        :param s: a string containing a location
-        :return: a list of lenght 2 with 2 integers
-        """
-        if ".." not in s:
-            logging.warning("No valid location found for genbank entry {}".format(self.gene_name))
-            return None
-        try:
-            str_locations = s.replace("<", "").replace(">", "").strip().split("..")
-            return list(map(int, str_locations))
-        #in case the str locations cannot be converted to integers
-        except AttributeError:
-            logging.warning("No valid location found for genbank entry {}".format(self.gene_name))
-            return None
-
-    def __create_protein(self, dna_seq, c_dna_seq):
-        """
-        Create a Protein object using class variables extracted from the entry
-        string
-
-        :param dna_seq: the dna sequence present in the genbank file
-        :param c_dna_seq: the complement sequence present in the genbank file
-        :return: a Protein object
-        """
-        #loc is a list of start, stop and True or false for reverse complement or not
-        locations, reverse_complement = self.locations
-        strand = "+"
-        if reverse_complement:
-            strand = "-"
-        #make sure locations are sorted
-        locations.sort()
-
-        #if a sequence is available use that, otherwise extract it
-        if self.protein_code:
-            sequence = self.protein_code
-        else:
-            sequence = ""
-            for loc in self.locations:
-                #in case of invalid location skip to the next one.
-                if loc[0] == None:
-                    continue
-                start, end = loc
-                if reverse_complement:
-                    nc_seq = c_dna_seq[(start - 1) - self.__codon_start - 1 : end]
-                else:
-                    nc_seq = dna_seq[(start - 1) - self.__codon_start - 1 : end]
-                sequence += nc_seq
-            sequence = translate(sequence)
-
-        #the first location and then the start
-        start = locations[0][0]
-        return Protein(sequence, start, self.gene_name, strand, start_header="input|c1",
-                       locus_tag=self.locus_tag, annotation=self.annotation, genbank_file=self.file_accession,
-                       protein_id=self.protein_id)
-
-
-def clean_dna_sequence(dna_seq):
-    """
-    Clean a DNA sequence that is formatted like;
-
-          1 atgcggcggg aaatt etc.
-
-    :param dna_seq: a DNA sequence in the afformentioned format as a string
-    :return: a DNA sequence that only contains nucleotides
-    """
-    dna_seq = dna_seq.replace(" ", "")
-    dna_seq = dna_seq.replace("\t", "")
-    dna_seq = dna_seq.replace("\n", "")
-    dna_seq = dna_seq.replace("0", "")
-    dna_seq = dna_seq.replace("1", "")
-    dna_seq = dna_seq.replace("2", "")
-    dna_seq = dna_seq.replace("3", "")
-    dna_seq = dna_seq.replace("4", "")
-    dna_seq = dna_seq.replace("5", "")
-    dna_seq = dna_seq.replace("6", "")
-    dna_seq = dna_seq.replace("7", "")
-    dna_seq = dna_seq.replace("8", "")
-    dna_seq = dna_seq.replace("9", "")
-    dna_seq = dna_seq.replace("/", "")
-    return dna_seq
-
-def complement(seq):
-    """
-    Create the complement strand of a sequence. Use replacing for speed
-
-    :param seq: a DNA sequence as a string
-    :return: the complement of that string
-    """
-    seq = seq.replace("a", "x").replace("A", "X")
-    seq = seq.replace("t", "a").replace("T", "A")
-    seq = seq.replace("x", "t").replace("X", "T")
-
-    seq = seq.replace("c", "x").replace("C", "X")
-    seq = seq.replace("g", "c").replace("G", "C")
-    seq = seq.replace("x", "g").replace("X", "G")
-    return seq
 
 ##Functions necessary for this script
 def get_sequence(fasta):
@@ -1146,29 +700,6 @@ def translate(sequence):
     if  len(protseq) > 0 and protseq[-1] == "*":
         protseq = protseq[:-1]
     return protseq
-
-def testaccession(accession):
-    #TODO look into this function at some time
-    #Test if accession number is probably real GenBank/RefSeq acc nr
-    numbers = list(range(0,10))
-    letters = []
-    for i in ascii_letters:
-        letters.append(i)
-    nrnumbers = 0
-    nrletters = 0
-    for i in accession:
-        if i in letters:
-            nrletters += 1
-        try:
-            j = int(i)
-            if j in numbers:
-                nrnumbers += 1
-        except:
-            pass
-    test = "y"
-    if nrnumbers < 3 or nrletters < 1:
-        test = "n"
-    return test
 
 def internal_blast(user_options, query_proteins):
     """
@@ -1389,6 +920,7 @@ def db_blast(query_proteins, user_options):
         command_start = "{}\\exec_new\\blastp.exe".format(CURRENTDIR)
     else:
         command_start = "{}\\exec_new\\tblastn.exe".format(CURRENTDIR)
+
     complete_command = "{} -db {} -query {}\\query.fasta -outfmt 6 -max_target_seqs" \
                        " {} -evalue 1e-05 -out {}\\input.out -num_threads {}"\
         .format(command_start, user_options.db, os.getcwd(), user_options.hitspergene,
@@ -2001,88 +1533,29 @@ class ProteinInfo(object):
         self.annotation = annotation
         self.locustag = locustag
 
-def load_dbproteins_info(querylist, blastdict, dbname):
+def load_dbproteins_info(query_proteins, blast_dict, db_name):
     ##Load needed gene cluster database proteins info into memory
-    global DBPATH
-    DBPATH = os.environ['BLASTDB']
-    allhitprots = []
+    db_path = os.environ["BLASTDB"]
     nucdict = {}
     temp_proteininfo = {}
     proteininfo = {}
-    for i in querylist:
-        if i in blastdict:
-            subjects = blastdict[i][0]
-            for j in subjects:
-                if j not in allhitprots:
-                    allhitprots.append(j)
-    allhitprots.sort()
-    allgenomes = []
-    proteininfo_archive = tarfile.open(DBPATH + os.sep + dbname + ".pinfo.tar")
-    same = "n"
-    next_idx = 0
-    for j in allhitprots:
-        next_idx += 1
-        frame_update()
-        if same == "n":
-            try:
-                infofile = proteininfo_archive.extractfile("proteininfo/" + j[:4].upper() + ".pickle")
-                proteininfodict = pickle.load(infofile)
-            except:
-                log(j[:4].upper() + ".pickle" + " missing in proteininfo tar")
-                continue        ##########THIS NEEDS TO BE FIXED IN THE DB TO PREVENT THIS ERROR / MAKE THIS UNNECESSARY
-        if j not in proteininfodict:
-            log(j + " missing in proteininfodict")
-            continue        ##########THIS NEEDS TO BE FIXED IN THE DB TO PREVENT THIS ERROR / MAKE THIS UNNECESSARY
-        pinfo = str(proteininfodict[j])
-        #Fix for 'stuttering' of nucl accession number
-        if pinfo.count(pinfo.split("|")[0] + "|") > 1 and pinfo.split("|")[0] != "":
-            log("Correcting" + j + ":\n" + str(pinfo) + "\n" + pinfo.split("|")[0] + "|" + pinfo.rpartition(pinfo.split("|")[0])[2])
-            pinfo = pinfo.split("|")[0] + "|" + pinfo.rpartition(pinfo.split("|")[0])[2]
-        #Fix for faulty coordinates
-        if not pinfo.split("|")[1].replace("-","").isdigit():
-            if pinfo.split("|")[1].replace("-","").replace(")","").isdigit():
-                pinfo = pinfo.split("|")[0] + "|" + pinfo.split("|")[1].replace(")","") + "|" + "|".join(pinfo.split("|")[2:])
-            if "," in pinfo.split("|")[1].replace("-",""):
-                pinfo = pinfo.split("|")[0] + "|" + pinfo.split("|")[1].partition(",")[0] + "-" + pinfo.split("|")[1].rpartition("-")[2] + "|" + "|".join(pinfo.split("|")[2:])
-        if "|" not in str(pinfo) or pinfo.split("|")[0] == "":
-            log("DNA accession number missing for " + j + "\n" + str(pinfo))
-            continue        ##########THIS NEEDS TO BE FIXED IN THE DB TO PREVENT THIS ERROR / MAKE THIS UNNECESSARY
-        tabs = pinfo.split("|")
-        if len(tabs) < 4:
-            log("Faulty info for " + j + ":\n" + str(pinfo))
-            continue
-        if "-" not in tabs[1] and "-" in tabs[2]:
-            del tabs[1]
-        protein = tabs[3]
-        genome = tabs[0]
-        location = tabs[1]
-        strand = tabs[2]
-        annotation = tabs[4]
-        locustag = tabs[5]
-        pstart = location.partition("-")[0]
-        pend = location.partition("-")[2]
-        if not pend.isdigit():
-            pend = str(int(pstart) + 100)
-        if genome not in allgenomes:
-            allgenomes.append(genome)
-            temp_proteininfo[genome] = [j, ProteinInfo(genome,pstart,pend,strand,annotation,locustag)]
-        else:
-            if genome in temp_proteininfo:
-                old_entry = temp_proteininfo[genome]
-                proteininfo[old_entry[0]] = old_entry[1]
-                nucdict[old_entry[0]]  = old_entry[1].genome
-                del temp_proteininfo[genome]
-            proteininfo[j] = ProteinInfo(genome,pstart,pend,strand,annotation,locustag)
-            nucdict[j]  = genome
-        if not (len(allhitprots) > next_idx and j[:4] == allhitprots[next_idx][:4]):
-            infofile.close()
-            same = "n"
-        else:
-            same = "y"
-        lasthitprot = j
-    proteininfo_archive.close()
-    allgenomes.sort()
-    return allgenomes, nucdict, proteininfo
+
+    #get all the proteins that are found as blast hits, once
+    all_hit_prots = set()
+    for gene in query_proteins:
+        if gene in blast_dict:
+            all_hit_prots.update([val.subject for val in blast_dict[gene]])
+    all_hit_prots = list(all_hit_prots)
+
+    #load the preprosessed genbank files that are the database
+    picklefile = open("{}\\{}.pickle".format(db_path, db_name), "rb")
+    p_gbk = pickle.load(picklefile)
+    picklefile.close()
+
+    hit_proteins = {}
+    for protein in all_hit_prots:
+        hit_proteins[protein] = p_gbk.proteins[protein]
+    return hit_proteins
 
 def load_ndb_info(querylist, blastdict, dbname):
     ##Load needed gene cluster database proteins info into memory
@@ -2192,16 +1665,143 @@ def load_other_genes(allgenomes, proteininfo, dbname, blastdict):
     genecords_archive.close()
     return proteininfo
 
-def load_databases(querylist, blastdict, processnr, dbname, dbtype):
-    #Load GenBank positional info into memory
-    log("Loading GenBank positional info into memory...")
-    if dbtype == "prot":
-        allgenomes, nucdict, proteininfo = load_dbproteins_info(querylist, blastdict, dbname)
-        proteininfo = load_other_genes(allgenomes, proteininfo, dbname, blastdict)
-    else:
-        allgenomes, nucdict, proteininfo = load_ndb_info(querylist, blastdict, dbname)
-    nucdescriptions, clusters = load_genecluster_info(dbname, allgenomes)
-    return nucdescriptions, nucdict, proteininfo
+def load_databases(query_proteins, blast_dict, user_options):
+    #TODO improve this to only include scaffolds with a hit.
+    logging.info("Loading GenBank positional info into memory...")
+    db_path = os.environ["BLASTDB"]
+
+    picklefile = open("{}\\{}.pickle".format(db_path, user_options.db), "rb")
+    p_gbk = pickle.load(picklefile)
+    picklefile.close()
+
+    return p_gbk
+    # #Load GenBank positional info into memory
+    # if user_options.dbtype == "prot":
+    #     hit_proteins = load_dbproteins_info(query_proteins, blast_dict, user_options.db)
+    #     proteininfo = load_other_genes(allgenomes, proteininfo, dbname, blastdict)
+    # else:
+    #     allgenomes, nucdict, proteininfo = load_ndb_info(querylist, blastdict, dbname)
+    # nucdescriptions, clusters = load_genecluster_info(dbname, allgenomes)
+    # return nucdescriptions, nucdict, proteininfo
+
+def find_gene_clusters2(blast_dict, user_options, database):
+    hits_per_scaffold, query_per_blast_hit = sort_hits_per_scaffold(blast_dict, database)
+    clusters_per_contig = find_blast_clusters(hits_per_scaffold, query_per_blast_hit, user_options.distancekb)
+    add_additional_proteins(clusters_per_contig, database)
+    clusters = []
+    for contig in clusters_per_contig:
+        clusters += clusters_per_contig[contig]
+    return clusters
+
+
+def sort_hits_per_scaffold(blast_dict, database):
+    #sort all the blast hits per scaffold.
+    hits_per_scaffold = {}
+    query_per_blast_hit = {}
+    for hits in blast_dict.values():
+        for hit in hits:
+            subject_protein = database.proteins[hit.subject]
+            query_per_blast_hit[hit.subject] = hit.query
+            if subject_protein.genbank_file not in hits_per_scaffold:
+                hits_per_scaffold[subject_protein.genbank_file] = [subject_protein]
+            else:
+                hits_per_scaffold[subject_protein.genbank_file].append(subject_protein)
+
+    #sort each scaffold using start and stop locations
+    for scaffold in hits_per_scaffold:
+        hits_per_scaffold[scaffold].sort(key=lambda x: (x.start, x.stop))
+    return hits_per_scaffold, query_per_blast_hit
+
+def find_blast_clusters(hits_per_scaffold, query_per_blast_hit, extra_distance):
+    #find all the clusters
+
+    clusters_per_contig = {}
+    for scaffold in hits_per_scaffold:
+        scaffold_proteins = hits_per_scaffold[scaffold]
+        start = scaffold_proteins[0].start
+        blast_hits = [scaffold_proteins[0]]
+        index = 0
+
+        # the first one is already used
+        scaffold_proteins = scaffold_proteins[1:]
+        clusters = []
+        #make sure no index out of range
+        while index + 1 < len(scaffold_proteins):
+            protein = scaffold_proteins[index]
+            next_protein = scaffold_proteins[index + 1]
+            if protein.stop + extra_distance < next_protein.start:
+                c = Cluster(start - extra_distance, protein.stop + extra_distance)
+                for hit in blast_hits:
+                    c.add_protein(hit, query_per_blast_hit[hit.name])
+                clusters.append(c)
+                start = next_protein.start
+                blast_hits = [next_protein]
+                #skip over the next protein
+                index += 1
+            else:
+                blast_hits.append(protein)
+            index += 1
+        c = Cluster(start - extra_distance, scaffold_proteins[-1].stop + extra_distance)
+        for hit in blast_hits:
+            c.add_protein(hit, query_per_blast_hit[hit.name])
+        clusters.append(c)
+        tot = 0
+
+        if len(clusters) > 0:
+            clusters_per_contig[clusters[0].contig] = clusters
+    return clusters_per_contig
+
+def add_additional_proteins(clusters_per_contig, database):
+    for contig in clusters_per_contig:
+        contig_proteins = database.contigs[contig].proteins.values()
+        # make a copy of the sorted proteins
+        sorted_contig_proteins = sorted(contig_proteins, key=lambda x: (x.start, x.stop))
+        cluster_index = 0
+        clusters = clusters_per_contig[contig]
+        print(len(sorted_contig_proteins), len(clusters))
+        for protein in sorted_contig_proteins:
+            #get the cluster clusters for the current contig
+            cluster = clusters[cluster_index]
+            if protein.start > cluster.start and\
+                protein.stop < cluster.stop:
+                cluster.add_protein(protein)
+            elif protein.start > cluster.start:
+                cluster_index += 1
+            if cluster_index >= len(clusters):
+                break
+
+
+class Cluster:
+    def __init__(self, start, stop):
+        #start and stop are allowed to be negative or bigger then possible
+        self.start = start
+        self.stop = stop
+        #all proteins in the cluster
+        self.__proteins = {}
+        #all protein names that are blast hits linked to the query protein that
+        #that the blast hit was against
+        self.__blast_proteins = {}
+
+    def add_protein(self, protein, query_blast_hit = False):
+        self.__proteins[protein.name] = protein
+        if query_blast_hit:
+            self.__blast_proteins[protein.name] = query_blast_hit
+
+    @property
+    def contig(self):
+        for key in self.__proteins:
+            return self.__proteins[key].genbank_file
+        #there is no protein in the cluster.
+        return None
+
+    @property
+    def proteins(self):
+        return self.__proteins
+
+    @property
+    def blast_hit_proteins(self):
+        return self.__blast_proteins
+
 
 def find_hits_positions(blastdict, proteininfo, querylist):
     #Find db xrefs, start positions, end positions, strand info for each hit and add to blast dict
@@ -3265,10 +2865,15 @@ def main():
     blast_dict = parse_db_blast(user_options, query_proteins, blast_output)
     logging.info("Step 5/11: Finished parsing database blast")
 
-    return
     #Step 6: Load genomic databases into memory
-    nucdescriptions, nucdict, proteininfo = load_databases(querylist, blastdict, opts.nrcpus, opts.db, opts.dbtype)
-    print(("Step 6/11: Time since start: " + str((time.time() - starttime))))
+    database = load_databases(query_proteins, blast_dict, user_options)
+    logging.info("Step 6/11: Finished loading the relevant parts of the database.")
+
+    #Step 7: Locate blast hits in genome and find clusters
+    clusters = find_gene_clusters2(blast_dict, user_options, database)
+    for cluster in clusters:
+        print(len(cluster.proteins))
+    return
     #Step 7: Locate Blast hits in genomes
     blastdict, geneposdict, hitclusters, clusters, multiplehitlist = find_genomic_loci(blastdict, nucdict, proteininfo, opts.distancekb, querylist, nucdescriptions, dnaseqlength)
     print(("Step 7/11: Time since start: " + str((time.time() - starttime))))
