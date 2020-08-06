@@ -245,7 +245,7 @@ class Options:
         self.minpercid = arguments.mpi
         self.hitspergene = arguments.hpg
         #TODO make sure that the *2 is correct
-        self.distancekb = int(arguments.dkb * 100 * 2)
+        self.distancekb = int(arguments.dkb * 1000)
         self.muscle = arguments.m
         self.pages = arguments.op
         self.syntenyweight = arguments.sw
@@ -897,9 +897,12 @@ def blast_parse(user_options, query_proteins, blast_output):
     #Filters blastlines to get rid of hits that do not meet criteria and save
     #hits that do in a dictionary that links a protein name to BlastHit objects.
     internal_homolog_dict = {}
+    count = 0
+    #TODO remove the or statement, now here for consistency sake
     for result in unique_blast_results.values():
-        if result.percent_identity > user_options.minpercid and\
-           result.percent_coverage > user_options.minseqcov:
+        if int(result.percent_identity) > user_options.minpercid and\
+                (int(result.percent_coverage) > user_options.minseqcov or result.allignment_lenght > 40):
+            count += 1
             if result.query not in internal_homolog_dict:
                 internal_homolog_dict[result.query] = [unique_blast_results[result.query + result.subject]]
             else:
@@ -1666,7 +1669,7 @@ def load_other_genes(allgenomes, proteininfo, dbname, blastdict):
     return proteininfo
 
 def load_databases(query_proteins, blast_dict, user_options):
-    #TODO improve this to only include scaffolds with a hit.
+    #TODO improve this to only include scaffolds with a hit. Needs improvement in general in combination with improving the database
     logging.info("Loading GenBank positional info into memory...")
     db_path = os.environ["BLASTDB"]
 
@@ -1684,8 +1687,10 @@ def load_databases(query_proteins, blast_dict, user_options):
     # nucdescriptions, clusters = load_genecluster_info(dbname, allgenomes)
     # return nucdescriptions, nucdict, proteininfo
 
-def find_gene_clusters2(blast_dict, user_options, database):
+def find_gene_clusters(blast_dict, user_options, database):
     hits_per_scaffold, query_per_blast_hit = sort_hits_per_scaffold(blast_dict, database)
+    # hps = [p.protein_id.split(".")[0] for p in list(hits_per_scaffold.values())[0]]
+    # print(hps)
     clusters_per_contig = find_blast_clusters(hits_per_scaffold, query_per_blast_hit, user_options.distancekb)
     add_additional_proteins(clusters_per_contig, database)
     clusters = []
@@ -1703,12 +1708,12 @@ def sort_hits_per_scaffold(blast_dict, database):
             subject_protein = database.proteins[hit.subject]
             query_per_blast_hit[hit.subject] = hit.query
             if subject_protein.genbank_file not in hits_per_scaffold:
-                hits_per_scaffold[subject_protein.genbank_file] = [subject_protein]
+                hits_per_scaffold[subject_protein.genbank_file] = set([subject_protein])
             else:
-                hits_per_scaffold[subject_protein.genbank_file].append(subject_protein)
-
+                hits_per_scaffold[subject_protein.genbank_file].add(subject_protein)
     #sort each scaffold using start and stop locations
     for scaffold in hits_per_scaffold:
+        hits_per_scaffold[scaffold] = list(hits_per_scaffold[scaffold])
         hits_per_scaffold[scaffold].sort(key=lambda x: (x.start, x.stop))
     return hits_per_scaffold, query_per_blast_hit
 
@@ -1723,7 +1728,6 @@ def find_blast_clusters(hits_per_scaffold, query_per_blast_hit, extra_distance):
         index = 0
 
         # the first one is already used
-        scaffold_proteins = scaffold_proteins[1:]
         clusters = []
         #make sure no index out of range
         while index + 1 < len(scaffold_proteins):
@@ -1736,12 +1740,10 @@ def find_blast_clusters(hits_per_scaffold, query_per_blast_hit, extra_distance):
                 clusters.append(c)
                 start = next_protein.start
                 blast_hits = [next_protein]
-                #skip over the next protein
-                index += 1
             else:
                 blast_hits.append(protein)
             index += 1
-        c = Cluster(start - extra_distance, scaffold_proteins[-1].stop + extra_distance)
+        c = Cluster(start - extra_distance, scaffold_proteins[index].stop + extra_distance)
         for hit in blast_hits:
             c.add_protein(hit, query_per_blast_hit[hit.name])
         clusters.append(c)
@@ -1754,21 +1756,29 @@ def find_blast_clusters(hits_per_scaffold, query_per_blast_hit, extra_distance):
 def add_additional_proteins(clusters_per_contig, database):
     for contig in clusters_per_contig:
         contig_proteins = database.contigs[contig].proteins.values()
-        # make a copy of the sorted proteins
+        # make a copy of all the proteins of a contig and sort them
         sorted_contig_proteins = sorted(contig_proteins, key=lambda x: (x.start, x.stop))
         cluster_index = 0
         clusters = clusters_per_contig[contig]
-        print(len(sorted_contig_proteins), len(clusters))
+
         for protein in sorted_contig_proteins:
-            #get the cluster clusters for the current contig
             cluster = clusters[cluster_index]
-            if protein.start > cluster.start and\
-                protein.stop < cluster.stop:
+
+            if (protein.start >= cluster.start and protein.start <= cluster.stop):
                 cluster.add_protein(protein)
+                if cluster_index + 1 < len(clusters):
+                    next_cluster = clusters[cluster_index + 1]
+                    if protein.stop >= next_cluster.start and protein.stop <= next_cluster.stop:
+                        next_cluster.add_protein(protein)
+
             elif protein.start > cluster.start:
                 cluster_index += 1
-            if cluster_index >= len(clusters):
-                break
+                if cluster_index >= len(clusters):
+                    break
+                cluster = clusters[cluster_index]
+                if (protein.start >= cluster.start and protein.start <= cluster.stop):
+                    cluster.add_protein(protein)
+
 
 
 class Cluster:
@@ -1802,200 +1812,6 @@ class Cluster:
     def blast_hit_proteins(self):
         return self.__blast_proteins
 
-
-def find_hits_positions(blastdict, proteininfo, querylist):
-    #Find db xrefs, start positions, end positions, strand info for each hit and add to blast dict
-    log("Finding gene info of all hit genes...")
-    frame_update()
-    blastdict2 = {}
-    for i in querylist:
-        if i in blastdict:
-            subjects = blastdict[i][0]
-            subjects2 = []
-            querydict = blastdict[i][1]
-            querydict2 = {}
-            for j in subjects:
-                #genome_acc = nucdict[j]
-                #geneinfo = [start,end,strand,annotation,sequence,accnr,genername]
-                #blastparse = [perc_ident,blastscore,perc_coverage,evalue]
-                #goal = [subject_genecluster,subject_start,subject_end,subject_strand,subject_annotation,perc_ident,blastscore,perc_coverage,evalue,locustag]
-                #goal now = [subject_start,subject_end,subject_strand,subject_annotation,perc_ident,blastscore,perc_coverage,evalue,locustag]
-                if j in proteininfo:
-                    oldblastdictinfo = querydict[j]
-                    if proteininfo[j].strand == 1:
-                        strand = "+"
-                    else:
-                        strand = "-"
-                    newblastdictinfo = [proteininfo[j].genome, proteininfo[j].pstart, proteininfo[j].pend, strand, proteininfo[j].annotation] + oldblastdictinfo + [j]
-                    querydict2[j] = newblastdictinfo
-                    subjects2.append(j)
-                else:
-                    print(("WARNING:", j, "accession number not taken into account; data entry invalid."))
-            blastdict2[i] = [subjects2,querydict2]
-    blastdict = blastdict2
-    return blastdict
-
-def sort_genes_per_nucleotide(querylist, blastdict, nucdict):
-    log("Locating gene clusters on nucleotide scaffolds...")
-    frame_update()
-    universalquerydict = {}
-    for i in querylist:
-        if i in blastdict:
-            querydict = blastdict[i][1]
-            universalquerydict.update(querydict)
-    #Make dictionary that sorts all hit genes per nucleotide scaffold
-    sourcedict = {}
-    source2dict = {}
-    multiplelist = []
-    multiplehitlist = []
-    nucdictkeys = list(nucdict.keys())
-    nucdictkeys.sort()
-    for j in list(nucdict.keys()):
-        nucsource = nucdict[j]
-        if nucsource in source2dict:
-            if nucsource not in multiplelist:
-                multiplehitlist.append(source2dict[nucsource][0])
-                multiplelist.append(nucsource)
-                if j not in multiplehitlist:
-                    multiplehitlist.append(j)
-                sourcedict[nucsource] = source2dict[nucsource] + [j]
-            else:
-                sourcedict[nucsource].append(j)
-                if j not in multiplehitlist:
-                    multiplehitlist.append(j)
-        else:
-            source2dict[nucsource] = [j]
-    return sourcedict, multiplehitlist, universalquerydict
-
-def find_geneclusters(sourcedict, universalquerydict, allowedgenedistance, nucdescriptions, proteininfo, dnaseqlength):
-    #For every genomic scaffold, find gene clusters based on positions and save gene-cluster links in dictionary
-    clusters = {}
-    clusterdict = {}
-    geneposdict = {}
-    hitclusters = []
-    extraspace = 20000
-    if int(dnaseqlength) / 2 > 20000:
-        extraspace = int(int(dnaseqlength) / 2)
-    if extraspace > int(allowedgenedistance):
-        extraspace = int(allowedgenedistance)
-    nuccodes = list(dict.fromkeys(list(sourcedict.keys())).keys())
-    for i in nuccodes:
-        frame_update()
-        extragenes = []
-        for j in list(proteininfo.keys()):
-            if i == proteininfo[j].genome:
-                extragenes.append(j)
-        scaffoldgenes = sourcedict[i]
-        nuc_acc = i
-        protstartlocations = []
-        protendlocations = []
-        for j in scaffoldgenes:
-            startpos = int(universalquerydict[j][1])
-            endpos = int(universalquerydict[j][2])
-            if startpos > endpos:
-                startpos, endpos = endpos, startpos
-            protstartlocations.append(startpos)
-            protendlocations.append(endpos)
-            geneposdict[j] = [startpos,endpos]
-        protstartlocations.sort()
-        protendlocations.sort()
-        nrlocations = len(protstartlocations)
-        a = 0
-        clusterstarts = []
-        clusterends = []
-        for j in protstartlocations:
-            if a == 0:
-                cstart = str(int(j) - extraspace)
-                if int(cstart) < 0:
-                    cstart = "0"
-                clusterstarts.append(cstart)
-                if len(protendlocations) == 1:
-                    clusterends.append(str(int(protendlocations[a]) + extraspace))
-            elif a == nrlocations - 1:
-                if j < ((protendlocations[a - 1]) + allowedgenedistance):
-                    clusterends.append(str(int(protendlocations[a]) + extraspace))
-                else:
-                    cend = str(int(protendlocations[a - 1]) + extraspace)
-                    clusterends.append(cend)
-                    cstart = str(int(j) - extraspace)
-                    if int(cstart) < 0:
-                        cstart = "0"
-                    clusterstarts.append(cstart)
-                    clusterends.append(str(protendlocations[a]))
-            else:
-                if j > ((protendlocations[a - 1]) + allowedgenedistance):
-                    clusterends.append(str(int(protendlocations[a - 1]) + extraspace))
-                    cstart = str(j - extraspace)
-                    if int(cstart) < 0:
-                        cstart = "0"
-                    clusterstarts.append(cstart)
-                else:
-                    pass
-            a += 1
-        geneclusternumber = 0
-        for j in clusterstarts:
-            geneclustername = nuc_acc + "_" + str(geneclusternumber)
-            if geneclustername not in hitclusters:
-                hitclusters.append(geneclustername)
-            cstart = int(j)
-            cend = int(clusterends[geneclusternumber])
-            clustergenes = []
-            clustergenesdict = {}
-            geneclusternumber += 1
-            for k in scaffoldgenes:
-                startpos = int(geneposdict[k][0])
-                endpos = int(geneposdict[k][1])
-                if (startpos >= cstart and startpos <= cend) or (endpos >= cstart and endpos <= cend):
-                    clusterdict[k] = geneclustername
-                    clustergenes.append(k)
-                    clustergenesdict[k] = startpos
-            for j in extragenes:
-                if (int(proteininfo[j].pstart) >= cstart and int(proteininfo[j].pstart) <= cend) or (int(proteininfo[j].pend) >= cstart and int(proteininfo[j].pend) <= cend):
-                    if j not in clustergenes:
-                        clustergenes.append(j)
-                        clustergenesdict[j] = int(proteininfo[j].pstart)
-            nucdescription = ""
-            for i in list(nucdescriptions.keys()):
-                if i in nuc_acc.split(".")[0]:
-                    nucdescription = nucdescriptions[i]
-                    break
-            clustergenes = sortdictkeysbyvalues(clustergenesdict)
-            clusters[geneclustername] = [clustergenes,nucdescription]
-    return clusterdict, geneposdict, hitclusters, clusters
-
-def update_blastdict(blastdict, querylist, clusterdict, multiplehitlist):
-    #Update blastdict
-    blastdict2 = {}
-    frame_update()
-    for i in querylist:
-        if i in blastdict:
-            subjects = blastdict[i][0]
-            querydict = blastdict[i][1]
-            querydict2 = {}
-            multiplehitlistsubjects = "n"
-            for j in subjects:
-                if j in multiplehitlist:
-                    multiplehitlistsubjects = "y"
-                    geneclustername = clusterdict[j]
-                    oldblastdictinfo = querydict[j][1:]
-                    newblastdictinfo = [geneclustername] + oldblastdictinfo
-                    querydict2[j] = newblastdictinfo
-            if multiplehitlistsubjects == "y":
-                blastdict2[i] = [subjects,querydict2]
-        else:
-            blastdict2[i] = [[],{}]
-    blastdict = blastdict2
-    return blastdict
-
-def find_genomic_loci(blastdict, nucdict, proteininfo, allowedgenedistance, querylist, nucdescriptions, dnaseqlength):
-    ##In Genbank files, locate clusters of hits within 20 kb distance using new info from blastdict
-    ##Save clusters and sort first based on nr query genes having homologs in them, second based on cumulative BLAST bit score; update blastdict with cluster ID
-    #Write dictionary with genes and positions for all nucleotide scaffolds
-    blastdict = find_hits_positions(blastdict, proteininfo, querylist)
-    sourcedict, multiplehitlist, universalquerydict = sort_genes_per_nucleotide(querylist, blastdict, nucdict)
-    clusterdict, geneposdict, hitclusters, clusters = find_geneclusters(sourcedict, universalquerydict, allowedgenedistance, nucdescriptions, proteininfo, dnaseqlength)
-    blastdict = update_blastdict(blastdict, querylist, clusterdict, multiplehitlist)
-    return blastdict, geneposdict, hitclusters, clusters, multiplehitlist
 
 def score_blast(hitclusters, querylist, blastdict, clusters, multiplehitlist, arch_search, syntenyweight):
     #Score BLAST output on all gene clusters
@@ -2870,9 +2686,9 @@ def main():
     logging.info("Step 6/11: Finished loading the relevant parts of the database.")
 
     #Step 7: Locate blast hits in genome and find clusters
-    clusters = find_gene_clusters2(blast_dict, user_options, database)
-    for cluster in clusters:
-        print(len(cluster.proteins))
+    clusters = find_gene_clusters(blast_dict, user_options, database)
+
+
     return
     #Step 7: Locate Blast hits in genomes
     blastdict, geneposdict, hitclusters, clusters, multiplehitlist = find_genomic_loci(blastdict, nucdict, proteininfo, opts.distancekb, querylist, nucdescriptions, dnaseqlength)
@@ -2953,4 +2769,3 @@ class MyFormatter(logging.Formatter):
 if __name__ == '__main__':
     freeze_support()
     main()
-  
