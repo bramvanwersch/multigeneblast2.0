@@ -1521,152 +1521,6 @@ def load_genecluster_info(dbname, allgenomes):
     frame_update()
     return nucdescriptions, clusters
 
-class ProteinInfo(object):
-    __slots__ = ['genome', 'pstart', 'pend', 'strand', 'annotation', 'locustag']
-    def __init__(self, genome, pstart, pend, strand, annotation, locustag):
-        self.genome = genome
-        if pstart.isdigit():
-            self.pstart = int(pstart)
-        if pend.isdigit():
-            self.pend = int(pend)
-        if strand == "+":
-            self.strand = 1
-        else:
-            self.strand = -1
-        self.annotation = annotation
-        self.locustag = locustag
-
-def load_dbproteins_info(query_proteins, blast_dict, db_name):
-    ##Load needed gene cluster database proteins info into memory
-    db_path = os.environ["BLASTDB"]
-    nucdict = {}
-    temp_proteininfo = {}
-    proteininfo = {}
-
-    #get all the proteins that are found as blast hits, once
-    all_hit_prots = set()
-    for gene in query_proteins:
-        if gene in blast_dict:
-            all_hit_prots.update([val.subject for val in blast_dict[gene]])
-    all_hit_prots = list(all_hit_prots)
-
-    #load the preprosessed genbank files that are the database
-    picklefile = open("{}\\{}.pickle".format(db_path, db_name), "rb")
-    p_gbk = pickle.load(picklefile)
-    picklefile.close()
-
-    hit_proteins = {}
-    for protein in all_hit_prots:
-        hit_proteins[protein] = p_gbk.proteins[protein]
-    return hit_proteins
-
-def load_ndb_info(querylist, blastdict, dbname):
-    ##Load needed gene cluster database proteins info into memory
-    global DBPATH
-    DBPATH = os.environ['BLASTDB']
-    allhitprots = []
-    nucdict = {}
-    proteininfo = {}
-    for i in querylist:
-        if i in blastdict:
-            subjects = blastdict[i][0]
-            for j in subjects:
-                if j not in allhitprots:
-                    allhitprots.append(j)
-                genome = j.rpartition("_")[0]
-                pstart = min([blastdict[i][1][j][4],blastdict[i][1][j][5]])
-                pend = max([blastdict[i][1][j][4],blastdict[i][1][j][5]])
-                if int(blastdict[i][1][j][5]) > int(blastdict[i][1][j][4]):
-                    strand = "+"
-                else:
-                    strand = "-"
-                annotation = "tblastn hit"
-                locustag = "tblastn_hit_" + j.rpartition("_")[2]
-                proteininfo[j] = ProteinInfo(genome,pstart,pend,strand,annotation,locustag)
-    allhitprots.sort()
-    allgenomes = []
-    frame_update()
-    for j in allhitprots:
-        genome = j.rpartition("_")[0]
-        if genome not in allgenomes:
-            allgenomes.append(genome)
-        nucdict[j] = genome
-    allgenomes.sort()
-    return allgenomes, nucdict, proteininfo
-
-def load_other_genes(allgenomes, proteininfo, dbname, blastdict):
-    #Add all other genes from same genomes to proteininfo
-    global DBPATH
-    DBPATH = os.environ['BLASTDB']
-    genecords_archive = tarfile.open(DBPATH + os.sep + dbname + ".cords.tar")
-    same = "n"
-    for i in allgenomes:
-        frame_update()
-        if same == "n":
-            infofile = genecords_archive.extractfile("genecords/" + i[:5].upper() + ".pickle")
-            genecordsdict = pickle.load(infofile)
-        genecords = genecordsdict[i]
-        genomeprotpositions = [proteininfo[prot].pstart for prot in list(proteininfo.keys()) if i == proteininfo[prot].genome]
-        genomeprotpositions.extend([proteininfo[prot].pend for prot in list(proteininfo.keys()) if i == proteininfo[prot].genome])
-        blastsubjects = [item for sublist in [blastdict[key][0] for key in list(blastdict.keys())] for item in sublist]
-        for j in genecords:
-            if j.count(j.split("|")[0]) > 1:
-                j = j.rpartition(j.split("|")[1]) + j.rpartition(j.split("|")[2])
-            if "|" in j:
-                tabs = j.split("|")
-                if "-" not in tabs[1] and "-" in tabs[2]:
-                    del tabs[1]
-                protein = tabs[3]
-                genome = tabs[0]
-                location = tabs[1]
-                strand = tabs[2]
-                annotation = tabs[4]
-                locustag = tabs[5]
-                pstart = location.partition("-")[0]
-                pend = location.partition("-")[2]
-                if not pstart.isdigit():
-                    pstart = 0
-                    pend = 0
-                elif not pend.isdigit():
-                    pend = str(int(pstart) + 100)
-                gene_is_close_to_hit = False
-                for position in genomeprotpositions:
-                    if abs(int(pstart) - position) < 20000:
-                        gene_is_close_to_hit = True
-                if not gene_is_close_to_hit and protein not in blastsubjects:
-                    if not (len(allgenomes) > (allgenomes.index(i) + 1) and i[:5] == allgenomes[allgenomes.index(i) + 1][:5]):
-                        infofile.close()
-                        same = "n"
-                    else:
-                        same = "y"
-                    continue
-                if protein not in proteininfo:
-                    proteininfo[protein] = ProteinInfo(genome,pstart,pend,strand,annotation,locustag)
-                correct = "n"
-                z = 0
-                while correct == "n" and z < 2:
-                    try:
-                        number = 1 + int(proteininfo[protein].pstart)
-                        number = 1 + int(proteininfo[protein].pend)
-                        correct = "y"
-                    except:
-                        j = j.rpartition(genome)[1] + j.rpartition(genome)[2]
-                        tabs = j.split("|")
-                        protein = tabs[3]
-                        genome = tabs[0]
-                        location = tabs[1]
-                        strand = tabs[2]
-                        annotation = tabs[4]
-                        locustag = tabs[5]
-                        proteininfo[protein] = ProteinInfo(genome,location.partition("-")[0],location.partition("-")[2],strand,annotation,locustag)
-                        z += 1
-        if not (len(allgenomes) > (allgenomes.index(i) + 1) and i[:5] == allgenomes[allgenomes.index(i) + 1][:5]):
-            infofile.close()
-            same = "n"
-        else:
-            same = "y"
-    genecords_archive.close()
-    return proteininfo
 
 def load_databases(query_proteins, blast_dict, user_options):
     #TODO improve this to only include scaffolds with a hit. Needs improvement in general in combination with improving the database
@@ -1688,53 +1542,87 @@ def load_databases(query_proteins, blast_dict, user_options):
     # return nucdescriptions, nucdict, proteininfo
 
 def find_gene_clusters(blast_dict, user_options, database):
-    hits_per_scaffold, query_per_blast_hit = sort_hits_per_scaffold(blast_dict, database)
-    # hps = [p.protein_id.split(".")[0] for p in list(hits_per_scaffold.values())[0]]
-    # print(hps)
-    clusters_per_contig = find_blast_clusters(hits_per_scaffold, query_per_blast_hit, user_options.distancekb)
+    """
+    Find clusters of genes in the blast_dict
+
+    :param blast_dict: a dictionary that contains all query genes with a list
+    of BlastResults objects that where against these genes.
+    :param user_options: Option object of user specified options
+    :param database: a database loaded from a pickled class.
+    :return: A list of Cluster objects that are clusters found in the blast_dict
+    plus all proteins within those cluster regions
+    """
+    logging.info("Started finding clusters in the blast results...")
+    hits_per_contig, query_per_blast_hit = sort_hits_per_scaffold(blast_dict, database)
+    clusters_per_contig = find_blast_clusters(hits_per_contig, query_per_blast_hit, user_options.distancekb)
     add_additional_proteins(clusters_per_contig, database)
     clusters = []
     for contig in clusters_per_contig:
         clusters += clusters_per_contig[contig]
     return clusters
 
-
 def sort_hits_per_scaffold(blast_dict, database):
-    #sort all the blast hits per scaffold.
-    hits_per_scaffold = {}
+    """
+    Extract all the different scaffolds from the blast_dict and sort the
+    blast_hits on each contig
+
+    :param blast_dict: a dictionary that contains all query genes with a list
+    of BlastResults objects that where against these genes.
+    :param database: a database loaded from a pickled class.
+    :return: A dictionary of blast hits with scaffolds as keys sorted on
+    location and a dictionary that tell what query gene a blast hit corresponds
+    to.
+    """
+    logging.debug("Sorting blast-hits per scaffold...")
+    hits_per_contig = {}
     query_per_blast_hit = {}
     for hits in blast_dict.values():
         for hit in hits:
+            #extract the subject proteins from the Blastresults using the database
             subject_protein = database.proteins[hit.subject]
             query_per_blast_hit[hit.subject] = hit.query
-            if subject_protein.genbank_file not in hits_per_scaffold:
-                hits_per_scaffold[subject_protein.genbank_file] = set([subject_protein])
+            if subject_protein.genbank_file not in hits_per_contig:
+                hits_per_contig[subject_protein.genbank_file] = set([subject_protein])
             else:
-                hits_per_scaffold[subject_protein.genbank_file].add(subject_protein)
-    #sort each scaffold using start and stop locations
-    for scaffold in hits_per_scaffold:
-        hits_per_scaffold[scaffold] = list(hits_per_scaffold[scaffold])
-        hits_per_scaffold[scaffold].sort(key=lambda x: (x.start, x.stop))
-    return hits_per_scaffold, query_per_blast_hit
+                hits_per_contig[subject_protein.genbank_file].add(subject_protein)
+    #sort each contig using start and stop locations
+    for scaffold in hits_per_contig:
+        hits_per_contig[scaffold] = list(hits_per_contig[scaffold])
+        hits_per_contig[scaffold].sort(key=lambda x: (x.start, x.stop))
+    return hits_per_contig, query_per_blast_hit
 
-def find_blast_clusters(hits_per_scaffold, query_per_blast_hit, extra_distance):
+def find_blast_clusters(hits_per_contig, query_per_blast_hit, extra_distance):
+    """
+    Find clusters for each scaffold.
+
+    :param hits_per_contig: A dictionary of blast hits with scaffolds as keys
+    sorted on location.
+    :param query_per_blast_hit: a dictionary that tell what query gene a blast
+    hit corresponds to.
+    :param extra_distance: the distance that is allowed between 2 blast hits
+    for them to be considered part of the same cluster
+    :return: a dictionary that contains contigs as keys and lists of Cluster
+    objects as values.
+    """
     #find all the clusters
+    logging.debug("Finding clusters using blasthits...")
 
     clusters_per_contig = {}
-    for scaffold in hits_per_scaffold:
-        scaffold_proteins = hits_per_scaffold[scaffold]
+    for scaffold in hits_per_contig:
+
+        scaffold_proteins = hits_per_contig[scaffold]
         start = scaffold_proteins[0].start
         blast_hits = [scaffold_proteins[0]]
         index = 0
-
-        # the first one is already used
         clusters = []
-        #make sure no index out of range
+
         while index + 1 < len(scaffold_proteins):
             protein = scaffold_proteins[index]
             next_protein = scaffold_proteins[index + 1]
             if protein.stop + extra_distance < next_protein.start:
                 c = Cluster(start - extra_distance, protein.stop + extra_distance)
+                #add all the blast_hits to the cluster together with the query
+                #gene they originate from
                 for hit in blast_hits:
                     c.add_protein(hit, query_per_blast_hit[hit.name])
                 clusters.append(c)
@@ -1743,17 +1631,27 @@ def find_blast_clusters(hits_per_scaffold, query_per_blast_hit, extra_distance):
             else:
                 blast_hits.append(protein)
             index += 1
+        #make sure to add the final cluster
         c = Cluster(start - extra_distance, scaffold_proteins[index].stop + extra_distance)
         for hit in blast_hits:
             c.add_protein(hit, query_per_blast_hit[hit.name])
         clusters.append(c)
         tot = 0
 
-        if len(clusters) > 0:
-            clusters_per_contig[clusters[0].contig] = clusters
+        #all cluster objects are from the same contig
+        clusters_per_contig[clusters[0].contig] = clusters
     return clusters_per_contig
 
 def add_additional_proteins(clusters_per_contig, database):
+    """
+    Add proteins from the database that are within the bounds of the cluster
+    but no blzst hit, to the clusters.
+
+    :param clusters_per_contig: a dictionary that contains contigs as keys and
+    lists of Cluster objects as values.
+    :param database: a database loaded from a pickled class.
+    """
+    logging.debug("Adding additional proteins...")
     for contig in clusters_per_contig:
         contig_proteins = database.contigs[contig].proteins.values()
         # make a copy of all the proteins of a contig and sort them
@@ -1761,11 +1659,15 @@ def add_additional_proteins(clusters_per_contig, database):
         cluster_index = 0
         clusters = clusters_per_contig[contig]
 
+        #because all clusters are sorted aswell as the proteins one loop suffices
+        #to assign all proteins
         for protein in sorted_contig_proteins:
             cluster = clusters[cluster_index]
 
             if (protein.start >= cluster.start and protein.start <= cluster.stop):
                 cluster.add_protein(protein)
+                #if a protein is added make sure to add the same protein to a
+                #different cluster that can be overlapping in the extra region part
                 if cluster_index + 1 < len(clusters):
                     next_cluster = clusters[cluster_index + 1]
                     if protein.stop >= next_cluster.start and protein.stop <= next_cluster.stop:
@@ -1773,6 +1675,7 @@ def add_additional_proteins(clusters_per_contig, database):
 
             elif protein.start > cluster.start:
                 cluster_index += 1
+                #when all clusters have been covered
                 if cluster_index >= len(clusters):
                     break
                 cluster = clusters[cluster_index]
@@ -1780,12 +1683,24 @@ def add_additional_proteins(clusters_per_contig, database):
                     cluster.add_protein(protein)
 
 
-
 class Cluster:
-    def __init__(self, start, stop):
+    """
+    Tracks all proteins in a cluster. The proteins should start within the
+    cluster bounds.
+    """
+    def __init__(self, start, stop, contig):
+        """
+        :param start: an integer that is the start of the cluster. Is allowed to
+        be negative, this just means that the cluster starts from 0
+        :param stop: an Integer that is the end of the cluster. Is allowed to be
+        bigger then the contig. Simply means that the cluster stops at the end
+        of the contig
+        :param contig: the name of the contig this cluster is located on.
+        """
         #start and stop are allowed to be negative or bigger then possible
         self.start = start
         self.stop = stop
+        self.contig = contig
         #all proteins in the cluster
         self.__proteins = {}
         #all protein names that are blast hits linked to the query protein that
@@ -1793,16 +1708,16 @@ class Cluster:
         self.__blast_proteins = {}
 
     def add_protein(self, protein, query_blast_hit = False):
+        """
+        Controlled way of adding proteins to the cluster.
+
+        :param protein: a Protein object
+        :param query_blast_hit: a potential Protein object that is part of the
+        query that defines to what query gene the 'protein' has a blast hit.
+        """
         self.__proteins[protein.name] = protein
         if query_blast_hit:
             self.__blast_proteins[protein.name] = query_blast_hit
-
-    @property
-    def contig(self):
-        for key in self.__proteins:
-            return self.__proteins[key].genbank_file
-        #there is no protein in the cluster.
-        return None
 
     @property
     def proteins(self):
@@ -2687,12 +2602,9 @@ def main():
 
     #Step 7: Locate blast hits in genome and find clusters
     clusters = find_gene_clusters(blast_dict, user_options, database)
-
+    logging.info("Step 7/11: Finished finding clusters.")
 
     return
-    #Step 7: Locate Blast hits in genomes
-    blastdict, geneposdict, hitclusters, clusters, multiplehitlist = find_genomic_loci(blastdict, nucdict, proteininfo, opts.distancekb, querylist, nucdescriptions, dnaseqlength)
-    print(("Step 7/11: Time since start: " + str((time.time() - starttime))))
     #Step 8: Score Blast output on all loci
     opts.pages = score_blast_output(hitclusters, querylist, blastdict, multiplehitlist, proteins, proteininfo, querytags, opts.infile, clusters, nucdescriptions, opts.pages, arch_search, opts.syntenyweight)
     print(("Step 8/11: Time since start: " + str((time.time() - starttime))))
@@ -2738,7 +2650,7 @@ def setup_logger(outdir, starttime):
     log_file_loc = "{}{}{}".format(outdir, os.sep, 'run.log')
     #make sure that a potentially existing logfile is emptied
     if os.path.exists(log_file_loc):
-        open(log_file_loc, 'w').close()
+        open(log_file_loc, "w").close()
 
     #TODO think about making the level a user definable parameter
     logging.basicConfig(filename=log_file_loc, level=logging.DEBUG, format='%(levelname)s: %(asctime)s - %(message)s')
@@ -2756,11 +2668,21 @@ def setup_logger(outdir, starttime):
         logging.warning("The output directory already exists. Files may be overwritten.")
 
 class MyFormatter(logging.Formatter):
+    """
+    Formatter subclass that saves the start time so the time can be displayed
+    since starting to run MultiGeneBlast
+    """
     def __init__(self, fmt, starttime=time.time()):
         logging.Formatter.__init__(self, fmt)
         self._start_time = starttime
 
     def format(self, record):
+        """
+        Overwrite of the format function that prints the passed time and adds
+        current time to the existing format
+
+        :See: logging.Formatter.format()
+        """
         #difference = datetime.datetime.now() - self._start_time
         record.passedTime = "{:.3f}".format(time.time() - self._start_time)
         record.currentTime = datetime.datetime.now().time()
