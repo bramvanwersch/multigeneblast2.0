@@ -1756,8 +1756,17 @@ class Cluster:
         return self.__protein_indexes[protein_name]
 
 
-def score_blast(clusters, query_proteins, user_options):
-    #TODO marker
+def score_clusters(clusters, query_proteins, user_options):
+    """
+    Score all clusters based on cumulative blast scores, the total number of
+    unique queries that got a blast hit and synteny score when running homology
+    search
+
+    :param clusters: A list of Cluster objects
+    :param query_proteins: A list of Protein objects that are present in the
+    query
+    :param user_options: An Option object that contains user specified options
+    """
     logging.info("Scoring clusters...")
     index_query_proteins = OrderedDict((prot, i) for i, prot in enumerate(query_proteins))
 
@@ -1769,9 +1778,9 @@ def score_blast(clusters, query_proteins, user_options):
         hit_positions_dict = {}
         for blast_result in cluster.blast_hit_proteins.values():
             cum_blast_score += blast_result.bit_score / 1_000_000.0
-            hitnr += 1
             #get the best scoring blast result for each query entry
             if blast_result.query not in hit_positions_dict:
+                hitnr += 1
                 hit_positions_dict[blast_result.query] = blast_result
             else:
                 prev_br = hit_positions_dict[blast_result.query]
@@ -1787,8 +1796,13 @@ def score_blast(clusters, query_proteins, user_options):
                 hit_positions.append((index_query_proteins[blast_result.query],
                                      cluster.index(blast_result.subject)))
             synteny_score = score_synteny(hit_positions)
-        print(cluster.no, synteny_score * user_options.syntenyweight, hitnr, cum_blast_score)
+
+        #assign the score
         cluster.score = synteny_score * user_options.syntenyweight + hitnr + cum_blast_score
+
+    #sort the clusters on score
+    clusters.sort(key=lambda x: x.score, reverse=True)
+
 
 def score_synteny(hit_positions):
 
@@ -1964,14 +1978,6 @@ def write_txt_output(rankedclusters, rankedclustervalues, hitclusterdata, protei
     out_file.close()
     return pages
 
-def score_blast_output(clusters, query_proteins, user_options):
-    #add scores to the clusters
-    score_blast(clusters, query_proteins, user_options)
-    #sort the clusters
-    clusters.sort(key=lambda x: x.score, reverse=True)
-    print([(c.no, c.score) for c in clusters])
-    pages = write_txt_output(rankedclusters, rankedclustervalues, hitclusterdata, proteins, proteininfo, querytags, infile, clusters, nucdescriptions, pages)
-    return pages
 
 def read_multigeneblast_data(page):
     queryclusterdata = {}
@@ -2606,9 +2612,12 @@ def main():
     #print([len(c.proteins) for c in clusters])
 
     #Step 8: Score Blast output on all loci
-    opts.pages = score_blast_output(clusters, query_proteins, user_options)
-    print(("Step 8/11: Time since start: " + str((time.time() - starttime))))
+    score_clusters(clusters, query_proteins, user_options)
+    logging.info("Step 8/11: All clusters have been scored.")
     return
+    pages = write_txt_output(rankedclusters, rankedclustervalues,
+                             hitclusterdata, proteins, proteininfo, querytags,
+                             infile, clusters, nucdescriptions, pages)
     #Output. From here, iterate for every page
     for page in [pagenr + 1 for pagenr in range(int(opts.pages))]:
 

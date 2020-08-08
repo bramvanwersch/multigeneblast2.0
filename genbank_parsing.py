@@ -12,7 +12,7 @@ class Protein:
     """
     HEADER_SEPARATOR = "^"
     def __init__(self, sequence, start, name, strand, end = None, annotation = "",
-                 locus_tag = "", genbank_file = "", protein_id = "", start_header = ""):
+                 locus_tag = "", genbank_file = "", protein_id = ""):
         """
         :param sequence: a string that is the amino acid sequence of the protein
         :param start: an integer that is the start coordinate in the the protein
@@ -48,20 +48,6 @@ class Protein:
         self.locus_tag = locus_tag
         self.protein_id = protein_id
         self.genbank_file = genbank_file
-        self.fasta_header = self.__construct_fasta_header(start_header)
-
-    def __construct_fasta_header(self, start_header):
-        """
-        Construct a fasta header using available class variables
-
-        :param start_header: start of the header, can be ''
-        :return: a string that is the text of the fasta header. Meaning the > is
-        not included
-        """
-        header = "{}-{}{sep}{}{sep}{}{sep}{}{sep}{}{sep}{}".format(self.start, self.stop, self.strand, self.name, self.annotation,self.protein_id, self.locus_tag,sep = self.HEADER_SEPARATOR)
-        if start_header == '':
-            return "{}{sep}{}".format(self.genbank_file, sep = self.HEADER_SEPARATOR)
-        return "{}{sep}{}".format(start_header, header, sep = self.HEADER_SEPARATOR)
 
     def fasta_text(self):
         """
@@ -447,7 +433,7 @@ class GenbankEntry:
 
         #the first location and then the start
         start = locations[0][0]
-        return Protein(sequence, start, self.gene_name, strand, start_header="input|c1",
+        return Protein(sequence, start, self.gene_name, strand,
                        locus_tag=self.locus_tag, annotation=self.annotation,
                        genbank_file=self.file_accession, protein_id=self.protein_id)
 
