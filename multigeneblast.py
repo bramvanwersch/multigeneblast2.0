@@ -1803,16 +1803,24 @@ def score_clusters(clusters, query_proteins, user_options):
     #sort the clusters on score
     clusters.sort(key=lambda x: x.score, reverse=True)
 
-
 def score_synteny(hit_positions):
+    """
+    Calculate synteny score using a list of hit positions.
 
+    :param hit_positions: A list of tuples containing the index of a protein in
+    the query and the index of a protein in the cluster.
+    :return: An integer that is a synteny score which is the number of adjacent
+    genes in the same order as the query -1
+
+    This function checks if the first indexes in consecutive tuples go up or
+    down by 1 each time.
+    """
     # modified from antismash
     score = 0
     for index, pos in enumerate(hit_positions[:-1]):
         query, subject = pos
         next_query, next_subject = hit_positions[index + 1]
-        if (abs(query - next_query) < 2) and abs(
-                query - next_query) == abs(subject - next_subject):
+        if (abs(query - next_query) < 2) and abs(query - next_query) == abs(subject - next_subject):
             score += 1
     return score
 
@@ -1828,153 +1836,7 @@ def write_txt_output(rankedclusters, rankedclustervalues, hitclusterdata, protei
     #Output for each hit: table of genes and locations of input cluster, table of genes and locations of hit cluster, table of hits between the clusters
     log("   Writing TXT output file...")
     out_file = open("clusterblast_output.txt","w")
-    out_file.write("ClusterBlast scores for " + infile)
-    out_file.write("\n")
-    out_file.write("\n")
-    out_file.write("Table of genes, locations, strands and annotations of query cluster:")
-    out_file.write("\n")
-    maxpos = 0
-    minpos = 1000000000000
-    for i in querytags:
-        out_file.write(i)
-        out_file.write("\t")
-        out_file.write(proteins[3][i][0])
-        out_file.write("\t")
-        out_file.write(proteins[3][i][1])
-        out_file.write("\t")
-        out_file.write(proteins[3][i][2])
-        out_file.write("\t")
-        out_file.write(proteins[3][i][3])
-        out_file.write("\t")
-        out_file.write(proteins[3][i][-1])
-        out_file.write("\t")
-        out_file.write("\n")
-        if int(proteins[3][i][0]) > maxpos:
-            maxpos = int(proteins[3][i][0])
-        if int(proteins[3][i][1]) > maxpos:
-            maxpos = int(proteins[3][i][1])
-        if int(proteins[3][i][0]) < minpos:
-            minpos = int(proteins[3][i][0])
-        if int(proteins[3][i][1]) < minpos:
-            minpos = int(proteins[3][i][1])
-    frame_update()
-    #Add extra genes from query file that are in between selected genes
-    for i in proteins[0]:
-        if int(i.split("|")[2].partition("-")[0]) > minpos and int(i.split("|")[2].partition("-")[2]) > minpos and int(i.split("|")[2].partition("-")[0]) < maxpos and int(i.split("|")[2].partition("-")[2]) < maxpos:
-            if i.split("|")[4] in querytags or i.split("|")[-1] in querytags:
-                continue
-            try:
-                out_file.write(i.split("|")[4])
-                out_file.write("\t")
-                out_file.write(proteins[3][i.split("|")[4]][0])
-                out_file.write("\t")
-                out_file.write(proteins[3][i.split("|")[4]][1])
-                out_file.write("\t")
-                out_file.write(proteins[3][i.split("|")[4]][2])
-                out_file.write("\t")
-                out_file.write(proteins[3][i.split("|")[4]][3])
-                out_file.write("\t")
-                out_file.write(proteins[3][i.split("|")[4]][-1])
-                out_file.write("\t")
-            except:
-                out_file.write(i.split("|")[-1])
-                out_file.write("\t")
-                out_file.write(proteins[3][i.split("|")[-1]][0])
-                out_file.write("\t")
-                out_file.write(proteins[3][i.split("|")[-1]][1])
-                out_file.write("\t")
-                out_file.write(proteins[3][i.split("|")[-1]][2])
-                out_file.write("\t")
-                out_file.write(proteins[3][i.split("|")[-1]][3])
-                out_file.write("\t")
-                out_file.write(proteins[3][i.split("|")[-1]][-1])
-                out_file.write("\t")
-            out_file.write("\n")
-    out_file.write("\n")
-    out_file.write("\n")
-    out_file.write("Significant hits: ")
-    out_file.write("\n")
-    z = 0
-    for i in rankedclusters[:int(pages * 50)]:
-        out_file.write(str(z+1) + ". " + i + "\t" + clusters[i][1])
-        out_file.write("\n")
-        z += 1
-    out_file.write("\n")
-    out_file.write("\n")
-    z = 0
-    out_file.write("Details:")
-    for i in rankedclusters[:int(pages * 50)]:
-        frame_update()
-        value = str(rankedclustervalues[z])
-        nrhits = value.split(".")[0]
-        if int(nrhits) > 0:
-            out_file.write("\n\n")
-            out_file.write(">>")
-            out_file.write("\n")
-            mgbscore = cumblastscore = str(float(value.split(".")[0] + "." + value.split(".")[1][0]))
-            cumblastscore = str(int(float("0." + value.split(".")[1][1:]) * 100000))
-            out_file.write("\n")
-            out_file.write(str(z+1) + ". " + i)
-            out_file.write("\n")
-            nucleotidename = ""
-            for j in i.split("_")[:-1]:
-                nucleotidename = nucleotidename + j + "_"
-            nucleotidename = nucleotidename[:-1].split(".")[0]
-            nucdescription = ""
-            for j in list(nucdescriptions.keys()):
-                if j in nucleotidename:
-                    nucdescription = nucdescriptions[j]
-                    break
-            out_file.write("Source: " + nucdescription)
-            out_file.write("\n")
-            out_file.write("Number of proteins with BLAST hits to this cluster: " + nrhits)
-            out_file.write("\n")
-            out_file.write("MultiGeneBlast score: " + mgbscore)
-            out_file.write("\n")
-            out_file.write("Cumulative Blast bit score: " + cumblastscore)
-            out_file.write("\n")
-            out_file.write("\n")
-            out_file.write("Table of genes, locations, strands and annotations of subject cluster:")
-            out_file.write("\n")
-            clusterproteins = clusters[i][0]
-            for j in clusterproteins:
-                #if proteinlocations.has_key(j) and proteinannotations.has_key(j) and proteinstrands.has_key(j):
-                out_file.write(j)
-                out_file.write("\t")
-                out_file.write(str(proteininfo[j].pstart))
-                out_file.write("\t")
-                out_file.write(str(proteininfo[j].pend))
-                out_file.write("\t")
-                if proteininfo[j].strand == 1:
-                    out_file.write("+")
-                else:
-                    out_file.write("-")
-                out_file.write("\t")
-                out_file.write(str(proteininfo[j].annotation))
-                out_file.write("\t")
-                out_file.write(str(proteininfo[j].locustag.replace("\n","")))
-                out_file.write("\n")
-            out_file.write("\n")
-            out_file.write("Table of Blast hits (query gene, subject gene, %identity, blast score, %coverage, e-value):")
-            out_file.write("\n")
-            if i in list(hitclusterdata.keys()):
-                tabledata = hitclusterdata[i]
-                for x in tabledata:
-                    w = 0
-                    for y in x:
-                        if w == 0:
-                            out_file.write(str(y).split("|")[4])
-                            out_file.write("\t")
-                            w += 1
-                        else:
-                            out_file.write(str(y))
-                            out_file.write("\t")
-                    out_file.write("\n")
-            else:
-                "data not found"
-                out_file.write("\n")
-            out_file.write("\n")
-            z += 1
+
     out_file.close()
     return pages
 
