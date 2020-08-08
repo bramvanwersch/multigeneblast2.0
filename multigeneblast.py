@@ -1760,8 +1760,7 @@ class Cluster:
 
     def sort(self):
         """
-
-        :return:
+        Sort the __proteins dict and __protein_indexes dict.
         """
         if not self.__sorted:
             self.__proteins = OrderedDict(sorted(self.__proteins.items(), key=lambda item: (item[1].start, item[1].stop)))
@@ -1807,7 +1806,8 @@ class Cluster:
         full_summary += "Name\tstart\tstop\tstrand\tannotation\tlocus_tag\n"
 
         for protein in self.__proteins.values():
-            full_summary += "- {}\n".format(protein.summary())
+            full_summary += "{}\n".format(protein.summary())
+        full_summary += "<\n"
 
         #Table of all the blast hits
         full_summary += "\n>Table of blast hits:\n"
@@ -1816,7 +1816,8 @@ class Cluster:
                         " start\tsubject stop\te-value\tblast bit score\n"
 
         for blast_result in self.__blast_proteins.values():
-            full_summary += "- {}\n".format(blast_result.summary())
+            full_summary += "{}\n".format(blast_result.summary())
+        full_summary += "<\n"
         return full_summary
 
 
@@ -1889,6 +1890,25 @@ def score_synteny(hit_positions):
     return score
 
 def write_txt_output(query_proteins, clusters, blast_output, user_options):
+    """
+    Write the output into a file containing information on all clusters.
+
+    :param query_proteins: a list of Protein objects that where present in the
+    provided query
+    :param clusters: a list of Cluster objects
+    :param blast_output: a dictionary that contains a key for every query that
+    had a siginificant blast result with the values being BlastResult objects
+    :param user_options: an Option object with user define doptions
+
+    Note the formatting of the file is defined as follows:
+    - '>>' signify a header of a new piece of information, the text directly after
+    it is the descriptor
+    - '>' signifies the start of a table followed by the descriptor of what is in
+    the table. The first line of the table should always be the header.
+    - '<' indicates the end of a table
+    - '-' indicates a piece of information, if it is after a table start ('>')
+    then it indicates a table entry
+    """
 
     #Check if the number of set pages is not too large for the number of results
     #TODO see if needs to be moved, is kind of a strange place
@@ -1897,25 +1917,28 @@ def write_txt_output(query_proteins, clusters, blast_output, user_options):
         total_pages += 1
     user_options.pages = max([total_pages, user_options.pages, 1])
 
-    logging.info("Writing TXT output file into {}...".format(os.path.join(user_options.outdir, "clusterblast_output2.txt")))
-    out_file = open("{}\clusterblast_output2.txt".format(user_options.outdir),"w")
+    logging.info("Writing TXT output file into {}...".format(os.path.join(user_options.outdir, "clusterblast_output.mgb")))
+    out_file = open("{}\clusterblast_output.mgb".format(user_options.outdir),"w")
 
     #write for what database
     out_file.write("ClusterBlast scores for: {}\{}\n\n".format(os.environ["BLASTDB"], user_options.db))
 
     #write all the query proteins
     out_file.write(">>Query proteins:\n")
+    out_file.write(">Table of query proteins:\n")
     out_file.write("Name\tstart\tstop\tstrand\tannotation\tlocus_tag\n")
     for protein in query_proteins.values():
-        out_file.write("- {}\n".format(protein.summary()))
+        out_file.write("{}\n".format(protein.summary()))
+    out_file.write("<\n")
 
     #write general information about the clusters
     out_file.write("\n>>Significant clusters:\n")
+    out_file.write(">Table of the summary of significant clusters:\n")
     out_file.write("cluster no\tcontig id\tscore\tnumber of blast hits\n")
     for cluster in clusters:
-        out_file.write("- {}\n".format(cluster.short_summary()))
+        out_file.write("{}\n".format(cluster.short_summary()))
+    out_file.write("<\n\n")
 
-    out_file.write("\n")
     #write more comprehensive information for each cluster
     for cluster in clusters:
         out_file.write(">> Details Cluster {}\n".format(cluster.no))
