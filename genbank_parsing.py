@@ -10,7 +10,6 @@ class Protein:
     A representation of a protein, containing some optional fields that can or
     cannot be specified.
     """
-    HEADER_SEPARATOR = "^"
     def __init__(self, sequence, start, name, strand, end = None, annotation = "",
                  locus_tag = "", genbank_file = "", protein_id = ""):
         """
@@ -48,6 +47,13 @@ class Protein:
         self.locus_tag = locus_tag
         self.protein_id = protein_id
         self.genbank_file = genbank_file
+
+    def summary(self):
+        lt = self.locus_tag
+        if self.locus_tag == "":
+            lt = "No locus tag"
+        return "{}\t{}\t{}\t{}\t{}\t{}".format(self.name, self.start, self.stop,
+                                               self.strand, self.annotation, lt)
 
     def fasta_text(self):
         """

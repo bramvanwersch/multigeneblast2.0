@@ -862,8 +862,8 @@ class BlastResult:
         #percentage of the query that is covered by the subject
         self.percent_coverage = self.allignment_lenght / self.query_protein.aa_lenght * 100
 
-    def __str__(self):
-        return str("\t".join(self.line))
+    def summary(self):
+        return "\t".join(self.line)
 
 
 def blast_parse(user_options, query_proteins, blast_output):
@@ -1720,8 +1720,8 @@ class Cluster:
         #that the blast hit was against
         self.__blast_proteins = {}
 
-        #the score of the cluster based on synteny nr of hits and accumulated blast score
-        self.score = 0
+        #a dictionary for tracking individual parts of the score
+        self.__score = {"synteny" : 0, "accumulated_blast_score" : 0, "number unique hits" : 0}
 
     def add_protein(self, protein, query_blast_hit = False):
         """
@@ -1739,6 +1739,18 @@ class Cluster:
             self.__sorted = False
 
     @property
+    def score(self):
+        return sum(self.__score.values())
+
+    def set_score(self, synteny, accumulated_blast_score, number_unique_hits):
+        self.__score["synteny"] = synteny
+        self.__score["accumulated_blast_score"] = accumulated_blast_score
+        self.__score["number unique hits"] = number_unique_hits
+
+    def segmented_score(self):
+        return self.__score
+
+    @property
     def proteins(self):
         return self.__proteins
 
@@ -1747,13 +1759,65 @@ class Cluster:
         return self.__blast_proteins
 
     def sort(self):
+        """
+
+        :return:
+        """
         if not self.__sorted:
             self.__proteins = OrderedDict(sorted(self.__proteins.items(), key=lambda item: (item[1].start, item[1].stop)))
             self.__protein_indexes = OrderedDict((name, index) for index, name in enumerate(self.__proteins))
             self.__sorted = True
 
     def index(self, protein_name):
+        """
+        The index of a protein within the self.__proteins dictionary
+
+        :param protein_name: a string that is the name of a protein
+        :return: the index of the protein name in the self.__protein indexes
+        dictionary
+        """
         return self.__protein_indexes[protein_name]
+
+    def short_summary(self):
+        """
+        A short summary of the cluster
+
+        :return: a string
+        """
+        return "Cluster {}\t{}\t{:.7f}\t{}".format(self.no, self.contig, self.score, len(self.__blast_proteins))
+
+    def summary(self):
+        """
+        A comprehensive string summary of a cluster, containing general
+        information, and tables for genes in the cluster and the blast hits
+
+        :return: a string that contains the information described above
+        """
+        full_summary = ""
+        #general information
+        full_summary += "- Source contig: {}\n".format(self.contig)
+        full_summary += "- Number of proteins with BLAST hits to this cluster: {}\n".format(len(self.__blast_proteins))
+        full_summary += "- MultiGeneBlast 2.0 score: {:.7f}\n  - synteny score: {}\n  " \
+                        "- accumulated blast bit score / 1.000.000: {:.7f}\n  " \
+                        "- Number of unique blast hits: {}\n\n".\
+            format(self.score, self.__score["synteny"], self.__score["accumulated_blast_score"], self.__score["number unique hits"])
+
+        #Table of all proteins in cluster
+        full_summary += ">Table of genes in cluster:\n"
+        full_summary += "Name\tstart\tstop\tstrand\tannotation\tlocus_tag\n"
+
+        for protein in self.__proteins.values():
+            full_summary += "- {}\n".format(protein.summary())
+
+        #Table of all the blast hits
+        full_summary += "\n>Table of blast hits:\n"
+        full_summary += "query prot\tsubject prot\tperc ident\tallignment len" \
+                        "\tmismatch\tgap open\tquery start\tquery stop\tsubject" \
+                        " start\tsubject stop\te-value\tblast bit score\n"
+
+        for blast_result in self.__blast_proteins.values():
+            full_summary += "- {}\n".format(blast_result.summary())
+        return full_summary
 
 
 def score_clusters(clusters, query_proteins, user_options):
@@ -1798,7 +1862,7 @@ def score_clusters(clusters, query_proteins, user_options):
             synteny_score = score_synteny(hit_positions)
 
         #assign the score
-        cluster.score = synteny_score * user_options.syntenyweight + hitnr + cum_blast_score
+        cluster.set_score(synteny_score * user_options.syntenyweight, cum_blast_score, hitnr)
 
     #sort the clusters on score
     clusters.sort(key=lambda x: x.score, reverse=True)
@@ -1824,21 +1888,39 @@ def score_synteny(hit_positions):
             score += 1
     return score
 
-def write_txt_output(rankedclusters, rankedclustervalues, hitclusterdata, proteins, proteininfo, querytags, infile, clusters, nucdescriptions, pages):
-    #Check if the number of set pages is not too large for the number of results
-    possible_pages = len(rankedclusters) / 50
-    if len(rankedclusters) % 50 > 1:
-        possible_pages += 1
-    if possible_pages < int(pages):
-        pages = possible_pages
-    if pages == 0:
-        pages = 1
-    #Output for each hit: table of genes and locations of input cluster, table of genes and locations of hit cluster, table of hits between the clusters
-    log("   Writing TXT output file...")
-    out_file = open("clusterblast_output.txt","w")
+def write_txt_output(query_proteins, clusters, blast_output, user_options):
 
+    #Check if the number of set pages is not too large for the number of results
+    #TODO see if needs to be moved, is kind of a strange place
+    total_pages = len(clusters) / 50
+    if len(clusters) % 50 > 1:
+        total_pages += 1
+    user_options.pages = max([total_pages, user_options.pages, 1])
+
+    logging.info("Writing TXT output file into {}...".format(os.path.join(user_options.outdir, "clusterblast_output2.txt")))
+    out_file = open("{}\clusterblast_output2.txt".format(user_options.outdir),"w")
+
+    #write for what database
+    out_file.write("ClusterBlast scores for: {}\{}\n\n".format(os.environ["BLASTDB"], user_options.db))
+
+    #write all the query proteins
+    out_file.write(">>Query proteins:\n")
+    out_file.write("Name\tstart\tstop\tstrand\tannotation\tlocus_tag\n")
+    for protein in query_proteins.values():
+        out_file.write("- {}\n".format(protein.summary()))
+
+    #write general information about the clusters
+    out_file.write("\n>>Significant clusters:\n")
+    out_file.write("cluster no\tcontig id\tscore\tnumber of blast hits\n")
+    for cluster in clusters:
+        out_file.write("- {}\n".format(cluster.short_summary()))
+
+    out_file.write("\n")
+    #write more comprehensive information for each cluster
+    for cluster in clusters:
+        out_file.write(">> Details Cluster {}\n".format(cluster.no))
+        out_file.write("{}\n".format(cluster.summary()))
     out_file.close()
-    return pages
 
 
 def read_multigeneblast_data(page):
@@ -2476,10 +2558,11 @@ def main():
     #Step 8: Score Blast output on all loci
     score_clusters(clusters, query_proteins, user_options)
     logging.info("Step 8/11: All clusters have been scored.")
+
+    #step 9: write the results to a text file
+    write_txt_output(query_proteins, clusters, blast_output, user_options)
+    logging.info("Step 9/11: Results have been written to a text file.")
     return
-    pages = write_txt_output(rankedclusters, rankedclustervalues,
-                             hitclusterdata, proteins, proteininfo, querytags,
-                             infile, clusters, nucdescriptions, pages)
     #Output. From here, iterate for every page
     for page in [pagenr + 1 for pagenr in range(int(opts.pages))]:
 
