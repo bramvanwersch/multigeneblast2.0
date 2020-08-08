@@ -1,5 +1,7 @@
 import logging
 from string import ascii_letters
+#to ensure compatibility with older then 3.7 python versions
+from collections import OrderedDict
 ILLEGAL_CHARACTERS = ["'",'"','=',';',':','[',']','>','<','|','\\',"/",'*','-','.',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
 
 
@@ -90,7 +92,7 @@ class GenbankFile:
             self.file = file
             file_text = self.__read_genbank_file(file)
         self.contigs = self.__create_contigs(file_text, protein_range, allowed_proteins)
-        self.proteins = self.__list_proteins()
+        self.proteins = self.__list_proteins() #an OrderedDict.
 
         logging.debug("Finished parsing genbank file {}.".format(file))
 
@@ -101,14 +103,12 @@ class GenbankFile:
         return text
 
     def __list_proteins(self):
-        protein_dict = {}
+        protein_dict = OrderedDict()
         for contig in self.contigs.values():
             prots = contig.proteins.values()
             for prot in prots:
                 if prot.name in protein_dict:
-                    logging.warning(
-                        "Double fasta entry '{}' in file '{}'. Skipping...".format(
-                            entry.protein.name, self.file))
+                    logging.warning("Double fasta entry '{}' in file '{}'. Skipping...".format(entry.protein.name, self.file))
                 else:
                     protein_dict[prot.name] = prot
         return protein_dict
@@ -162,6 +162,7 @@ class Contig:
 
         #exract all the entries from the genbank file
         self.entries = self.__extract_entries(gene_information[1:], dna_sequence, c_dna_sequence, protein_range, allowed_proteins)
+        self.entries.sort(key=lambda x: (x.protein.start, x.protein.stop))
         self.proteins = self.__get_unique_proteins()
 
     def __get_unique_proteins(self):
@@ -171,7 +172,7 @@ class Contig:
 
         :return: a dictionary of protein objects
         """
-        protein_dict = {}
+        protein_dict = OrderedDict()
         for entry in self.entries:
             if entry.protein.name in protein_dict:
                 logging.warning("Double fasta entry '{}' in file '{}'. Skipping...".format(entry.protein.name, self.file))
@@ -447,8 +448,8 @@ class GenbankEntry:
         #the first location and then the start
         start = locations[0][0]
         return Protein(sequence, start, self.gene_name, strand, start_header="input|c1",
-                       locus_tag=self.locus_tag, annotation=self.annotation, genbank_file=self.file_accession,
-                       protein_id=self.protein_id)
+                       locus_tag=self.locus_tag, annotation=self.annotation,
+                       genbank_file=self.file_accession, protein_id=self.protein_id)
 
 
 def clean_dna_sequence(dna_seq):

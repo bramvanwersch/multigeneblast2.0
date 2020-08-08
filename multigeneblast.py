@@ -22,6 +22,7 @@ import fileinput
 import subprocess
 import argparse
 import logging
+from collections import OrderedDict
 
 #constants
 FASTA_EXTENSIONS = ("fasta","fas","fa","fna")
@@ -1557,8 +1558,12 @@ def find_gene_clusters(blast_dict, user_options, database):
     clusters_per_contig = find_blast_clusters(hits_per_contig, query_per_blast_hit, user_options.distancekb)
     add_additional_proteins(clusters_per_contig, database)
     clusters = []
+
+    #add clusters to oen big list and sort them
     for contig in clusters_per_contig:
-        clusters += clusters_per_contig[contig]
+        for cluster in clusters_per_contig[contig]:
+            cluster.sort()
+            clusters.append(cluster)
     return clusters
 
 def sort_hits_per_scaffold(blast_dict, database):
@@ -1570,8 +1575,8 @@ def sort_hits_per_scaffold(blast_dict, database):
     of BlastResults objects that where against these genes.
     :param database: a database loaded from a pickled class.
     :return: A dictionary of blast hits with scaffolds as keys sorted on
-    location and a dictionary that tell what query gene a blast hit corresponds
-    to.
+    location and a dictionary that linkes the subject of a BlastResult to the
+    result itself.
     """
     logging.debug("Sorting blast-hits per scaffold...")
     hits_per_contig = {}
@@ -1580,7 +1585,7 @@ def sort_hits_per_scaffold(blast_dict, database):
         for hit in hits:
             #extract the subject proteins from the Blastresults using the database
             subject_protein = database.proteins[hit.subject]
-            query_per_blast_hit[hit.subject] = hit.query
+            query_per_blast_hit[hit.subject] = hit
             if subject_protein.genbank_file not in hits_per_contig:
                 hits_per_contig[subject_protein.genbank_file] = set([subject_protein])
             else:
@@ -1597,8 +1602,8 @@ def find_blast_clusters(hits_per_contig, query_per_blast_hit, extra_distance):
 
     :param hits_per_contig: A dictionary of blast hits with scaffolds as keys
     sorted on location.
-    :param query_per_blast_hit: a dictionary that tell what query gene a blast
-    hit corresponds to.
+    :param query_per_blast_hit: a dictionary that linkes the subject of a
+    BlastResult to the result itself.
     :param extra_distance: the distance that is allowed between 2 blast hits
     for them to be considered part of the same cluster
     :return: a dictionary that contains contigs as keys and lists of Cluster
@@ -1619,8 +1624,9 @@ def find_blast_clusters(hits_per_contig, query_per_blast_hit, extra_distance):
         while index + 1 < len(scaffold_proteins):
             protein = scaffold_proteins[index]
             next_protein = scaffold_proteins[index + 1]
+            blast_hits.append(protein)
             if protein.stop + extra_distance < next_protein.start:
-                c = Cluster(start - extra_distance, protein.stop + extra_distance)
+                c = Cluster(start - extra_distance, protein.stop + extra_distance, protein.genbank_file)
                 #add all the blast_hits to the cluster together with the query
                 #gene they originate from
                 for hit in blast_hits:
@@ -1628,11 +1634,9 @@ def find_blast_clusters(hits_per_contig, query_per_blast_hit, extra_distance):
                 clusters.append(c)
                 start = next_protein.start
                 blast_hits = [next_protein]
-            else:
-                blast_hits.append(protein)
             index += 1
         #make sure to add the final cluster
-        c = Cluster(start - extra_distance, scaffold_proteins[index].stop + extra_distance)
+        c = Cluster(start - extra_distance, scaffold_proteins[index].stop + extra_distance, scaffold_proteins[index].genbank_file)
         for hit in blast_hits:
             c.add_protein(hit, query_per_blast_hit[hit.name])
         clusters.append(c)
@@ -1655,13 +1659,12 @@ def add_additional_proteins(clusters_per_contig, database):
     for contig in clusters_per_contig:
         contig_proteins = database.contigs[contig].proteins.values()
         # make a copy of all the proteins of a contig and sort them
-        sorted_contig_proteins = sorted(contig_proteins, key=lambda x: (x.start, x.stop))
         cluster_index = 0
         clusters = clusters_per_contig[contig]
 
         #because all clusters are sorted aswell as the proteins one loop suffices
         #to assign all proteins
-        for protein in sorted_contig_proteins:
+        for protein in contig_proteins:
             cluster = clusters[cluster_index]
 
             if (protein.start >= cluster.start and protein.start <= cluster.stop):
@@ -1686,8 +1689,11 @@ def add_additional_proteins(clusters_per_contig, database):
 class Cluster:
     """
     Tracks all proteins in a cluster. The proteins should start within the
-    cluster bounds.
+    cluster bounds. The cluster can be sorted but only when specifically asked
+    by the user. The cluster is then guaranteed sorted unitl new proteins are
+    added.
     """
+    COUNTER = 0
     def __init__(self, start, stop, contig):
         """
         :param start: an integer that is the start of the cluster. Is allowed to
@@ -1697,15 +1703,25 @@ class Cluster:
         of the contig
         :param contig: the name of the contig this cluster is located on.
         """
+        #track an increasing cluster number
+        self.no = self.COUNTER
+        Cluster.COUNTER += 1
+
         #start and stop are allowed to be negative or bigger then possible
         self.start = start
         self.stop = stop
         self.contig = contig
         #all proteins in the cluster
-        self.__proteins = {}
+        self.__proteins = OrderedDict()
+        self.__protein_indexes = OrderedDict()
+        self.sorted = True
+
         #all protein names that are blast hits linked to the query protein that
         #that the blast hit was against
         self.__blast_proteins = {}
+
+        #the score of the cluster based on synteny nr of hits and accumulated blast score
+        self.score = 0
 
     def add_protein(self, protein, query_blast_hit = False):
         """
@@ -1715,9 +1731,12 @@ class Cluster:
         :param query_blast_hit: a potential Protein object that is part of the
         query that defines to what query gene the 'protein' has a blast hit.
         """
-        self.__proteins[protein.name] = protein
-        if query_blast_hit:
+        if query_blast_hit and protein.name not in self.__proteins:
             self.__blast_proteins[protein.name] = query_blast_hit
+        if not protein.name in self.__proteins:
+            self.__proteins[protein.name] = protein
+            self.__protein_indexes[protein.name] = len(self.__proteins) - 1
+            self.__sorted = False
 
     @property
     def proteins(self):
@@ -1727,84 +1746,61 @@ class Cluster:
     def blast_hit_proteins(self):
         return self.__blast_proteins
 
+    def sort(self):
+        if not self.__sorted:
+            self.__proteins = OrderedDict(sorted(self.__proteins.items(), key=lambda item: (item[1].start, item[1].stop)))
+            self.__protein_indexes = OrderedDict((name, index) for index, name in enumerate(self.__proteins))
+            self.__sorted = True
 
-def score_blast(hitclusters, querylist, blastdict, clusters, multiplehitlist, arch_search, syntenyweight):
-    #Score BLAST output on all gene clusters
-    #Rank gene cluster hits based on 1) number of protein hits covering >25% sequence length or at least 100aa alignment, with >30% identity and 2) cumulative blast score
-    #Find number of protein hits and cumulative blast score for each gene cluster
-    log("   Scoring Blast outputs...")
-    hitclusterdict = {}
-    hitclusterdata = {}
-    for i in hitclusters:
-        frame_update()
-        hitclusterdatalist = []
-        nrhits = float(0)
-        cumblastscore = float(0)
-        hitpositions = []
-        hitposcorelist = []
-        for j in querylist:
-            querynrhits = 0
-            querycumblastscore = float(0)
-            nrhitsplus = "n"
-            if j in blastdict:
-                for k in blastdict[j][0]:
-                    if k in multiplehitlist and i == blastdict[j][1][k][0]:
-                        if [querylist.index(j),clusters[i][0].index(blastdict[j][1][k][11])] not in hitpositions:
-                            nrhitsplus = "y"
-                            querynrhits += 1
-                            blastscore = float(blastdict[j][1][k][6]) / 1000000
-                            querycumblastscore = querycumblastscore + blastscore
-                            hitclusterdatalist.append([j,k,blastdict[j][1][k][5],blastdict[j][1][k][6],blastdict[j][1][k][7],blastdict[j][1][k][8]])
-                            hitclusterdata[i] = hitclusterdatalist
-                            hitpositions.append([querylist.index(j),clusters[i][0].index(blastdict[j][1][k][11])])
-                if nrhitsplus == "y":
-                    nrhits += 1
-                    for hit in range(querynrhits):
-                        hitposcorelist.append(0)
-                    cumblastscore = cumblastscore + float(querycumblastscore)
-        query_givenscores_querydict = {}
-        query_givenscores_hitdict = {}
-        #Find groups of hits
-        hitgroupsdict = {}
-        for p in hitpositions:
-            if p[0] not in hitgroupsdict:
-                hitgroupsdict[p[0]] = [p[1]]
+    def index(self, protein_name):
+        return self.__protein_indexes[protein_name]
+
+
+def score_blast(clusters, query_proteins, user_options):
+    #TODO marker
+    logging.info("Scoring clusters...")
+    index_query_proteins = OrderedDict((prot, i) for i, prot in enumerate(query_proteins))
+
+    #calculate the cumulative blast scores over all blast hits of a cluster
+    #TODO figure out why these scores differ slightly from mgb. I have looked but not found :(
+    for cluster in clusters:
+        cum_blast_score = 0
+        hitnr = 0
+        hit_positions_dict = {}
+        for blast_result in cluster.blast_hit_proteins.values():
+            cum_blast_score += blast_result.bit_score / 1_000_000.0
+            hitnr += 1
+            #get the best scoring blast result for each query entry
+            if blast_result.query not in hit_positions_dict:
+                hit_positions_dict[blast_result.query] = blast_result
             else:
-                hitgroupsdict[p[0]].append(p[1])
-        #Calculate synteny score; give score only if more than one hits (otherwise no synteny possible), and only once for every query gene and every hit gene
-        if arch_search == "n":
-            synteny_score = 0
-            z = 1
-            if nrhits > 1:
-                for p in hitpositions[:-1]:
-                    tandem = "n"
-                    #Check if a gene homologous to this gene has already been scored for synteny in the previous entry
-                    if p[1] in hitgroupsdict[hitpositions[z][0]]:
-                        tandem = "y"
-                    #Score entry
-                    if ((p[0] not in query_givenscores_querydict) or query_givenscores_querydict[p[0]] == 0) and ((p[1] not in query_givenscores_hitdict) or query_givenscores_hitdict[p[1]] == 0) and tandem == "n":
-                        q = hitpositions[z]
-                        if (abs(p[0] - q[0]) < 2) and abs(p[0]-q[0]) == abs(p[1]-q[1]):
-                            synteny_score += 1
-                            if hitposcorelist[z - 1] == 1 or hitposcorelist[z] == 1:
-                                synteny_score += 1
-                            query_givenscores_querydict[p[0]] = 1
-                            query_givenscores_hitdict[p[1]] = 1
-                        else:
-                            query_givenscores_querydict[p[0]] = 0
-                            query_givenscores_hitdict[p[1]] = 0
-                    z += 1
-            #Weigh synteny score by factor
-            synteny_score = float(synteny_score) * syntenyweight
-            #sorting score is based on number of hits (discrete values) & cumulative blast score (behind comma values)
-            sortingscore = nrhits + synteny_score + cumblastscore
-        else:
-            sortingscore = nrhits + cumblastscore
-        hitclusterdict[i] = float(sortingscore)
-    #Sort gene clusters
-    rankedclusters = sortdictkeysbyvaluesrev(hitclusterdict)
-    rankedclustervalues = sortdictkeysbyvaluesrevv(hitclusterdict)
-    return rankedclusters, rankedclustervalues, hitclusterdata
+                prev_br = hit_positions_dict[blast_result.query]
+                if prev_br.evalue > blast_result.evalue:
+                    hit_positions_dict[blast_result.query] = blast_result
+
+        synteny_score = 0
+        if not user_options.architecture_mode:
+            #make a tuple of index in the query and index in the cluster
+            hit_positions = []
+            for query_protein in hit_positions_dict:
+                blast_result = hit_positions_dict[query_protein]
+                hit_positions.append((index_query_proteins[blast_result.query],
+                                     cluster.index(blast_result.subject)))
+            synteny_score = score_synteny(hit_positions)
+        print(cluster.no, synteny_score * user_options.syntenyweight, hitnr, cum_blast_score)
+        cluster.score = synteny_score * user_options.syntenyweight + hitnr + cum_blast_score
+
+def score_synteny(hit_positions):
+
+    # modified from antismash
+    score = 0
+    for index, pos in enumerate(hit_positions[:-1]):
+        query, subject = pos
+        next_query, next_subject = hit_positions[index + 1]
+        if (abs(query - next_query) < 2) and abs(
+                query - next_query) == abs(subject - next_subject):
+            score += 1
+    return score
 
 def write_txt_output(rankedclusters, rankedclustervalues, hitclusterdata, proteins, proteininfo, querytags, infile, clusters, nucdescriptions, pages):
     #Check if the number of set pages is not too large for the number of results
@@ -1968,8 +1964,12 @@ def write_txt_output(rankedclusters, rankedclustervalues, hitclusterdata, protei
     out_file.close()
     return pages
 
-def score_blast_output(hitclusters, querylist, blastdict, multiplehitlist, proteins, proteininfo, querytags, infile, clusters, nucdescriptions, pages, arch_search, syntenyweight):
-    rankedclusters, rankedclustervalues, hitclusterdata = score_blast(hitclusters, querylist, blastdict, clusters, multiplehitlist, arch_search, syntenyweight)
+def score_blast_output(clusters, query_proteins, user_options):
+    #add scores to the clusters
+    score_blast(clusters, query_proteins, user_options)
+    #sort the clusters
+    clusters.sort(key=lambda x: x.score, reverse=True)
+    print([(c.no, c.score) for c in clusters])
     pages = write_txt_output(rankedclusters, rankedclustervalues, hitclusterdata, proteins, proteininfo, querytags, infile, clusters, nucdescriptions, pages)
     return pages
 
@@ -2603,11 +2603,12 @@ def main():
     #Step 7: Locate blast hits in genome and find clusters
     clusters = find_gene_clusters(blast_dict, user_options, database)
     logging.info("Step 7/11: Finished finding clusters.")
+    #print([len(c.proteins) for c in clusters])
 
-    return
     #Step 8: Score Blast output on all loci
-    opts.pages = score_blast_output(hitclusters, querylist, blastdict, multiplehitlist, proteins, proteininfo, querytags, opts.infile, clusters, nucdescriptions, opts.pages, arch_search, opts.syntenyweight)
+    opts.pages = score_blast_output(clusters, query_proteins, user_options)
     print(("Step 8/11: Time since start: " + str((time.time() - starttime))))
+    return
     #Output. From here, iterate for every page
     for page in [pagenr + 1 for pagenr in range(int(opts.pages))]:
 
