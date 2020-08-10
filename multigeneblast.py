@@ -747,31 +747,17 @@ def internal_blast(user_options, query_proteins):
         raise MultiGeneBlastException("Something went wrong reading the blast output file.")
 
     #extract blast hits into a dictionary
-    #TODO think about maybe making this more modular
     blast_dict = blast_parse(user_options, query_proteins, blastoutput)
+
+    #because query proteins are sorted this is fine
+    query_cluster = Cluster(list(query_proteins.values())[0].start, list(query_proteins.values())[-1].stop, "query")
     groups = []
-    for key in blast_dict:
-        #create a set to automatically filter for duplicates
-        group = {key}
-        for blast_result in blast_dict[key]:
-            group.add(blast_result.subject)
-
-        #make sure that a no member of the new group is present in any of the
-        #current groups. If that is the case add to current groups, else make
-        #new group
-        added = False
-        for present_group in groups:
-            for value in present_group:
-                if value in group:
-                    present_group.update(group)
-                    added = True
-                    break
-        if not added:
-            groups.append(group)
-
-    #make the sets into lists
-    internal_homolog_lists = [list(group) for group in groups]
-    return internal_homolog_lists
+    for results in blast_dict.values():
+        for blast_result in results:
+            #filter out the results against itself
+            if blast_result.query != blast_result.subject:
+                query_cluster.add_protein(query_proteins[blast_result.subject], blast_result)
+    return query_cluster
 
 def run_commandline_command(command, max_retries = 5):
     """
@@ -972,6 +958,7 @@ def parse_db_blast(user_options, query_proteins, blast_output):
     return blast_dict
 
 def generate_rgbscheme(nr):
+    #TODO look furter into function if there is time
     usablenumbers = [1,2,4,8,12,18,24,32,48,64,10000]
     lengthsdict = {1:[1,1,1],2:[1,1,2],4:[1,2,2],8:[2,2,2],12:[2,2,3],18:[2,3,3],24:[3,3,3],32:[3,3,4],48:[3,4,4],64:[4,4,4]}
     shortestdistance = 10000
@@ -1124,52 +1111,39 @@ def startendsitescheck(starts,ends):
     starts = starts2
     return [starts,ends]
 
-def calculate_colorgroups(queryclusternumber,hitclusternumbers,queryclusterdata,internalhomologygroupsdict):
-    #Extract data and generate color scheme
-    hitclusterdata = queryclusterdata[queryclusternumber][1]
-    queryclustergenes = hitclusterdata[list(hitclusterdata.keys())[0]][3]
-    colorgroupsdict = {}
-    colorgroupslengthlist = []
-    colorgroupslist = []
-    for hitclusternumber in hitclusternumbers:
-        colorgroups = hitclusterdata[hitclusternumber][0][hitclusternumber]
-        colorgroupsdict[hitclusternumber] = colorgroups
-        colorgroupslengthlist.append(len(colorgroups))
-        colorgroupslist.append(colorgroups)
-    metacolorgroups = []
-    internalgroups = internalhomologygroupsdict[queryclusternumber]
-    for i in internalgroups:
-        metagroup = []
-        for j in i:
-            for m in colorgroupslist:
-                for l in m:
-                    if j in l:
-                        for k in l:
-                            if k not in metagroup:
-                                metagroup.append(k)
-        if len(metagroup) > 1 and metagroup not in metacolorgroups:
-            metacolorgroups.append(metagroup)
-    #Generate RGB scheme
-    rgbcolorscheme = generate_rgbscheme(len(metacolorgroups))
-    rgbcolorscheme.append("#FFFFFF")
-    #Create colorschemedict in which all genes that are hits of the same query gene get the same color
-    colorschemedict = {}
-    z = 0
-    for i in queryclustergenes:
-        for j in metacolorgroups:
-            if i in j:
-                for l in j:
-                    if l in colorschemedict:
-                        pass
-                    else:
-                        colorschemedict[l] = z
-        if z in list(colorschemedict.values()):
-            z += 1
-    return colorschemedict,rgbcolorscheme
+def calculate_colorgroups(blast_dict, internal_homolog_lists):
+    #TODO it is the case that genes that do not have any blast hits are ignored in the query
+    color_groups = []
+    for lst in internal_homolog_lists:
+        color_group = set()
+        for protein_name in lst:
+            if not protein_name in blast_dict:
+                continue
+            color_group.add(protein_name)
+            for blast_result in blast_dict[protein_name]:
+                color_group.add(blast_result.subject)
+        if len(color_group) > 0:
+            color_groups.append(list(color_group))
+    # Generate RGB scheme
+    rgb_color_scheme = generate_rgbscheme(len(color_groups))
+    rgb_color_scheme.append("#FFFFFF")
+    gene_color_dict = {}
+    for gr_indx, group in enumerate(color_groups):
+        for protein_name in group:
+            gene_color_dict[protein_name] = rgb_color_scheme[gr_indx]
+    return gene_color_dict
+
 
 def clusterblastresults(queryclusternumber,hitclusternumbers,queryclusterdata,colorschemedict,rgbcolorscheme, screenwidth, arch_search, allhits="n"):
     #print "Generating svg for cluster",queryclusternumber
     #Extract data and generate color scheme
+
+
+
+
+
+
+
     nrhitclusters = queryclusterdata[1][0]
     hitclusterdata = queryclusterdata[1][1]
     if nrhitclusters == 0:
@@ -1559,7 +1533,7 @@ def find_gene_clusters(blast_dict, user_options, database):
     add_additional_proteins(clusters_per_contig, database)
     clusters = []
 
-    #add clusters to oen big list and sort them
+    #add clusters to one big list and sort them
     for contig in clusters_per_contig:
         for cluster in clusters_per_contig[contig]:
             cluster.sort()
@@ -1585,7 +1559,10 @@ def sort_hits_per_scaffold(blast_dict, database):
         for hit in hits:
             #extract the subject proteins from the Blastresults using the database
             subject_protein = database.proteins[hit.subject]
-            query_per_blast_hit[hit.subject] = hit
+            if hit.subject in query_per_blast_hit:
+                query_per_blast_hit[hit.subject].append(hit)
+            else:
+                query_per_blast_hit[hit.subject] = [hit]
             if subject_protein.genbank_file not in hits_per_contig:
                 hits_per_contig[subject_protein.genbank_file] = set([subject_protein])
             else:
@@ -1603,7 +1580,7 @@ def find_blast_clusters(hits_per_contig, query_per_blast_hit, extra_distance):
     :param hits_per_contig: A dictionary of blast hits with scaffolds as keys
     sorted on location.
     :param query_per_blast_hit: a dictionary that linkes the subject of a
-    BlastResult to the result itself.
+    BlastResult to a list of results with that subject
     :param extra_distance: the distance that is allowed between 2 blast hits
     for them to be considered part of the same cluster
     :return: a dictionary that contains contigs as keys and lists of Cluster
@@ -1630,7 +1607,8 @@ def find_blast_clusters(hits_per_contig, query_per_blast_hit, extra_distance):
                 #add all the blast_hits to the cluster together with the query
                 #gene they originate from
                 for hit in blast_hits:
-                    c.add_protein(hit, query_per_blast_hit[hit.name])
+                    for result in query_per_blast_hit[hit.name]:
+                        c.add_protein(hit, result)
                 clusters.append(c)
                 start = next_protein.start
                 blast_hits = [next_protein]
@@ -1638,7 +1616,8 @@ def find_blast_clusters(hits_per_contig, query_per_blast_hit, extra_distance):
         #make sure to add the final cluster
         c = Cluster(start - extra_distance, scaffold_proteins[index].stop + extra_distance, scaffold_proteins[index].genbank_file)
         for hit in blast_hits:
-            c.add_protein(hit, query_per_blast_hit[hit.name])
+            for result in query_per_blast_hit[hit.name]:
+                c.add_protein(hit, result)
         clusters.append(c)
         tot = 0
 
@@ -1731,8 +1710,12 @@ class Cluster:
         :param query_blast_hit: a potential Protein object that is part of the
         query that defines to what query gene the 'protein' has a blast hit.
         """
-        if query_blast_hit and protein.name not in self.__proteins:
-            self.__blast_proteins[protein.name] = query_blast_hit
+        if query_blast_hit:
+            if protein.name in self.__blast_proteins:
+                self.__blast_proteins[protein.name].add(query_blast_hit)
+            else:
+                #create a set to auto filter duplicates
+                self.__blast_proteins[protein.name] = {query_blast_hit}
         if not protein.name in self.__proteins:
             self.__proteins[protein.name] = protein
             self.__protein_indexes[protein.name] = len(self.__proteins) - 1
@@ -1815,8 +1798,9 @@ class Cluster:
                         "\tmismatch\tgap open\tquery start\tquery stop\tsubject" \
                         " start\tsubject stop\te-value\tblast bit score\n"
 
-        for blast_result in self.__blast_proteins.values():
-            full_summary += "{}\n".format(blast_result.summary())
+        for result_set in self.__blast_proteins.values():
+            for blast_result in result_set:
+                full_summary += "{}\n".format(blast_result.summary())
         full_summary += "<\n"
         return full_summary
 
@@ -1841,16 +1825,17 @@ def score_clusters(clusters, query_proteins, user_options):
         cum_blast_score = 0
         hitnr = 0
         hit_positions_dict = {}
-        for blast_result in cluster.blast_hit_proteins.values():
-            cum_blast_score += blast_result.bit_score / 1_000_000.0
-            #get the best scoring blast result for each query entry
-            if blast_result.query not in hit_positions_dict:
-                hitnr += 1
-                hit_positions_dict[blast_result.query] = blast_result
-            else:
-                prev_br = hit_positions_dict[blast_result.query]
-                if prev_br.evalue > blast_result.evalue:
+        for result_set in cluster.blast_hit_proteins.values():
+            for blast_result in result_set:
+                cum_blast_score += blast_result.bit_score / 1_000_000.0
+                #get the best scoring blast result for each query entry
+                if blast_result.query not in hit_positions_dict:
+                    hitnr += 1
                     hit_positions_dict[blast_result.query] = blast_result
+                else:
+                    prev_br = hit_positions_dict[blast_result.query]
+                    if prev_br.evalue > blast_result.evalue:
+                        hit_positions_dict[blast_result.query] = blast_result
 
         synteny_score = 0
         if not user_options.architecture_mode:
@@ -1906,8 +1891,8 @@ def write_txt_output(query_proteins, clusters, blast_output, user_options):
     - '>' signifies the start of a table followed by the descriptor of what is in
     the table. The first line of the table should always be the header.
     - '<' indicates the end of a table
-    - '-' indicates a piece of information, if it is after a table start ('>')
-    then it indicates a table entry
+    - '-' indicates a piece of information, taht can be gerarded as general
+    facts of a certain header
     """
 
     #Check if the number of set pages is not too large for the number of results
@@ -1917,8 +1902,12 @@ def write_txt_output(query_proteins, clusters, blast_output, user_options):
         total_pages += 1
     user_options.pages = max([total_pages, user_options.pages, 1])
 
-    logging.info("Writing TXT output file into {}...".format(os.path.join(user_options.outdir, "clusterblast_output.mgb")))
-    out_file = open("{}\clusterblast_output.mgb".format(user_options.outdir),"w")
+    logging.info("Writing .mgb output file into {}...".format(os.path.join(user_options.outdir, "clusterblast_output.mgb")))
+    try:
+        out_file = open("{}\clusterblast_output.mgb".format(user_options.outdir),"w")
+    except (OSError, IOError):
+        logging.critical("Writing .mgb file has failed. Can not opern file {}".format(os.path.join(user_options.outdir, "clusterblast_output.mgb")))
+        raise MultiGeneBlastException("Can not open the output file {}.".format(os.path.join(user_options.outdir, "clusterblast_output.mgb")))
 
     #write for what database
     out_file.write("ClusterBlast scores for: {}\{}\n\n".format(os.environ["BLASTDB"], user_options.db))
@@ -2111,22 +2100,22 @@ def process_multigeneblast_data(nrhitgeneclusters, nrhitclusters, cb_accessiondi
         log("MultiGeneBlast found no significant hits. Exiting...", exit=True)
     return hitclusterdata, nrhitclusters, blastdetails, mgb_scores
 
-def write_svg_files(queryclusterdata, hitclusterdata, nrhitclusters, internalhomologygroupsdict, svgfolder, page, screenwidth, arch_search):
-    queryclusterdata[1] = [nrhitclusters,hitclusterdata]
-    clusterblastpositiondata = {}
-    i = page
-    #Create alignment svg for each pair of hit&query
-    hitclusters = [nr + (page - 1) * 50 for nr in range(queryclusterdata[1][0] + 1)[1:]]
-    #Create svgs for pairwise gene cluster alignment
-    colorschemedict,rgbcolorscheme = calculate_colorgroups(1,hitclusters,queryclusterdata,internalhomologygroupsdict)
-    for k in hitclusters:
-        frame_update()
-        cresults = clusterblastresults(page,[k],queryclusterdata,colorschemedict,rgbcolorscheme, screenwidth, arch_search)
+def write_svg_files(page, clusters, user_options, internal_homolog_lists, blast_dict, query_proteins):
+    # queryclusterdata[1] = [nrhitclusters,hitclusterdata]
+    # clusterblastpositiondata = {}
+    # i = page
+    # #Create alignment svg for each pair of hit&query
+    # hitclusters = [nr + (page - 1) * 50 for nr in range(queryclusterdata[1][0] + 1)[1:]]
+    # #Create svgs for pairwise gene cluster alignment
+    gene_color_dict = calculate_colorgroups(blast_dict, internal_homolog_lists)
+    for k in range(0,1):
+        cresults = clusterblastresults(page, gene_color_dict, user_options)
         s = cresults[0]
         clusterblastpositiondata[str(i) + "_"+str(k)] = cresults[1]
         outfile = open(svgfolder + "clusterblast" + str(i) + "_" + str(k) + ".svg","w")
         outfile.write(s.getXML())
         outfile.close()
+        return
     #Create svgs for multiple gene cluster alignment
     cresults = clusterblastresults(page,hitclusters,queryclusterdata,colorschemedict,rgbcolorscheme, screenwidth, arch_search, allhits="y")
     s = cresults[0]
@@ -2136,17 +2125,17 @@ def write_svg_files(queryclusterdata, hitclusterdata, nrhitclusters, internalhom
     outfile.close()
     return clusterblastpositiondata, colorschemedict
 
-def write_svgs(page, screenwidth, internalhomologygroupsdict, arch_search):
-    log("Writing visualization SVGs and XHTML")
+def write_svgs(page, clusters, user_options, internal_homolog_lists, blast_dict, query_proteins):
+    logging.info("Writing visualization SVGs and XHTML")
     svgfolder = "svg/"
     try:
         os.mkdir(svgfolder)
     except(IOError,OSError):
         pass
     #Read in MultiGeneBlast output data
-    queryclusterdata, nrhitgeneclusters, nrhitclusters, cb_accessiondict, queryclustergenes, queryclustergenesdetails, tophitclusters, details = read_multigeneblast_data(page)
-    hitclusterdata, nrhitclusters, blastdetails, mgb_scores = process_multigeneblast_data(nrhitgeneclusters, nrhitclusters, cb_accessiondict, queryclustergenes, queryclustergenesdetails, internalhomologygroupsdict, tophitclusters, details, page)
-    clusterblastpositiondata, colorschemedict = write_svg_files(queryclusterdata, hitclusterdata, nrhitclusters, internalhomologygroupsdict, svgfolder, page, screenwidth, arch_search)
+    # queryclusterdata, nrhitgeneclusters, nrhitclusters, cb_accessiondict, queryclustergenes, queryclustergenesdetails, tophitclusters, details = read_multigeneblast_data(page)
+    # hitclusterdata, nrhitclusters, blastdetails, mgb_scores = process_multigeneblast_data(nrhitgeneclusters, nrhitclusters, cb_accessiondict, queryclustergenes, queryclustergenesdetails, internalhomologygroupsdict, tophitclusters, details, page)
+    clusterblastpositiondata, colorschemedict = write_svg_files(page, clusters, user_options, internal_homolog_lists, blast_dict, query_proteins)
     return queryclusterdata, colorschemedict, clusterblastpositiondata, blastdetails, mgb_scores
 
 def runmuscle(args):
@@ -2558,7 +2547,7 @@ def main():
     logging.info("Step 2/11: Query input file has been read and parsed")
 
     #Step 3: Run internal BLAST
-    internal_homolg_lists = internal_blast(user_options, query_proteins)
+    query_cluster = internal_blast(user_options, query_proteins)
     logging.info("Step 3/11: Finished running internal blast")
 
     #Step 4: Run BLAST on genbank_mf database
@@ -2585,21 +2574,22 @@ def main():
     #step 9: write the results to a text file
     write_txt_output(query_proteins, clusters, blast_output, user_options)
     logging.info("Step 9/11: Results have been written to a text file.")
-    return
+
     #Output. From here, iterate for every page
-    for page in [pagenr + 1 for pagenr in range(int(opts.pages))]:
+    # for page in [pagenr + 1 for pagenr in range(int(opts.pages))]:
+    page = 1
+    #Step 9: Write MultiGeneBlast SVGs
+    return
+    queryclusterdata, colorschemedict, clusterblastpositiondata, blastdetails, mgb_scores = write_svgs(page, clusters, user_options, internal_homolog_lists, blast_dict, query_proteins)
+    print(("Step 9/11, page " + str(page) + ": Time since start: " + str((time.time() - starttime))))
+    return
+    #Step 10: Create muscle alignments
+    musclegroups = align_muscle(opts.muscle, colorschemedict, seqdict)
+    print(("Step 10/11, page " + str(page) + ": Time since start: " + str((time.time() - starttime))))
 
-        #Step 9: Write MultiGeneBlast SVGs
-        queryclusterdata, colorschemedict, clusterblastpositiondata, blastdetails, mgb_scores = write_svgs(page, opts.screenwidth, internalhomologygroupsdict, arch_search)
-        print(("Step 9/11, page " + str(page) + ": Time since start: " + str((time.time() - starttime))))
-
-        #Step 10: Create muscle alignments
-        musclegroups = align_muscle(opts.muscle, colorschemedict, seqdict)
-        print(("Step 10/11, page " + str(page) + ": Time since start: " + str((time.time() - starttime))))
-
-        #Step 11: Create XHTML output file
-        create_xhtml_file(queryclusterdata, clusters, clusterblastpositiondata, nucname, page, int(opts.pages), opts.screenwidth, blastdetails, mgb_scores, musclegroups, colorschemedict, opts.dbtype)
-        print(("Step 11/11, page " + str(page) + ": Time since start: " + str((time.time() - starttime))))
+    #Step 11: Create XHTML output file
+    create_xhtml_file(queryclusterdata, clusters, clusterblastpositiondata, nucname, page, int(opts.pages), opts.screenwidth, blastdetails, mgb_scores, musclegroups, colorschemedict, opts.dbtype)
+    print(("Step 11/11, page " + str(page) + ": Time since start: " + str((time.time() - starttime))))
 
     #Move all files to specified output folder
     move_outputfiles(opts.outputfolder, int(opts.pages))
