@@ -28,6 +28,8 @@ from collections import OrderedDict
 FASTA_EXTENSIONS = ("fasta","fas","fa","fna")
 EMBL_EXTENSIONS = ("embl","emb")
 GENBANK_EXTENSIONS = ("gbk","gb","genbank")
+HITS_PER_PAGE = 50
+SVG_CORE_EXTENSION = 5000
 
 ILLEGAL_CHARACTERS = ["'",'"','=',';',':','[',']','>','<','|','\\',"/",'*','-','_','.',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
 global GUI
@@ -1169,7 +1171,7 @@ def draw_gene_cluster(proteins, dpn, index, screenwidth, color_dict, line = True
     builder = ShapeBuilder()
     group = g()
     if line:
-        group.addElement(builder.createLine(10, 35 + 50 * index, screenwidth, 35 + 50 * index, strokewidth=1, stroke="grey"))
+        group.addElement(builder.createLine(10, 35 + HITS_PER_PAGE * index, screenwidth, 35 + HITS_PER_PAGE * index, strokewidth=1, stroke="grey"))
     groups.append(group)
     rel_cluster_start = int(proteins[0].start * dpn)
     rel_cluster_stop = int(proteins[-1].stop * dpn)
@@ -1192,7 +1194,7 @@ def draw_gene_cluster(proteins, dpn, index, screenwidth, color_dict, line = True
                 strand = "-"
             else:
                 strand = "+"
-        group.addElement(_gene_arrow(rel_stop, rel_start, strand, color, 40 + 50 * index, 10))
+        group.addElement(_gene_arrow(rel_stop, rel_start, strand, color, 40 + HITS_PER_PAGE * index, 10))
 
         group.set_id("all_" + str(index) + "_" + "%s" % prot.name)
         groups.append(group)
@@ -1210,8 +1212,13 @@ def clusterblastresults(query_cluster, clusters, gene_color_dict, user_options):
     #first element is the reference for the rest of the clusters
     all_clusters = clusters + [query_cluster]
 
-    #biggest size used to normalize all distances
-    biggest_size = float(max(cluster.size() for cluster in all_clusters))
+    #biggest core size
+    biggest_size = 0
+    for cluster in all_clusters:
+        start, stop = cluster.core_start_stop()
+        size = (stop - start) + 2 * SVG_CORE_EXTENSION
+        if size > biggest_size:
+            biggest_size = size
 
     #a factor that can be applied to get a scaled distance relative to the screen
     #size
@@ -1225,23 +1232,46 @@ def clusterblastresults(query_cluster, clusters, gene_color_dict, user_options):
     for group in groups:
         svg_image.addElement(group)
 
+    query_cluster_size = query_cluster.core_start_stop()[1] - query_cluster.core_start_stop()[0]
+
     for index, cluster in enumerate(clusters):
         #make sur the cluster is sorted. This should be the case but calling
         #this method does no harm when the cluster is sorted already
         cluster.sort()
-        cluster_proteins = list(cluster.proteins.values())
 
-        #check if the orientation of a cluster is inverted compared to the query
-        #if so reverse the proteins.
+        #take an a good size sample of proteins
+        reduced_proteins = reduced_cluster_proteins(cluster, query_cluster_size)
+
+        # check if the orientation of a cluster is inverted compared to the query
+        # if so reverse the proteins.
         reverse = False
         if not equal_to_query_strand_orientation(cluster):
-            cluster_proteins.reverse()
+            reduced_proteins.reverse()
             reverse = True
-        groups = draw_gene_cluster(cluster_proteins, distance_per_nucleotide, index + 1, screenwidth, gene_color_dict, reverse=reverse)
+
+        groups = draw_gene_cluster(reduced_proteins, distance_per_nucleotide, index + 1, screenwidth, gene_color_dict, reverse=reverse)
         for group in groups:
             svg_image.addElement(group)
     return svg_image
 
+def reduced_cluster_proteins(cluster, query_cluster_size):
+    # reduce the amount of proteins in the cluster by ignoreing proteins that
+    # are to far from blast hits
+    cluster_proteins = list(cluster.proteins.values())
+    core_start, core_stop = cluster.core_start_stop()
+    core_size = core_stop - core_start
+    if query_cluster_size * 0.8 > core_size:
+        extra_distance = (query_cluster_size * 0.8 - core_size) / 2
+        core_start = max(core_start - extra_distance, cluster.start_stop()[0])
+        core_stop = min(core_stop + extra_distance, cluster.start_stop()[1])
+    min_start = core_start - SVG_CORE_EXTENSION
+    max_end = core_stop + SVG_CORE_EXTENSION
+
+    reduced_proteins = []
+    for prot in cluster_proteins:
+        if prot.start > min_start and prot.stop < max_end:
+            reduced_proteins.append(prot)
+    return reduced_proteins
 
 def parse_absolute_paths(infile):
     #Parse absolute paths if found
@@ -1471,7 +1501,7 @@ class Cluster:
 
         #all protein names that are blast hits linked to the query protein that
         #that the blast hit was against
-        self.__blast_proteins = {}
+        self.__blast_proteins = OrderedDict()
 
         #a dictionary for tracking individual parts of the score
         self.__score = {"synteny" : 0, "accumulated_blast_score" : 0, "number unique hits" : 0}
@@ -1498,7 +1528,6 @@ class Cluster:
     def get_protein(self, name):
         return self.__proteins[name]
 
-
     @property
     def score(self):
         """
@@ -1508,17 +1537,30 @@ class Cluster:
         """
         return sum(self.__score.values())
 
-    def size(self):
+    def start_stop(self):
         """
-        Retrieve the size of the cluster. This has tot sort the cluster if it
-        is unsorted. Take care calling this method to often when adding
-        proteins at the same time
+        Retrieve the start and stop coordinate of the cluster. This has tot
+        sort the cluster if it is unsorted. Take care calling this method to
+        often when adding proteins at the same time
 
-        :return:an Integer that is end - start of the cluster
+        :return: two integers (start, stop)
         """
         self.sort()
         proteins = list(self.__proteins.values())
-        return proteins[-1].stop - proteins[0].start
+        return proteins[0].start, proteins[-1].stop
+
+    def core_start_stop(self):
+        """
+        Retrieve the start and stop coordinate of the core of the cluster.
+        The core is defines as the proteins that had blast hits against the
+        query. This has to sort the cluster if it is unsorted. Take care
+        calling this method to often when adding proteins at the same time
+
+        :return: two integers (start, stop)
+        """
+        self.sort()
+        proteins = list(self.__blast_proteins.keys())
+        return self.__proteins[proteins[0]].start, self.__proteins[proteins[-1]].stop
 
     def set_score(self, synteny, accumulated_blast_score, number_unique_hits):
         """
@@ -1555,11 +1597,12 @@ class Cluster:
         if not self.__sorted:
             self.__proteins = OrderedDict(sorted(self.__proteins.items(), key=lambda item: (item[1].start, item[1].stop)))
             self.__protein_indexes = OrderedDict((name, index) for index, name in enumerate(self.__proteins))
+            self.__blast_proteins = OrderedDict(sorted(self.__blast_proteins.items(), key=lambda item: (self.__proteins[item[0]].start, self.__proteins[item[0]].stop)))
             self.__sorted = True
 
     def index(self, protein_name):
         """
-        The index of a protein within the self.__proteins dictionary
+        The index of a protein within the self.__proteins OrderedDictionary
 
         :param protein_name: a string that is the name of a protein
         :return: the index of the protein name in the self.__protein indexes
@@ -1701,14 +1744,6 @@ def write_txt_output(query_proteins, clusters, blast_output, user_options):
     - '-' indicates a piece of information, taht can be gerarded as general
     facts of a certain header
     """
-
-    #Check if the number of set pages is not too large for the number of results
-    #TODO see if needs to be moved, is kind of a strange place
-    total_pages = len(clusters) / 50
-    if len(clusters) % 50 > 1:
-        total_pages += 1
-    user_options.pages = max([total_pages, user_options.pages, 1])
-
     logging.info("Writing .mgb output file into {}...".format(os.path.join(user_options.outdir, "clusterblast_output.mgb")))
     try:
         out_file = open("{}\clusterblast_output.mgb".format(user_options.outdir),"w")
@@ -1741,204 +1776,34 @@ def write_txt_output(query_proteins, clusters, blast_output, user_options):
         out_file.write("{}\n".format(cluster.summary()))
     out_file.close()
 
-
-def read_multigeneblast_data(page):
-    queryclusterdata = {}
-    nrhitgeneclusters = {}
-    clusterblastfile = open("clusterblast_output.txt","r")
-    clusterblastfile = clusterblastfile.read()
-    clusterblastfile = clusterblastfile.replace("\r","\n")
-    tophitclusters = []
-    #Identify top 50 hits for visualization
-    hitlines = [i for i in ((clusterblastfile.split("Significant hits: \n")[1]).split("\nDetails:")[0]).split("\n") if i != ""]
-    a = 0
-    cb_accessiondict = {}
-    b = 1
-    for i in hitlines:
-        if " " in i:
-            cb_accessiondict[b] = (i.split("\t")[0]).split(" ")[1]
-        b += 1
-        if a < page * 50 and a >= (page - 1) * 50:
-            if len(i) < 140:
-                tophitclusters.append(i)
-            elif len(i) >= 140:
-                j = i[0:137] + "..."
-                tophitclusters.append(j)
-        a += 1
-    details = (clusterblastfile.split("\nDetails:")[1]).split(">>")[1:]
-    nrhitclusters = len(tophitclusters)
-    frame_update()
-    #Save query gene cluster data
-    querylines = ((clusterblastfile.split("Table of genes, locations, strands and annotations of query cluster:\n")[1]).split("\n\n\nSignificant hits:")[0]).split("\n")
-    queryclustergenes = []
-    queryclustergenesdetails = {}
-    for i in querylines:
-        tabs = i.split("\t")
-        queryclustergenes.append(tabs[0])
-        queryclustergenesdetails[tabs[0]] = [tabs[1],tabs[2],tabs[3],tabs[4], tabs[5]]
-    #Sort query cluster genes by start position
-    starts = [max([int(queryclustergenesdetails[gene][0]), int(queryclustergenesdetails[gene][1])]) for gene in queryclustergenes]
-    genesAndStarts = list(zip(starts, queryclustergenes))
-    genesAndStarts.sort()
-    starts, queryclustergenes = list(zip(*genesAndStarts))
-    return queryclusterdata, nrhitgeneclusters, nrhitclusters, cb_accessiondict, queryclustergenes, queryclustergenesdetails, tophitclusters, details
-
-def process_multigeneblast_data(nrhitgeneclusters, nrhitclusters, cb_accessiondict, queryclustergenes, queryclustergenesdetails, internalhomologygroupsdict, tophitclusters, details, page):
-    #For every gene cluster, store hit genes and details
-    colorgroupsdict = {}
-    hitclusterdata = {}
-    blastdetails = {}
-    mgb_scores = {}
-    hitclusternr = 1
-    for i in details:
-        frame_update()
-        hitclustergenes = []
-        hitclustergenesdetails = {}
-        #Only calculate for specified hit gene clusters
-        if not (hitclusternr <= page * 50 and hitclusternr >= (page - 1) * 50):
-            hitclusternr += 1
-        else:
-            nrhitgeneclusters[1] = hitclusternr
-            accession = cb_accessiondict[hitclusternr]
-            #Store mgb score
-            mgbscore = i.partition("MultiGeneBlast score: ")[2].partition("\n")[0]
-            cumblastscore = i.partition("Cumulative Blast bit score: ")[2].partition("\n")[0]
-            mgb_scores[accession] = [mgbscore, cumblastscore]
-            #Store Blast details
-            blastdetailslines = [line for line in (i.split("%coverage, e-value):\n")[1]).split("\n") if line != ""]
-            for line in blastdetailslines:
-                tabs = line.split("\t")
-                if accession not in blastdetails:
-                    blastdetails[accession] = {}
-                if tabs[1] not in blastdetails[accession]:
-                    blastdetails[accession][tabs[1]] = [[tabs[0], tabs[2], tabs[3], tabs[4], tabs[5]]]
-                else:
-                    blastdetails[accession][tabs[1]].append([tabs[0], tabs[2], tabs[3], tabs[4], tabs[5]])
-            #Store Basic Blast output data
-            hitclustergeneslines = [line for line in ((i.split("Table of genes, locations, strands and annotations of subject cluster:\n")[1]).split("\n\nTable of Blast hits ")[0]).split("\n") if line != ""]
-            locations = []
-            for j in hitclustergeneslines:
-                tabs = j.split("\t")
-                hitclustergenes.append(tabs[0])
-                hitclustergenesdetails[tabs[0]] = [tabs[1],tabs[2],tabs[3],tabs[4], tabs[5]]
-                locations = locations + [int(tabs[1]),int(tabs[2])]
-            #cstart = min(locations)
-            #cend = max(locations)
-            #print [proteininfo[j][0] for j in proteininfo.keys()]
-            #z = 0
-            #for j in proteininfo.keys():
-            #  if accession.rpartition("_")[0] == proteininfo[j][0]:
-            #    z += 1
-            #    if z == 200:
-            #      z = 0
-            #    if int(proteininfo[j][1]) > cstart and int(proteininfo[j][2]) < cend:
-            #      #proteininfo[j] = [genome,location.partition("-")[0],location.partition("-")[2],strand,annotation]
-            #      if j not in hitclustergenes:
-            #        hitclustergenes.append(j)
-            #        hitclustergenesdetails[j] = proteininfo[j][1:]
-            blasthitslines = [line for line in ((i.split("%coverage, e-value):\n")[1]).split("\n\n")[0]).split("\n") if line != ""]
-            if len(blasthitslines) > 0:
-                blasthitdict = {}
-                blastdetailsdict = {}
-                querygenes = []
-                revblasthitdict = {}
-                hitgenes = []
-                for i in blasthitslines:
-                    tabs = i.split("\t")
-                    if tabs[0] in blasthitdict:
-                        hits = blasthitdict[tabs[0]]
-                        hits.append(tabs[1])
-                        blasthitdict[tabs[0]] = hits
-                        if tabs[1] in revblasthitdict:
-                            revhits = revblasthitdict[tabs[1]]
-                            revhits.append(tabs[0])
-                            revblasthitdict[tabs[1]] = revhits
-                        else:
-                            revblasthitdict[tabs[1]] = [tabs[0]]
-                        blastdetailsdict[tabs[0] + "_|_|_" + tabs[1]] = [tabs[4],tabs[3]]
-                        if tabs[0] not in querygenes:
-                            querygenes.append(tabs[0])
-                        hitgenes.append(tabs[1])
-                    else:
-                        blasthitdict[tabs[0]] = [tabs[1]]
-                        if tabs[1] in revblasthitdict:
-                            revhits = revblasthitdict[tabs[1]]
-                            revhits.append(tabs[0])
-                            revblasthitdict[tabs[1]] = revhits
-                        else:
-                            revblasthitdict[tabs[1]] = [tabs[0]]
-                        blastdetailsdict[tabs[0] + "_|_|_" + tabs[1]] = [tabs[4],tabs[3]]
-                        if tabs[0] not in querygenes:
-                            querygenes.append(tabs[0])
-                        hitgenes.append(tabs[1])
-                #Make groups of genes for coloring
-                colorgroups = []
-                internalgroups = internalhomologygroupsdict[1]
-                for i in internalgroups:
-                    querygenes_and_hits = []
-                    for j in i:
-                        #Make list of query gene and its hits
-                        additionalhits = []
-                        #For each hit, check if it was also hit by another gene; if so, only add it to the group if this hit had the lowest blast score
-                        queryscore = 0
-                        if j in blasthitdict:
-                            for k in blasthitdict[j]:
-                                otherscores = []
-                                for l in list(blastdetailsdict.keys()):
-                                    if j == l.partition("_|_")[0] and k == l.rpartition("_|_")[2]:
-                                        queryscore = blastdetailsdict[l][1]
-                                    if k in l and j not in l:
-                                        otherscores.append(blastdetailsdict[l][1])
-                                allscores = otherscores + [queryscore]
-                                if int(queryscore) == max([int(m) for m in allscores]):
-                                    additionalhits.append(k)
-                            #Add additional hits to the querygenes_and_hits list that will form a colorgroup
-                            querygenes_and_hits = querygenes_and_hits + additionalhits
-                            if j not in querygenes_and_hits:
-                                querygenes_and_hits.append(j)
-                    if len(querygenes_and_hits) > 0:
-                        colorgroups.append(querygenes_and_hits)
-                colorgroupsdict[hitclusternr] = colorgroups
-                hitclusterdata[hitclusternr] = [colorgroupsdict,hitclustergenes,hitclustergenesdetails,queryclustergenes,queryclustergenesdetails,tophitclusters,accession]
-                hitclusternr += 1
-            else:
-                nrhitclusters = nrhitclusters - 1
-    if len(details) == 0:
-        log("MultiGeneBlast found no significant hits. Exiting...", exit=True)
-    return hitclusterdata, nrhitclusters, blastdetails, mgb_scores
-
-def write_svg_files(page, clusters, user_options, query_cluster, blast_dict):
-    #TODO add multiple pages
-    # queryclusterdata[1] = [nrhitclusters,hitclusterdata]
-    # clusterblastpositiondata = {}
-    # i = page
-    # #Create alignment svg for each pair of hit&query
-    # hitclusters = [nr + (page - 1) * 50 for nr in range(queryclusterdata[1][0] + 1)[1:]]
-    # #Create svgs for pairwise gene cluster alignment
+def write_svg_files(clusters, user_options, query_cluster, blast_dict):
+    logging.info("Writing visualization SVGs and XHTML...")
+    try:
+        os.mkdir("svg/")
+    #if the folder exists ignore the error
+    except(IOError,OSError):
+        pass
     gene_color_dict = calculate_colorgroups(blast_dict, query_cluster)
-    for cluster in clusters:
+    for index, cluster in enumerate(clusters):
         svg_clusters = [cluster]
         svg_image = clusterblastresults(query_cluster, svg_clusters, gene_color_dict, user_options)
 
         outfile = open("svg/clusterblast_{}.svg".format(cluster.no),"w")
         outfile.write(svg_image.getXML())
         outfile.close()
-    #Create svgs for multiple gene cluster alignment
-    svg_image = clusterblastresults(query_cluster, clusters, gene_color_dict, user_options)
+        if index % HITS_PER_PAGE == 0:
+            page_nr = int(index / HITS_PER_PAGE)
+            #when max pages are reached stop
+            if page_nr > user_options.pages:
+                break
+            #Create svgs for multiple gene cluster alignment
+            page_genes = clusters[page_nr * HITS_PER_PAGE : min((page_nr + 1) * HITS_PER_PAGE, len(clusters))]
+            svg_image = clusterblastresults(query_cluster, page_genes , gene_color_dict, user_options)
 
-    outfile = open("svg/clusterblast_all.svg","w")
-    outfile.write(svg_image.getXML())
-    outfile.close()
-    return clusterblastpositiondata, colorschemedict
-
-def write_svgs(page, clusters, user_options, query_cluster, blast_dict):
-    logging.info("Writing visualization SVGs and XHTML")
-    svgfolder = "svg/"
-    try:
-        os.mkdir(svgfolder)
-    except(IOError,OSError):
-        pass
-    write_svg_files(page, clusters, user_options, query_cluster, blast_dict)
+            outfile = open("svg/clusterblast_page{}_all.svg".format(page_nr + 1),"w")
+            outfile.write(svg_image.getXML())
+            outfile.close()
+            logging.info("Visual output page {}/{} created.".format(page_nr + 1, min(user_options.pages, int((len(clusters) - 1) / HITS_PER_PAGE) + 1)))
 
 def runmuscle(args):
     os.system("muscle " + args)
@@ -2381,7 +2246,7 @@ def main():
     # for page in [pagenr + 1 for pagenr in range(int(opts.pages))]:
     page = 1
     #Step 9: Write MultiGeneBlast SVGs
-    write_svgs(page, clusters, user_options, query_cluster, blast_dict)
+    write_svg_files(clusters, user_options, query_cluster, blast_dict)
     print(("Step 9/11, page " + str(page) + ": Time since start: " + str((time.time() - starttime))))
     return
     #Step 10: Create muscle alignments
