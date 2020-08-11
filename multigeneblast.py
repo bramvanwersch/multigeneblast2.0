@@ -754,9 +754,7 @@ def internal_blast(user_options, query_proteins):
     groups = []
     for results in blast_dict.values():
         for blast_result in results:
-            #filter out the results against itself
-            if blast_result.query != blast_result.subject:
-                query_cluster.add_protein(query_proteins[blast_result.subject], blast_result)
+            query_cluster.add_protein(query_proteins[blast_result.subject], blast_result)
     return query_cluster
 
 def run_commandline_command(command, max_retries = 5):
@@ -958,7 +956,7 @@ def parse_db_blast(user_options, query_proteins, blast_output):
     return blast_dict
 
 def generate_rgbscheme(nr):
-    #TODO look furter into function if there is time
+    #TODO look furter into function if there is time look into antismash for methods here
     usablenumbers = [1,2,4,8,12,18,24,32,48,64,10000]
     lengthsdict = {1:[1,1,1],2:[1,1,2],4:[1,2,2],8:[2,2,2],12:[2,2,3],18:[2,3,3],24:[3,3,3],32:[3,3,4],48:[3,4,4],64:[4,4,4]}
     shortestdistance = 10000
@@ -1036,6 +1034,7 @@ def generate_rgbscheme(nr):
     return colorlist
 
 def _gene_arrow(start,end,strand,color,base,height):
+    #TODO look to clean up this function if there is time left
     halfheight = height/2
     if start > end:
         start2 = end
@@ -1111,12 +1110,34 @@ def startendsitescheck(starts,ends):
     starts = starts2
     return [starts,ends]
 
-def calculate_colorgroups(blast_dict, internal_homolog_lists):
+def calculate_colorgroups(blast_dict, query_cluster):
     #TODO it is the case that genes that do not have any blast hits are ignored in the query
+
+    #first get groups internal homologs in the query cluster
+    groups = []
+    for key in query_cluster.blast_hit_proteins:
+        # create a set to automatically filter for duplicates
+        group = {key}
+        for blast_result in query_cluster.blast_hit_proteins[key]:
+            group.add(blast_result.query)
+
+        # make sure that a no member of the new group is present in any of the
+        # current groups. If that is the case add to current groups, else make
+        # new group
+        added = False
+        for present_group in groups:
+            for value in present_group:
+                if value in group:
+                    present_group.update(group)
+                    added = True
+                    break
+        if not added:
+            groups.append(group)
+
     color_groups = []
-    for lst in internal_homolog_lists:
+    for st in groups:
         color_group = set()
-        for protein_name in lst:
+        for protein_name in st:
             if not protein_name in blast_dict:
                 continue
             color_group.add(protein_name)
@@ -1126,347 +1147,101 @@ def calculate_colorgroups(blast_dict, internal_homolog_lists):
             color_groups.append(list(color_group))
     # Generate RGB scheme
     rgb_color_scheme = generate_rgbscheme(len(color_groups))
-    rgb_color_scheme.append("#FFFFFF")
     gene_color_dict = {}
     for gr_indx, group in enumerate(color_groups):
         for protein_name in group:
             gene_color_dict[protein_name] = rgb_color_scheme[gr_indx]
     return gene_color_dict
 
-
-def clusterblastresults(queryclusternumber,hitclusternumbers,queryclusterdata,colorschemedict,rgbcolorscheme, screenwidth, arch_search, allhits="n"):
-    #print "Generating svg for cluster",queryclusternumber
-    #Extract data and generate color scheme
-
-
-
-
-
-
-
-    nrhitclusters = queryclusterdata[1][0]
-    hitclusterdata = queryclusterdata[1][1]
-    if nrhitclusters == 0:
-        s = svg(x = 0, y = 0, width = (screenwidth * 0.75), height = (2770))
-        viewbox = "0 0 " + str(screenwidth * 0.8) + " " + str(2950)
-        s.set_viewBox(viewbox)
-        s.set_preserveAspectRatio("none")
-        return [s,[{},{},{}]]
-    queryclustergenes = hitclusterdata[list(hitclusterdata.keys())[0]][3]
-    queryclustergenesdetails = hitclusterdata[list(hitclusterdata.keys())[0]][4]
-    colorgroupsdict = {}
-    colorgroupslengthlist = []
-    colorgroupslist = []
-    for hitclusternumber in hitclusternumbers:
-        colorgroups = hitclusterdata[hitclusternumber][0][hitclusternumber]
-        colorgroupsdict[hitclusternumber] = colorgroups
-        colorgroupslengthlist.append(len(colorgroups))
-        colorgroupslist.append(colorgroups)
-    #Find out whether hit gene cluster needs to be inverted compared to query gene cluster
-    strandsbalancedict = {}
-    for m in hitclusternumbers:
-        hitclustergenesdetails = hitclusterdata[m][2]
-        strandsbalance = 0
-        for i in queryclustergenes:
-            refstrand = queryclustergenesdetails[i][2]
-            for j in colorgroupsdict[m]:
-                if i in j:
-                    for k in j:
-                        if k in hitclusterdata[m][1] and hitclustergenesdetails[k][2] == refstrand:
-                            strandsbalance += 1
-                        elif k in hitclusterdata[m][1] and hitclusterdata[m][2][k][2] != refstrand:
-                            strandsbalance = strandsbalance - 1
-        strandsbalancedict[m] = strandsbalance
-    #Generate coordinates for SVG figure
-    qnrgenes = len(queryclustergenes)
-    qstarts =[]
-    qends = []
-    qstrands =[]
-    qcolors = []
-    for i in queryclustergenes:
-        qgenedata = queryclustergenesdetails[i]
-        if qgenedata[0] > qgenedata[1]:
-            qstarts.append(qgenedata[0])
-            qends.append(qgenedata[1])
-        else:
-            qstarts.append(qgenedata[1])
-            qends.append(qgenedata[0])
-        qstrands.append(qgenedata[2])
-        if i in colorschemedict:
-            qcolors.append(colorschemedict[i])
-        else:
-            qcolors.append("white")
-    qstarts_ends = startendsitescheck(qstarts,qends)
-    qstarts = qstarts_ends[0]
-    qends = qstarts_ends[1]
-    hdata = {}
-    for m in hitclusternumbers:
-        hitclustergenes = hitclusterdata[m][1]
-        hitclustergenesdetails = hitclusterdata[m][2]
-        hnrgenes = len(hitclustergenes)
-        hstarts =[]
-        hends = []
-        hstrands =[]
-        hcolors = []
-        for i in hitclustergenes:
-            hgenedata = hitclustergenesdetails[i]
-            if int(hgenedata[0]) > int(hgenedata[1]):
-                hstarts.append(hgenedata[0])
-                hends.append(hgenedata[1])
+def equal_to_query_strand_orientation(cluster):
+    equal_score = 0
+    for protein_name, result_set in cluster.blast_hit_proteins.items():
+        for blast_result in result_set:
+            # compare the query protein strand with that of the cluster
+            if blast_result.query_protein.strand == cluster.get_protein(protein_name).strand:
+                equal_score += 1
             else:
-                hstarts.append(hgenedata[1])
-                hends.append(hgenedata[0])
-            hstrands.append(hgenedata[2])
-            if i in colorschemedict:
-                hcolors.append(colorschemedict[i])
-            else:
-                hcolors.append("white")
-        #Invert gene cluster if needed
-        if strandsbalancedict[m] < 0:
-            hstarts2 = []
-            hends2 = []
-            hstrands2 = []
-            for i in hstarts:
-                hstarts2.append(str(100000000 - int(i)))
-            hstarts = hstarts2
-            hstarts.reverse()
-            for i in hends:
-                hends2.append(str(100000000 - int(i)))
-            hends = hends2
-            hends.reverse()
-            hstarts, hends = hends, hstarts
-            for i in hstrands:
-                if i == "+":
-                    hstrands2.append("-")
-                elif i == "-":
-                    hstrands2.append("+")
-            hstrands = hstrands2
-            hstrands.reverse()
-            hcolors.reverse()
-        #Sort genes properly and remove duplicates
-        stranddict = {}
-        colorsdict = {}
-        y = 0
-        sortstarts = []
-        for n in hstarts:
-            while n in sortstarts:
-                n = str(int(n) + 1)
-            sortstarts.append(n)
-        for n in sortstarts:
-            stranddict[int(n)] = hstrands[y]
-            w = y + 1
-            try:
-                nextstart = sortstarts[w]
-            except:
-                nextstart = 0
-            color = hcolors[y]
-            if color == "white":
-                while int(nextstart) == int(n):
-                    if len(hcolors) > w and hcolors[w] != 'white':
-                        color = hcolors[w]
-                        break
-                    w += 1
-                    try:
-                        nextstart = sortstarts[w]
-                    except:
-                        break
-            if int(n) not in colorsdict or colorsdict[int(n)] == "white":
-                colorsdict[int(n)] = color
-            y += 1
-        hstarts = [int(l) for l in hstarts]
-        #hstarts = dict.fromkeys(hstarts).keys()
-        hstarts.sort()
-        hstarts = [str(n) for n in hstarts]
-        hends = [int(l) for l in hends]
-        #hends = dict.fromkeys(hends).keys()
-        hends.sort()
-        hends = [str(n) for n in hends]
-        hstrands = sortdictvaluesbykeys(stranddict)
-        hcolors = sortdictvaluesbykeys(colorsdict)
-        hstarts_ends = startendsitescheck(hstarts,hends)
-        hstarts = hstarts_ends[0]
-        hends = hstarts_ends[1]
-        hdata[m] = [hstarts,hends,hstrands,hcolors]
-    #Resize all gene clusters to normal sizes
-    #Find largest hit cluster
-    approxclustersizes = []
-    for m in hitclusternumbers:
-        hstarts,hends,hstrands,hcolors = hdata[m]
-        x = 0
-        first = -1
-        last = int(hends[-1])
-        for n in hcolors:
-            if n != "white" and first == -1:
-                first = int(hstarts[x])
-                last = int(hends[x])
-            elif n != "white" and first != -1:
-                last = int(hends[x])
-            x += 1
-        approxclustersizes.append((int(last)-int(first)))
-    approxclustersizes.append(int(qends[-1]) - int(qstarts[0]))
-    largestsize = int(int(max(approxclustersizes)) + 5000)
-    #Resize all clusters
-    hdata2 = {}
-    savedpositions = {}
-    for m in hitclusternumbers:
-        hstarts,hends,hstrands,hcolors = hdata[m]
-        x = 0
-        first = -1
-        last = 0
-        for n in hcolors:
-            if n != "white" and first == -1:
-                first = min(int(hstarts[x]), int(hends[x]))
-                if max(int(hstarts[x]), int(hends[x])) > last:
-                    last = max(int(hstarts[x]), int(hends[x]))
-            elif n != "white" and first != -1:
-                if min(int(hstarts[x]), int(hends[x])) < first:
-                    first = min(int(hstarts[x]), int(hends[x]))
-                if max(int(hstarts[x]), int(hends[x])) > last:
-                    last = max(int(hstarts[x]), int(hends[x]))
-            x += 1
-        approxclustersize = (int(last)-int(first))
-        piecetobeadded = (largestsize - approxclustersize) / 2
-        #if min([(first - int(hstarts[0])),(int(hends[-1]) - last)]) < piecetobeadded - 1:
-        #  piecetobeadded = min([(first - int(hstarts[0])),(int(hends[-1]) - last)])
-        if piecetobeadded < 0:
-            piecetobeadded = 0
-        newcstart = int(first) - piecetobeadded
-        newcend = int(last) + piecetobeadded
-        firstentry = 1000000000
-        lastentry = -1
-        x = 0
-        for i in hstarts:
-            hstart = int(i)
-            hend = int(hends[x])
-            if firstentry == 1000000000 and hend >= newcstart:
-                firstentry = x
-                lastentry = x + 1
-            elif hstart <= newcend:
-                lastentry = x + 1
-            x += 1
-        #print str(cstart) + " " + str(cend) + " " + str(newcstart) + " " + str(newcend)
-        hstarts = hstarts[firstentry:lastentry]
-        hends = hends[firstentry:lastentry]
-        hstrands = hstrands[firstentry:lastentry]
-        hcolors = hcolors[firstentry:lastentry]
-        hdata2[m] = [hstarts,hends,hstrands,hcolors]
-        savedpositions[m] = [hstarts,hends]
-    hdata = hdata2
-    #Find cluster size of largest cluster of query & all hit clusters assessed
-    clustersizes = []
-    for m in hitclusternumbers:
-        pstarts = [int(n) for n in hdata[m][1]]
-        pends = [int(n) for n in hdata[m][0]]
-        locations = pstarts + pends
-        hclustersize = abs(max(locations) - min(locations))
-        clustersizes.append(hclustersize)
-    qpositions = [int(q) for q in qends] + [int(q) for q in qstarts]
-    qclustersize = abs(max(qpositions) - min(qpositions))
-    clustersizes.append(qclustersize)
-    largestclustersize = max(clustersizes)
-    #Find relative positions
-    qrelpositions = relativepositions(qstarts,qends,largestclustersize, screenwidth)
-    qrel_starts = qrelpositions[0]
-    qrel_ends = qrelpositions[1]
-    qdata = [qrel_starts,qrel_ends,qstrands,qcolors]
-    hdata2 = {}
-    qdata2 = []
-    q_adjusted = False
-    for m in hitclusternumbers:
-        hclustersize = int(hdata[m][1][-1]) - int(hdata[m][0][0])
-        hrelpositions = relativepositions(hdata[m][0],hdata[m][1],largestclustersize, screenwidth)
-        hrel_starts = hrelpositions[0]
-        hrel_ends = hrelpositions[1]
-        #Center-align smallest gene cluster
-        if largestclustersize == hclustersize:
-            if q_adjusted == False:
-                q_adjusted = True
-                qrel_ends2 = []
-                qrel_starts2 = []
-                for i in qrel_starts:
-                    qrel_starts2.append(int(i) + int(float(float((largestclustersize - qclustersize) / 2.0) / largestclustersize) * float(screenwidth * 0.75)))
-                for i in qrel_ends:
-                    qrel_ends2.append(int(i) + int(float(float((largestclustersize - qclustersize) / 2.0) / largestclustersize) * float(screenwidth * 0.75)))
-                qrel_ends = qrel_ends2
-                qrel_starts = qrel_starts2
-        else:
-            hrel_ends2 = []
-            hrel_starts2 = []
-            for i in hrel_starts:
-                hrel_starts2.append(int(i) + int(float(float((largestclustersize - hclustersize) / 2.0) / largestclustersize) * float(screenwidth * 0.75)))
-            for i in hrel_ends:
-                hrel_ends2.append(int(i) + int(float(float((largestclustersize - hclustersize) / 2.0) / largestclustersize) * float(screenwidth * 0.75)))
-            hrel_ends = hrel_ends2
-            hrel_starts = hrel_starts2
-        hdata2[m] = [hrel_starts,hrel_ends,hdata[m][2],hdata[m][3]]
-        qdata2 = [qrel_starts,qrel_ends,qdata[2],qdata[3]]
-    hdata = hdata2
-    qdata = qdata2
-    s = svg(x = 0, y = 0, width = (screenwidth * 0.75), height = 2770)
-    viewbox = "0 0 " + str(screenwidth * 0.8) + " " + str(2680)
-    s.set_viewBox(viewbox)
-    s.set_preserveAspectRatio("none")
-    #Add line behind query gene cluster gene arrows, except for architecture searches
-    oh = ShapeBuilder()
-    if arch_search == "n":
+                equal_score -= 1
+    return equal_score >= 0
+
+def draw_gene_cluster(proteins, dpn, index, screenwidth, color_dict, line = True, reverse=False):
+    groups = []
+    builder = ShapeBuilder()
+    group = g()
+    if line:
+        group.addElement(builder.createLine(10, 35 + 50 * index, screenwidth, 35 + 50 * index, strokewidth=1, stroke="grey"))
+    groups.append(group)
+    rel_cluster_start = int(proteins[0].start * dpn)
+    rel_cluster_stop = int(proteins[-1].stop * dpn)
+
+    center_distance = (screenwidth - (rel_cluster_stop - rel_cluster_start)) / 2
+    if reverse:
+        center_distance = - (screenwidth - (rel_cluster_start - rel_cluster_stop)) / 2
+
+    for prot in proteins:
         group = g()
-        group.addElement(oh.createLine(10,35,10 + (screenwidth * 0.75),35, strokewidth = 1, stroke = "grey"))
-        s.addElement(group)
-    #Add query gene cluster gene arrows
-    a = 0
-    y = 0
-    for x in range(qnrgenes):
-        group = g()
-        #group.addElement(_gene_label(rel_starts[a],rel_ends[a],genes[a],y,screenwidth))
-        if qcolors[a] == "white":
-            group.addElement(_gene_arrow(10 + qrel_starts[a],10 + qrel_ends[a],qstrands[a],rgbcolorscheme[-1],40,10))
+        if prot.name in color_dict:
+            color = color_dict[prot.name]
         else:
-            group.addElement(_gene_arrow(10 + qrel_starts[a],10 + qrel_ends[a],qstrands[a],rgbcolorscheme[qcolors[a]],40,10))
-        #Can be used for domains
-        #group.addElement(oh.createRect(rel_starts[a],45,(rel_ends[a]-rel_starts[a]),10, strokewidth = 2, stroke = "black", fill="#237845"))
-        if allhits == "n":
-            group.set_id("q" + str(queryclusternumber) + "_" + str(hitclusternumbers[0]) + "_" + "%s"%x)
-        else:
-            group.set_id("all_" + str(queryclusternumber) + "_0_" + "%s"%x)
-        s.addElement(group)
-        if y == 0:
-            y = 1
-        elif y == 1:
-            y = 0
-        a += 1
-    for m in hitclusternumbers:
-        group = g()
-        group.addElement(oh.createLine(10,35 + 50 * (hitclusternumbers.index(m) + 1),10 + (screenwidth * 0.75),35 + 50 * (hitclusternumbers.index(m) + 1), strokewidth = 1, stroke = "grey"))
-        s.addElement(group)
-        #Add hit gene cluster gene arrows
-        hitclustergenes = hitclusterdata[m][1]
-        hrel_starts = hdata[m][0]
-        hnrgenes = len(hrel_starts)
-        hrel_ends = hdata[m][1]
-        hstrands = hdata[m][2]
-        hcolors = hdata[m][3]
-        a = 0
-        y = 0
-        for x in range(hnrgenes):
-            group = g()
-            #group.addElement(_gene_label(rel_starts[a],rel_ends[a],genes[a],y,screenwidth))
-            if hcolors[a] == "white":
-                group.addElement(_gene_arrow(10 + hrel_starts[a],10 + hrel_ends[a],hstrands[a],rgbcolorscheme[-1],40 + 50 * (hitclusternumbers.index(m) + 1),10))
+            color = "#FFFFFF"
+        rel_start = abs(center_distance + (prot.start * dpn - rel_cluster_start))
+        rel_stop = abs(center_distance + (prot.stop * dpn - rel_cluster_start))
+        strand = prot.strand
+        if reverse:
+            if strand == "+":
+                strand = "-"
             else:
-                group.addElement(_gene_arrow(10 + hrel_starts[a],10 + hrel_ends[a],hstrands[a],rgbcolorscheme[hcolors[a]],40 + 50 * (hitclusternumbers.index(m) + 1),10))
-            #Can be used for domains
-            #   group.addElement(oh.createRect(rel_starts[a],45,(rel_ends[a]-rel_starts[a]),10, strokewidth = 2, stroke = "black", fill="#237845"))
-            if allhits == "n":
-                group.set_id("h" + str(queryclusternumber) + "_" + str(m) + "_" + "%s"%x)
-            else:
-                group.set_id("all_" + str(queryclusternumber) + "_" + str(m) + "_" + "%s"%x)
-            s.addElement(group)
-            if y == 0:
-                y = 1
-            elif y == 1:
-                y = 0
-            a += 1
-    return [s,[qdata,hdata,strandsbalancedict,savedpositions]]
+                strand = "+"
+        group.addElement(_gene_arrow(rel_stop, rel_start, strand, color, 40 + 50 * index, 10))
+
+        group.set_id("all_" + str(index) + "_" + "%s" % prot.name)
+        groups.append(group)
+    return groups
+
+def clusterblastresults(query_cluster, clusters, gene_color_dict, user_options):
+
+    screenwidth = user_options.screenwidth * 0.8
+
+    svg_image = svg(x = 0, y = 0, width = screenwidth, height = 2770)
+    viewbox = "0 0 " + str(screenwidth) + " " + str(2680)
+    svg_image.set_viewBox(viewbox)
+    svg_image.set_preserveAspectRatio("none")
+
+    #first element is the reference for the rest of the clusters
+    all_clusters = clusters + [query_cluster]
+
+    #biggest size used to normalize all distances
+    biggest_size = float(max(cluster.size() for cluster in all_clusters))
+
+    #a factor that can be applied to get a scaled distance relative to the screen
+    #size
+    distance_per_nucleotide = screenwidth / biggest_size
+
+    #first draw the query
+    line = True
+    if user_options.architecture_mode:
+        line = False
+    groups = draw_gene_cluster(list(query_cluster.proteins.values()), distance_per_nucleotide, 0, screenwidth, gene_color_dict, line=line)
+    for group in groups:
+        svg_image.addElement(group)
+
+    for index, cluster in enumerate(clusters):
+        #make sur the cluster is sorted. This should be the case but calling
+        #this method does no harm when the cluster is sorted already
+        cluster.sort()
+        cluster_proteins = list(cluster.proteins.values())
+
+        #check if the orientation of a cluster is inverted compared to the query
+        #if so reverse the proteins.
+        reverse = False
+        if not equal_to_query_strand_orientation(cluster):
+            cluster_proteins.reverse()
+            reverse = True
+        groups = draw_gene_cluster(cluster_proteins, distance_per_nucleotide, index + 1, screenwidth, gene_color_dict, reverse=reverse)
+        for group in groups:
+            svg_image.addElement(group)
+    return svg_image
+
 
 def parse_absolute_paths(infile):
     #Parse absolute paths if found
@@ -1478,7 +1253,6 @@ def parse_absolute_paths(infile):
         #if os.getcwd() != originalfilename[:lastpos] and os.getcwd() != originalfilename[:lastpos].replace("/","\\"):
         #  shutil.copyfile(originalfilename, infile)
     return infile
-
 
 
 def load_genecluster_info(dbname, allgenomes):
@@ -1721,11 +1495,40 @@ class Cluster:
             self.__protein_indexes[protein.name] = len(self.__proteins) - 1
             self.__sorted = False
 
+    def get_protein(self, name):
+        return self.__proteins[name]
+
+
     @property
     def score(self):
+        """
+        Sum of the score dictionary
+
+        :return: a float
+        """
         return sum(self.__score.values())
 
+    def size(self):
+        """
+        Retrieve the size of the cluster. This has tot sort the cluster if it
+        is unsorted. Take care calling this method to often when adding
+        proteins at the same time
+
+        :return:an Integer that is end - start of the cluster
+        """
+        self.sort()
+        proteins = list(self.__proteins.values())
+        return proteins[-1].stop - proteins[0].start
+
     def set_score(self, synteny, accumulated_blast_score, number_unique_hits):
+        """
+        Set the score in a dictionary as 3 componenets
+
+        :param synteny: the synteny score as float
+        :param accumulated_blast_score: the accumulated blast bit score
+        / 1.000.000
+        :param number_unique_hits: integer that is the number of unique blast hits
+        """
         self.__score["synteny"] = synteny
         self.__score["accumulated_blast_score"] = accumulated_blast_score
         self.__score["number unique hits"] = number_unique_hits
@@ -1743,7 +1546,11 @@ class Cluster:
 
     def sort(self):
         """
-        Sort the __proteins dict and __protein_indexes dict.
+        Sort the __proteins dict and __protein_indexes dict if the cluster is
+        not sorted.
+
+        A cluster becomes unsorted if proteins are added. Calling sort on a
+        sorted cluster does not do anything.
         """
         if not self.__sorted:
             self.__proteins = OrderedDict(sorted(self.__proteins.items(), key=lambda item: (item[1].start, item[1].stop)))
@@ -1793,7 +1600,7 @@ class Cluster:
         full_summary += "<\n"
 
         #Table of all the blast hits
-        full_summary += "\n>Table of blast hits:\n"
+        full_summary += "\n>Table of all blast hits:\n"
         full_summary += "query prot\tsubject prot\tperc ident\tallignment len" \
                         "\tmismatch\tgap open\tquery start\tquery stop\tsubject" \
                         " start\tsubject stop\te-value\tblast bit score\n"
@@ -1923,7 +1730,7 @@ def write_txt_output(query_proteins, clusters, blast_output, user_options):
     #write general information about the clusters
     out_file.write("\n>>Significant clusters:\n")
     out_file.write(">Table of the summary of significant clusters:\n")
-    out_file.write("cluster no\tcontig id\tscore\tnumber of blast hits\n")
+    out_file.write("cluster no\tcontig id\tscore\tnumber of unique blast hits\n")
     for cluster in clusters:
         out_file.write("{}\n".format(cluster.short_summary()))
     out_file.write("<\n\n")
@@ -2100,43 +1907,38 @@ def process_multigeneblast_data(nrhitgeneclusters, nrhitclusters, cb_accessiondi
         log("MultiGeneBlast found no significant hits. Exiting...", exit=True)
     return hitclusterdata, nrhitclusters, blastdetails, mgb_scores
 
-def write_svg_files(page, clusters, user_options, internal_homolog_lists, blast_dict, query_proteins):
+def write_svg_files(page, clusters, user_options, query_cluster, blast_dict):
+    #TODO add multiple pages
     # queryclusterdata[1] = [nrhitclusters,hitclusterdata]
     # clusterblastpositiondata = {}
     # i = page
     # #Create alignment svg for each pair of hit&query
     # hitclusters = [nr + (page - 1) * 50 for nr in range(queryclusterdata[1][0] + 1)[1:]]
     # #Create svgs for pairwise gene cluster alignment
-    gene_color_dict = calculate_colorgroups(blast_dict, internal_homolog_lists)
-    for k in range(0,1):
-        cresults = clusterblastresults(page, gene_color_dict, user_options)
-        s = cresults[0]
-        clusterblastpositiondata[str(i) + "_"+str(k)] = cresults[1]
-        outfile = open(svgfolder + "clusterblast" + str(i) + "_" + str(k) + ".svg","w")
-        outfile.write(s.getXML())
+    gene_color_dict = calculate_colorgroups(blast_dict, query_cluster)
+    for cluster in clusters:
+        svg_clusters = [cluster]
+        svg_image = clusterblastresults(query_cluster, svg_clusters, gene_color_dict, user_options)
+
+        outfile = open("svg/clusterblast_{}.svg".format(cluster.no),"w")
+        outfile.write(svg_image.getXML())
         outfile.close()
-        return
     #Create svgs for multiple gene cluster alignment
-    cresults = clusterblastresults(page,hitclusters,queryclusterdata,colorschemedict,rgbcolorscheme, screenwidth, arch_search, allhits="y")
-    s = cresults[0]
-    clusterblastpositiondata[str(i) + "_all"] = cresults[1]
-    outfile = open(svgfolder + "clusterblast" + str(i) + "_all.svg","w")
-    outfile.write(s.getXML())
+    svg_image = clusterblastresults(query_cluster, clusters, gene_color_dict, user_options)
+
+    outfile = open("svg/clusterblast_all.svg","w")
+    outfile.write(svg_image.getXML())
     outfile.close()
     return clusterblastpositiondata, colorschemedict
 
-def write_svgs(page, clusters, user_options, internal_homolog_lists, blast_dict, query_proteins):
+def write_svgs(page, clusters, user_options, query_cluster, blast_dict):
     logging.info("Writing visualization SVGs and XHTML")
     svgfolder = "svg/"
     try:
         os.mkdir(svgfolder)
     except(IOError,OSError):
         pass
-    #Read in MultiGeneBlast output data
-    # queryclusterdata, nrhitgeneclusters, nrhitclusters, cb_accessiondict, queryclustergenes, queryclustergenesdetails, tophitclusters, details = read_multigeneblast_data(page)
-    # hitclusterdata, nrhitclusters, blastdetails, mgb_scores = process_multigeneblast_data(nrhitgeneclusters, nrhitclusters, cb_accessiondict, queryclustergenes, queryclustergenesdetails, internalhomologygroupsdict, tophitclusters, details, page)
-    clusterblastpositiondata, colorschemedict = write_svg_files(page, clusters, user_options, internal_homolog_lists, blast_dict, query_proteins)
-    return queryclusterdata, colorschemedict, clusterblastpositiondata, blastdetails, mgb_scores
+    write_svg_files(page, clusters, user_options, query_cluster, blast_dict)
 
 def runmuscle(args):
     os.system("muscle " + args)
@@ -2579,8 +2381,7 @@ def main():
     # for page in [pagenr + 1 for pagenr in range(int(opts.pages))]:
     page = 1
     #Step 9: Write MultiGeneBlast SVGs
-    return
-    queryclusterdata, colorschemedict, clusterblastpositiondata, blastdetails, mgb_scores = write_svgs(page, clusters, user_options, internal_homolog_lists, blast_dict, query_proteins)
+    write_svgs(page, clusters, user_options, query_cluster, blast_dict)
     print(("Step 9/11, page " + str(page) + ": Time since start: " + str((time.time() - starttime))))
     return
     #Step 10: Create muscle alignments
