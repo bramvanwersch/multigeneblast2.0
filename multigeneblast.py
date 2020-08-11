@@ -1113,6 +1113,14 @@ def startendsitescheck(starts,ends):
     return [starts,ends]
 
 def calculate_colorgroups(blast_dict, query_cluster):
+    """
+    Get distinct colors for all the groups of genes present in the query cluster
+
+    :param blast_dict: a dictionary of Blast result objects
+    :param query_cluster: a Cluster object containing the user defined query
+    :return: a dictionary that links proteins with blast hits to
+    colors so all proteins with the same blast subject have the same color
+    """
     #TODO it is the case that genes that do not have any blast hits are ignored in the query
 
     #first get groups internal homologs in the query cluster
@@ -1136,6 +1144,7 @@ def calculate_colorgroups(blast_dict, query_cluster):
         if not added:
             groups.append(group)
 
+    #get all blast proteins associated to the query proteins in the same groups
     color_groups = []
     for st in groups:
         color_group = set()
@@ -1147,26 +1156,34 @@ def calculate_colorgroups(blast_dict, query_cluster):
                 color_group.add(blast_result.subject)
         if len(color_group) > 0:
             color_groups.append(list(color_group))
-    # Generate RGB scheme
+    #Generate RGB scheme
     rgb_color_scheme = generate_rgbscheme(len(color_groups))
+
+    #generate a dictionary linking all proteins with blast hits to colors
     gene_color_dict = {}
     for gr_indx, group in enumerate(color_groups):
         for protein_name in group:
             gene_color_dict[protein_name] = rgb_color_scheme[gr_indx]
     return gene_color_dict
 
-def equal_to_query_strand_orientation(cluster):
-    equal_score = 0
-    for protein_name, result_set in cluster.blast_hit_proteins.items():
-        for blast_result in result_set:
-            # compare the query protein strand with that of the cluster
-            if blast_result.query_protein.strand == cluster.get_protein(protein_name).strand:
-                equal_score += 1
-            else:
-                equal_score -= 1
-    return equal_score >= 0
 
-def draw_gene_cluster(proteins, dpn, index, screenwidth, color_dict, line = True, reverse=False):
+def draw_protein_cluster(proteins, dpn, index, screenwidth, color_dict, line = True, reverse=False):
+    """
+    Create groups of shapes that together form a protein cluster represenataion
+    using the provided proteins
+
+    :param proteins: a list of Protein objects
+    :param dpn: stands for distance per nucleotide. This is the distance on the
+    svg object per nucleotide on the protein
+    :param index: the position of the cluster on the current page
+    :param screenwidth: the width the screen
+    :param color_dict: a dictionary that links proteins with blast hits to
+    colors so all proteins with the same blast subject have the same color
+    :param line: a boolean that tells if a lign should be drawn trough all the
+    gene shapes
+    :param reverse: if the cluster is reversed compared to the query
+    :return: a list of groups that form an image of a cluster
+    """
     groups = []
     builder = ShapeBuilder()
     group = g()
@@ -1176,6 +1193,7 @@ def draw_gene_cluster(proteins, dpn, index, screenwidth, color_dict, line = True
     rel_cluster_start = int(proteins[0].start * dpn)
     rel_cluster_stop = int(proteins[-1].stop * dpn)
 
+    #the difference in distance between the full screen and the size of the cluster
     center_distance = (screenwidth - (rel_cluster_stop - rel_cluster_start)) / 2
     if reverse:
         center_distance = - (screenwidth - (rel_cluster_start - rel_cluster_stop)) / 2
@@ -1200,8 +1218,19 @@ def draw_gene_cluster(proteins, dpn, index, screenwidth, color_dict, line = True
         groups.append(group)
     return groups
 
-def clusterblastresults(query_cluster, clusters, gene_color_dict, user_options):
+def draw_cluster_collections(query_cluster, clusters, gene_color_dict, user_options):
+    """
+    Draw the clusters and query cluster using svg model into an svg object
 
+    :param query_cluster: the cluster that is the query for the mgb run
+    :param clusters: a list of clusters that have to be presented with the
+    query cluster
+    :param gene_color_dict: a dictionary that links proteins with blast hits to
+    colors so all proteins with the same blast subject have the same color
+    :param user_options: an Option object with user defined options
+    :return: an svg object containing all the clusters
+    """
+    #TODO see what to do with this, if the actual size is relevant or it van be 0.8* the size
     screenwidth = user_options.screenwidth * 0.8
 
     svg_image = svg(x = 0, y = 0, width = screenwidth, height = 2770)
@@ -1209,7 +1238,6 @@ def clusterblastresults(query_cluster, clusters, gene_color_dict, user_options):
     svg_image.set_viewBox(viewbox)
     svg_image.set_preserveAspectRatio("none")
 
-    #first element is the reference for the rest of the clusters
     all_clusters = clusters + [query_cluster]
 
     #biggest core size
@@ -1228,7 +1256,7 @@ def clusterblastresults(query_cluster, clusters, gene_color_dict, user_options):
     line = True
     if user_options.architecture_mode:
         line = False
-    groups = draw_gene_cluster(list(query_cluster.proteins.values()), distance_per_nucleotide, 0, screenwidth, gene_color_dict, line=line)
+    groups = draw_protein_cluster(list(query_cluster.proteins.values()), distance_per_nucleotide, 0, screenwidth, gene_color_dict, line=line)
     for group in groups:
         svg_image.addElement(group)
 
@@ -1249,12 +1277,22 @@ def clusterblastresults(query_cluster, clusters, gene_color_dict, user_options):
             reduced_proteins.reverse()
             reverse = True
 
-        groups = draw_gene_cluster(reduced_proteins, distance_per_nucleotide, index + 1, screenwidth, gene_color_dict, reverse=reverse)
+        groups = draw_protein_cluster(reduced_proteins, distance_per_nucleotide, index + 1, screenwidth, gene_color_dict, reverse=reverse)
         for group in groups:
             svg_image.addElement(group)
     return svg_image
 
 def reduced_cluster_proteins(cluster, query_cluster_size):
+    """
+    Get a list of proteins of the cluster that contains all proteins with blast
+    hits and not to many of the surrounding proteins. The size has to be minimal
+    0.8 * that of the query if the size of the cluster allows that
+
+    :param cluster: a Cluster object
+    :param query_cluster_size: the size of the query cluster
+    :return: a list of Protein objects that are around the blast hits in the
+    cluster
+    """
     # reduce the amount of proteins in the cluster by ignoreing proteins that
     # are to far from blast hits
     cluster_proteins = list(cluster.proteins.values())
@@ -1272,6 +1310,25 @@ def reduced_cluster_proteins(cluster, query_cluster_size):
         if prot.start > min_start and prot.stop < max_end:
             reduced_proteins.append(prot)
     return reduced_proteins
+
+def equal_to_query_strand_orientation(cluster):
+    """
+    Check if the cluster orientation is the same as the query orientation. This
+    is done by checking for each blast hit in the cluster if it has the same
+    orientation as the protein in blasted against.
+
+    :param cluster: a Cluster object
+    :return: a Boolean
+    """
+    equal_score = 0
+    for protein_name, result_set in cluster.blast_hit_proteins.items():
+        for blast_result in result_set:
+            # compare the query protein strand with that of the cluster
+            if blast_result.query_protein.strand == cluster.get_protein(protein_name).strand:
+                equal_score += 1
+            else:
+                equal_score -= 1
+    return equal_score >= 0
 
 def parse_absolute_paths(infile):
     #Parse absolute paths if found
@@ -1786,7 +1843,7 @@ def write_svg_files(clusters, user_options, query_cluster, blast_dict):
     gene_color_dict = calculate_colorgroups(blast_dict, query_cluster)
     for index, cluster in enumerate(clusters):
         svg_clusters = [cluster]
-        svg_image = clusterblastresults(query_cluster, svg_clusters, gene_color_dict, user_options)
+        svg_image = draw_cluster_collections(query_cluster, svg_clusters, gene_color_dict, user_options)
 
         outfile = open("svg/clusterblast_{}.svg".format(cluster.no),"w")
         outfile.write(svg_image.getXML())
@@ -1798,7 +1855,7 @@ def write_svg_files(clusters, user_options, query_cluster, blast_dict):
                 break
             #Create svgs for multiple gene cluster alignment
             page_genes = clusters[page_nr * HITS_PER_PAGE : min((page_nr + 1) * HITS_PER_PAGE, len(clusters))]
-            svg_image = clusterblastresults(query_cluster, page_genes , gene_color_dict, user_options)
+            svg_image = draw_cluster_collections(query_cluster, page_genes, gene_color_dict, user_options)
 
             outfile = open("svg/clusterblast_page{}_all.svg".format(page_nr + 1),"w")
             outfile.write(svg_image.getXML())
@@ -2247,7 +2304,7 @@ def main():
     page = 1
     #Step 9: Write MultiGeneBlast SVGs
     write_svg_files(clusters, user_options, query_cluster, blast_dict)
-    print(("Step 9/11, page " + str(page) + ": Time since start: " + str((time.time() - starttime))))
+    logging.info("Step 10/11: Results have been written to svg files.")
     return
     #Step 10: Create muscle alignments
     musclegroups = align_muscle(opts.muscle, colorschemedict, seqdict)
