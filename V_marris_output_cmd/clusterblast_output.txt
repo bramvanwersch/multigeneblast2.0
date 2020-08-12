@@ -1,4 +1,4 @@
-ClusterBlast scores for D:\University\Master\Thesis\MultiGeneBlast_test_run\V_maris_query.gb
+ClusterBlast scores for D:\University\Master\Thesis\MultiGeneBlast_code_inspection\test_querys\V_maris_query.gb
 
 Table of genes, locations, strands and annotations of query cluster:
 orfP	1	1083	+	protein_methyltransferase	no_locus_tag	
@@ -5572,6 +5572,20 @@ AEB47932	6609609	6610817	-	MoeA_domain-containing_protein	VAB18032_04250
 AEB47933	6610876	6611346	-	molybdenum_cofactor_synthesis_domain_protein	VAB18032_04255
 AEB47934	6611343	6611834	-	molybdenum_cofactor_biosynthesis_protein_c	VAB18032_04260
 AEB47935	6612103	6614919	-	transcriptional_regulator,_sarp_family_protein	VAB18032_04265
+AEB47936	6615591	6618095	+	diguanylate_cyclase/phosphodiesterase	VAB18032_04270
+AEB47937	6618109	6619428	+	hypothetical_protein	VAB18032_04275
+AEB47938	6619425	6620057	+	phosphoribosyltransferase	VAB18032_04280
+AEB47939	6620113	6620451	+	hypothetical_protein	VAB18032_04285
+AEB47940	6620531	6623461	-	replicative_DNA_helicase	VAB18032_04290
+AEB47941	6624548	6625504	+	hypothetical_protein	VAB18032_04295
+AEB47942	6625708	6626154	-	50S_ribosomal_protein_L9	rplI
+AEB47943	6626169	6626408	-	30S_ribosomal_protein_S18	VAB18032_04305
+AEB47944	6626450	6626980	-	single-strand_binding_protein	VAB18032_04310
+AEB47945	6627060	6627350	-	ribosomal_protein_s6	VAB18032_04315
+AEB47946	6627849	6628640	+	endonuclease_IV	VAB18032_04320
+AEB47947	6628637	6630829	+	hypothetical_protein	VAB18032_04325
+AEB47948	6630865	6632388	-	hypothetical_protein	VAB18032_04330
+AEB47949	6632539	6634797	-	glycosyl_transferase_family_protein	VAB18032_04335
 
 Table of Blast hits (query gene, subject gene, %identity, blast score, %coverage, e-value):
 abyR	AEB47935	31	46	60.88709677419355	2e-006	

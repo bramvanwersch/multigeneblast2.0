@@ -11,7 +11,7 @@ class Protein:
     cannot be specified.
     """
     def __init__(self, sequence, start, name, strand, end = None, annotation = "",
-                 locus_tag = "", genbank_file = "", protein_id = ""):
+                 locus_tag = "", contig_id = "", contig_description = "", protein_id = ""):
         """
         :param sequence: a string that is the amino acid sequence of the protein
         :param start: an integer that is the start coordinate in the the protein
@@ -22,8 +22,9 @@ class Protein:
         :param annotation: the optional annotation of the protein, description of
         function
         :param locus_tag: an optional locus tag of the protein
-        :param genbank_file: an optional genbank file accesion where the protein
-        originated from
+        :param contig_id: The ID of the contig as defined in the genbank file
+        :param contig_description: the description of the contig as defined in
+        the genbank file
         :param protein_id: an optional id of the protein
         :param start_header: the start of the fasta header. This can be used in
         the case of query proteins to allow certain identifyers
@@ -46,7 +47,8 @@ class Protein:
 
         self.locus_tag = locus_tag
         self.protein_id = protein_id
-        self.genbank_file = genbank_file
+        self.contig_id = contig_id
+        self.contig_description = contig_description
 
     def summary(self):
         lt = self.locus_tag
@@ -193,7 +195,7 @@ class Contig:
         found_proteins = 0
         # ignore the firs hit which is the start of the genbnk file
         for index, gene in enumerate(entries):
-            g = GenbankEntry(gene, index + 1, dna_seq, c_dna_seq, self.accession)
+            g = GenbankEntry(gene, index + 1, dna_seq, c_dna_seq, self.accession, self.definition)
             if protein_range != None and g.protein.start >= protein_range[0] and g.protein.stop <= protein_range[1]:
                 genbank_entries.append(g)
             elif allowed_proteins != None and g.protein.protein_id in allowed_proteins:
@@ -226,7 +228,7 @@ class Contig:
                         break
                     self.definition += def_line.strip()
         # Test if accession number is probably real GenBank/RefSeq acc nr
-        if testaccession(self.accession) == "n":
+        if not testaccession(self.accession):
             logging.debug("Probably invalid GenBank/Refseq accesion found for {}.".format(self.file))
             self.accession = ""
         if self.accession == "":
@@ -239,7 +241,7 @@ class GenbankEntry:
     """
     Disect a genbank entry and substract allot of potential values.
     """
-    def __init__(self, entry_string, nr, dna_seq, c_dna_seq, file_accession):
+    def __init__(self, entry_string, nr, dna_seq, c_dna_seq, contig_id, contig_description):
         """
         :param entry_string: a string that contains a CDS genbank entry
         :param nr: a unique integer that can be used to create a genename is no
@@ -251,7 +253,8 @@ class GenbankEntry:
         """
         #a list of locations
         self.location = None
-        self.file_accession = file_accession
+        self.contig_id = contig_id
+        self.contig_description = contig_description
 
         #relevant attributes that can be present
         self.__codon_start = 1
@@ -441,7 +444,8 @@ class GenbankEntry:
         start = locations[0][0]
         return Protein(sequence, start, self.gene_name, strand,
                        locus_tag=self.locus_tag, annotation=self.annotation,
-                       genbank_file=self.file_accession, protein_id=self.protein_id)
+                       contig_id=self.contig_id, protein_id=self.protein_id,
+                       contig_description=self.contig_description)
 
 
 def clean_dna_sequence(dna_seq):
@@ -503,10 +507,7 @@ def testaccession(accession):
                 nrnumbers += 1
         except:
             pass
-    test = "y"
-    if nrnumbers < 3 or nrletters < 1:
-        test = "n"
-    return test
+    return nrnumbers < 3 or nrletters < 1
 
 def remove_illegal_characters(string):
     """
