@@ -132,7 +132,7 @@ from tkinter import *
 from tkinter.messagebox import askyesno, showerror
 import shutil
 
-from genbank_parsing import GenbankFile
+from genbank_parsing import GenbankFile, testaccession
 
 ### GENERAL UTILITY###
 
@@ -247,7 +247,6 @@ class Options:
         self.minseqcov = arguments.msc
         self.minpercid = arguments.mpi
         self.hitspergene = arguments.hpg
-        #TODO make sure that the *2 is correct
         self.distancekb = int(arguments.dkb * 1000)
         self.muscle = arguments.m
         self.pages = arguments.op
@@ -720,7 +719,7 @@ def internal_blast(user_options, query_proteins):
 
     #Make Blast db for using the sequences saved in query.fasta in the previous step
     #TODO when running this again after a crash with a different database, a new database
-    #TODO continue: not created. This is problematic because it can lead to inconsistent nameing
+    # is not created. This is problematic because it can lead to inconsistent nameing
     make_blast_db_command = "{}\\exec_new\\makeblastdb.exe -in query.fasta -out query_db -dbtype prot".format(CURRENTDIR)
     logging.debug("Started making internal blast database...")
     try:
@@ -752,7 +751,9 @@ def internal_blast(user_options, query_proteins):
     blast_dict = blast_parse(user_options, query_proteins, blastoutput)
 
     #because query proteins are sorted this is fine
-    query_cluster = Cluster(list(query_proteins.values())[0].start, list(query_proteins.values())[-1].stop, "query")
+    first_protein = list(query_proteins.values())[0]
+    last_protein = list(query_proteins.values())[-1]
+    query_cluster = Cluster(first_protein.start, last_protein.stop, first_protein.contig_id, first_protein.contig_description)
     groups = []
     for results in blast_dict.values():
         for blast_result in results:
@@ -1035,83 +1036,6 @@ def generate_rgbscheme(nr):
     colorlist = colorlist2
     return colorlist
 
-def _gene_arrow(start,end,strand,color,base,height):
-    #TODO look to clean up this function if there is time left
-    halfheight = height/2
-    if start > end:
-        start2 = end
-        end2 = start
-        start = start2
-        end = end2
-    oh = ShapeBuilder()
-    if (end - start) < halfheight:
-        if (strand == "+"):
-            pointsAsTuples=[(start,base),
-                            (end,base - halfheight),
-                            (start,base - height),
-                            (start,base)
-                            ]
-        if (strand == "-"):
-            pointsAsTuples=[(start,base - halfheight),
-                            (end,base - height),
-                            (end,base),
-                            (start,base - halfheight)
-                            ]
-    else:
-        if (strand == "+"):
-            arrowstart = end-halfheight
-            pointsAsTuples=[(start,base),
-                            (arrowstart,base),
-                            (end,base-halfheight),
-                            (arrowstart,base - height),
-                            (start,base - height),
-                            (start,base)
-                            ]
-        if (strand == "-"):
-            arrowstart = start + halfheight
-            pointsAsTuples=[(start,base - halfheight),
-                            (arrowstart,base - height),
-                            (end,base - height),
-                            (end,base),
-                            (arrowstart,base),
-                            (start,base - halfheight)
-                            ]
-    pg=oh.createPolygon(points=oh.convertTupleArrayToPoints(pointsAsTuples),strokewidth=1, stroke='black', fill=color)
-    return pg
-
-def relativepositions(starts, ends, largestclustersize, screenwidth):
-    rel_starts = []
-    rel_ends = []
-    #Assign relative start and end sites for visualization
-    lowest_start = int(starts[0])
-    leftboundary = lowest_start
-    for i in starts:
-        i = float(float(int(i) - int(leftboundary)) / largestclustersize) * float(screenwidth * 0.75)
-        i = int(i)
-        rel_starts.append(i)
-    for i in ends:
-        i = float(float(int(i) - int(leftboundary)) / largestclustersize) * float(screenwidth * 0.75)
-        i = int(i)
-        rel_ends.append(i)
-    return [rel_starts,rel_ends]
-
-def startendsitescheck(starts,ends):
-    #Check whether start sites are always lower than end sites, reverse if necessary
-    starts2 = []
-    ends2 = []
-    a = 0
-    for i in starts:
-        if int(i) > int(ends[a]):
-            starts2.append(ends[a])
-            ends2.append(i)
-        else:
-            starts2.append(i)
-            ends2.append(ends[a])
-        a += 1
-    ends = ends2
-    starts = starts2
-    return [starts,ends]
-
 def calculate_colorgroups(blast_dict, query_cluster):
     """
     Get distinct colors for all the groups of genes present in the query cluster
@@ -1167,168 +1091,264 @@ def calculate_colorgroups(blast_dict, query_cluster):
     return gene_color_dict
 
 
-def draw_protein_cluster(proteins, dpn, index, screenwidth, color_dict, line = True, reverse=False):
-    """
-    Create groups of shapes that together form a protein cluster represenataion
-    using the provided proteins
+class ClusterSvg:
+    def __init__(self, proteins, dpn, index, screenwidth, color_dict, line = True, reverse=False):
+        """
+        :param proteins: a list of Protein objects
+        :param dpn: stands for distance per nucleotide. This is the distance on the
+        svg object per nucleotide on the protein
+        :param index: the position of the cluster on the current page
+        :param screenwidth: the width the screen
+        :param color_dict: a dictionary that links proteins with blast hits to
+        colors so all proteins with the same blast subject have the same color
+        :param line: a boolean that tells if a lign should be drawn trough all the
+        gene shapes
+        :param reverse: if the cluster is reversed compared to the query
+        """
+        self.reversed = reverse
+        self.dpn = dpn
+        self.start = int(proteins[0].start * self.dpn)
+        self.stop = int(proteins[-1].stop * self.dpn)
 
-    :param proteins: a list of Protein objects
-    :param dpn: stands for distance per nucleotide. This is the distance on the
-    svg object per nucleotide on the protein
-    :param index: the position of the cluster on the current page
-    :param screenwidth: the width the screen
-    :param color_dict: a dictionary that links proteins with blast hits to
-    colors so all proteins with the same blast subject have the same color
-    :param line: a boolean that tells if a lign should be drawn trough all the
-    gene shapes
-    :param reverse: if the cluster is reversed compared to the query
-    :return: a list of groups that form an image of a cluster
-    """
-    groups = []
-    builder = ShapeBuilder()
-    group = g()
-    if line:
-        group.addElement(builder.createLine(10, 35 + HITS_PER_PAGE * index, screenwidth, 35 + HITS_PER_PAGE * index, strokewidth=1, stroke="grey"))
-    groups.append(group)
-    rel_cluster_start = int(proteins[0].start * dpn)
-    rel_cluster_stop = int(proteins[-1].stop * dpn)
-
-    #the difference in distance between the full screen and the size of the cluster
-    center_distance = (screenwidth - (rel_cluster_stop - rel_cluster_start)) / 2
-    if reverse:
-        center_distance = - (screenwidth - (rel_cluster_start - rel_cluster_stop)) / 2
-
-    for prot in proteins:
-        group = g()
-        if prot.name in color_dict:
-            color = color_dict[prot.name]
-        else:
-            color = "#FFFFFF"
-        rel_start = abs(center_distance + (prot.start * dpn - rel_cluster_start))
-        rel_stop = abs(center_distance + (prot.stop * dpn - rel_cluster_start))
-        strand = prot.strand
+        self.start_height = 40 + HITS_PER_PAGE * index
+        self.total_width = screenwidth
         if reverse:
-            if strand == "+":
-                strand = "-"
-            else:
-                strand = "+"
-        group.addElement(_gene_arrow(rel_stop, rel_start, strand, color, 40 + HITS_PER_PAGE * index, 10))
+            start_offset = - (self.total_width - (self.start - self.stop)) / 2
+        else:
+            start_offset = (self.total_width - (self.stop - self.start)) / 2
 
-        group.set_id("all_" + str(index) + "_" + "%s" % prot.name)
+        self.gene_arrows = self.__configure_gene_arrows(proteins, start_offset, color_dict)
+
+        self.cluster_image_groups = self._cluster_image(color_dict, line)
+
+    def __configure_gene_arrows(self, proteins, start_offset, color_dict):
+
+        arrows = OrderedDict()
+        for prot in proteins:
+            if prot.name in color_dict:
+                color = color_dict[prot.name]
+            else:
+                color = "#FFFFFF"
+            arrows[prot.name] = GeneArrow(prot, start_offset, self.start, self.dpn, color, self.start_height, reverse=self.reversed)
+        return arrows
+
+    def __get_relative_protein_values(self, proteins):
+        rel_proteins = {}
+        for prot in proteins:
+            rel_prot = {}
+            rel_prot["start"]
+            rel_proteins[prot.name] = rel_prot
+
+    def _cluster_image(self, color_dict, line):
+        """
+        Create groups of shapes that together form a protein cluster represenataion
+
+        :param color_dict: a dictionary that links proteins with blast hits to
+        colors so all proteins with the same blast subject have the same color
+        :param line: a boolean that tells if a lign should be drawn trough all the
+        gene shapes
+        :return: a list of groups that form an image of a cluster
+        """
+        groups = []
+        builder = ShapeBuilder()
+        group = g()
+        if line:
+            group.addElement(builder.createLine(10, self.start_height - 5, self.total_width,
+                                                self.start_height - 5, strokewidth=1, stroke="grey"))
         groups.append(group)
-    return groups
 
-def draw_cluster_collections(query_cluster, clusters, gene_color_dict, user_options):
-    """
-    Draw the clusters and query cluster using svg model into an svg object
+        for gene_arrow in self.gene_arrows.values():
+            groups.append(gene_arrow.arrow)
 
-    :param query_cluster: the cluster that is the query for the mgb run
-    :param clusters: a list of clusters that have to be presented with the
-    query cluster
-    :param gene_color_dict: a dictionary that links proteins with blast hits to
-    colors so all proteins with the same blast subject have the same color
-    :param user_options: an Option object with user defined options
-    :return: an svg object containing all the clusters
-    """
-    #TODO see what to do with this, if the actual size is relevant or it van be 0.8* the size
-    screenwidth = user_options.screenwidth * 0.8
+        return groups
 
-    svg_image = svg(x = 0, y = 0, width = screenwidth, height = 2770)
-    viewbox = "0 0 " + str(screenwidth) + " " + str(2680)
-    svg_image.set_viewBox(viewbox)
-    svg_image.set_preserveAspectRatio("none")
+class GeneArrow:
+    def __init__(self, protein, start_offset, cluster_start, dpn, color, start_height, reverse = False):
+        self.start = abs(start_offset + (protein.start * dpn - cluster_start))
+        self.stop = abs(start_offset + (protein.stop * dpn - cluster_start))
+        
+        #configure strand
+        self.strand = self.__configure_strand(protein.strand, reverse)
+        self.color = color
+        
+        self.arrow = self._gene_arrow(start_height, 10)
 
-    all_clusters = clusters + [query_cluster]
-
-    #biggest core size
-    biggest_size = 0
-    for cluster in all_clusters:
-        start, stop = cluster.core_start_stop()
-        size = (stop - start) + 2 * SVG_CORE_EXTENSION
-        if size > biggest_size:
-            biggest_size = size
-
-    #a factor that can be applied to get a scaled distance relative to the screen
-    #size
-    distance_per_nucleotide = screenwidth / biggest_size
-
-    #first draw the query
-    line = True
-    if user_options.architecture_mode:
-        line = False
-    groups = draw_protein_cluster(list(query_cluster.proteins.values()), distance_per_nucleotide, 0, screenwidth, gene_color_dict, line=line)
-    for group in groups:
-        svg_image.addElement(group)
-
-    query_cluster_size = query_cluster.core_start_stop()[1] - query_cluster.core_start_stop()[0]
-
-    for index, cluster in enumerate(clusters):
-        #make sur the cluster is sorted. This should be the case but calling
-        #this method does no harm when the cluster is sorted already
-        cluster.sort()
-
-        #take an a good size sample of proteins
-        reduced_proteins = reduced_cluster_proteins(cluster, query_cluster_size)
-
-        # check if the orientation of a cluster is inverted compared to the query
-        # if so reverse the proteins.
-        reverse = False
-        if not equal_to_query_strand_orientation(cluster):
-            reduced_proteins.reverse()
-            reverse = True
-
-        groups = draw_protein_cluster(reduced_proteins, distance_per_nucleotide, index + 1, screenwidth, gene_color_dict, reverse=reverse)
-        for group in groups:
-            svg_image.addElement(group)
-    return svg_image
-
-def reduced_cluster_proteins(cluster, query_cluster_size):
-    """
-    Get a list of proteins of the cluster that contains all proteins with blast
-    hits and not to many of the surrounding proteins. The size has to be minimal
-    0.8 * that of the query if the size of the cluster allows that
-
-    :param cluster: a Cluster object
-    :param query_cluster_size: the size of the query cluster
-    :return: a list of Protein objects that are around the blast hits in the
-    cluster
-    """
-    # reduce the amount of proteins in the cluster by ignoreing proteins that
-    # are to far from blast hits
-    cluster_proteins = list(cluster.proteins.values())
-    core_start, core_stop = cluster.core_start_stop()
-    core_size = core_stop - core_start
-    if query_cluster_size * 0.8 > core_size:
-        extra_distance = (query_cluster_size * 0.8 - core_size) / 2
-        core_start = max(core_start - extra_distance, cluster.start_stop()[0])
-        core_stop = min(core_stop + extra_distance, cluster.start_stop()[1])
-    min_start = core_start - SVG_CORE_EXTENSION
-    max_end = core_stop + SVG_CORE_EXTENSION
-
-    reduced_proteins = []
-    for prot in cluster_proteins:
-        if prot.start > min_start and prot.stop < max_end:
-            reduced_proteins.append(prot)
-    return reduced_proteins
-
-def equal_to_query_strand_orientation(cluster):
-    """
-    Check if the cluster orientation is the same as the query orientation. This
-    is done by checking for each blast hit in the cluster if it has the same
-    orientation as the protein in blasted against.
-
-    :param cluster: a Cluster object
-    :return: a Boolean
-    """
-    equal_score = 0
-    for protein_name, result_set in cluster.blast_hit_proteins.items():
-        for blast_result in result_set:
-            # compare the query protein strand with that of the cluster
-            if blast_result.query_protein.strand == cluster.get_protein(protein_name).strand:
-                equal_score += 1
+    def __configure_strand(self, prot_strand, reverse):
+        if reverse:
+            if prot_strand == "+":
+                return "-"
             else:
-                equal_score -= 1
-    return equal_score >= 0
+                return "+"
+        return prot_strand
+
+    def _gene_arrow(self, start_height, height):
+        # TODO look to clean up this function if there is time left
+        halfheight = height / 2
+        if self.start > self.stop:
+            start2 = self.stop
+            stop2 = self.start
+            self.start = start2
+            self.stop = stop2
+        oh = ShapeBuilder()
+        if (self.stop - self.start) < halfheight:
+            if (self.strand == "+"):
+                pointsAsTuples = [(self.start, start_height),
+                                  (self.stop, start_height - halfheight),
+                                  (self.start, start_height - height),
+                                  (self.start, start_height)
+                                  ]
+            if (self.strand == "-"):
+                pointsAsTuples = [(self.start, start_height - halfheight),
+                                  (self.stop, start_height - height),
+                                  (self.stop, start_height),
+                                  (self.start, start_height - halfheight)
+                                  ]
+        else:
+            if (self.strand == "+"):
+                arrowstart = self.stop - halfheight
+                pointsAsTuples = [(self.start, start_height),
+                                  (arrowstart, start_height),
+                                  (self.stop, start_height - halfheight),
+                                  (arrowstart, start_height - height),
+                                  (self.start, start_height - height),
+                                  (self.start, start_height)
+                                  ]
+            if (self.strand == "-"):
+                arrowstart = self.start + halfheight
+                pointsAsTuples = [(self.start, start_height - halfheight),
+                                  (arrowstart, start_height - height),
+                                  (self.stop, start_height - height),
+                                  (self.stop, start_height),
+                                  (arrowstart, start_height),
+                                  (self.start, start_height - halfheight)
+                                  ]
+        pg = oh.createPolygon(
+            points=oh.convertTupleArrayToPoints(pointsAsTuples), strokewidth=1,
+            stroke='black', fill=self.color)
+        return pg
+        
+class ClusterCollectionSvg:
+    def __init__(self,query_cluster, clusters, gene_color_dict, user_options):
+        self.width = int(user_options.screenwidth * 0.8)
+        self.dpn = self.__calculate_distance_per_nucleotide(clusters + [query_cluster])
+        self.cluster_svgs = self.__configure_cluster_svgs(clusters, query_cluster, gene_color_dict, user_options)
+        self.cluster_image = self.__create_image()
+
+    @property
+    def XML(self):
+        return self.cluster_image.getXML()
+
+    def __create_image(self):
+        svg_image = svg(x=0, y=0, width=self.width, height=2770)
+        viewbox = "0 0 " + str(self.width) + " " + str(2680)
+        svg_image.set_viewBox(viewbox)
+        svg_image.set_preserveAspectRatio("none")
+        for cluster_svg in self.cluster_svgs.values():
+            for group in cluster_svg.cluster_image_groups:
+                svg_image.addElement(group)
+        return svg_image
+
+    def __calculate_distance_per_nucleotide(self, all_clusters):
+        # biggest core size
+        biggest_size = 0
+        for cluster in all_clusters:
+            start, stop = cluster.core_start_stop()
+            size = (stop - start) + 2 * SVG_CORE_EXTENSION
+            if size > biggest_size:
+                biggest_size = size
+        return self.width / biggest_size
+
+    def __configure_cluster_svgs(self, clusters, query_cluster, gene_color_dict, user_options):
+        """
+        Create ClusterSvg objects for all clusters and the query
+
+        :param query_cluster: the cluster that is the query for the mgb run
+        :param clusters: a list of clusters that have to be presented with the
+        query cluster
+        :param gene_color_dict: a dictionary that links proteins with blast hits to
+        colors so all proteins with the same blast subject have the same color
+        :param user_options: an Option object with user defined options
+        :return: a dictionary of ClusterSvg objects
+        """
+        cluster_svgs = OrderedDict()
+
+        line = True
+        if user_options.architecture_mode:
+            line = False
+        cluster_svgs["query"] = ClusterSvg(list(query_cluster.proteins.values()),
+                                      self.dpn, 0, self.width,
+                                      gene_color_dict, line=line)
+
+        query_cluster_size = query_cluster.core_start_stop()[1] - query_cluster.core_start_stop()[0]
+        for index, cluster in enumerate(clusters):
+            # make sur the cluster is sorted. This should be the case but calling
+            # this method does no harm when the cluster is sorted already
+            cluster.sort()
+
+            # take an a good size sample of proteins
+            reduced_proteins = self.__reduced_cluster_proteins(cluster, query_cluster_size)
+
+            # check if the orientation of a cluster is inverted compared to the query
+            # if so reverse the proteins.
+            reverse = False
+            if not self.__equal_to_query_strand_orientation(cluster):
+                reverse = True
+            cluster_svgs[cluster.no] = ClusterSvg(reduced_proteins, self.dpn,
+                                                  index + 1, self.width,
+                                                  gene_color_dict, reverse=reverse)
+        return cluster_svgs
+
+    def __reduced_cluster_proteins(self, cluster, query_cluster_size):
+        """
+        Get a list of proteins of the cluster that contains all proteins with blast
+        hits and not to many of the surrounding proteins. The size has to be minimal
+        0.8 * that of the query if the size of the cluster allows that
+
+        :param cluster: a Cluster object
+        :param query_cluster_size: the size of the query cluster
+        :return: a list of Protein objects that are around the blast hits in the
+        cluster
+        """
+        # reduce the amount of proteins in the cluster by ignoreing proteins that
+        # are to far from blast hits
+        cluster_proteins = list(cluster.proteins.values())
+        core_start, core_stop = cluster.core_start_stop()
+        core_size = core_stop - core_start
+        if query_cluster_size * 0.8 > core_size:
+            extra_distance = (query_cluster_size * 0.8 - core_size) / 2
+            core_start = max(core_start - extra_distance,
+                             cluster.start_stop()[0])
+            core_stop = min(core_stop + extra_distance,
+                            cluster.start_stop()[1])
+        min_start = core_start - SVG_CORE_EXTENSION
+        max_end = core_stop + SVG_CORE_EXTENSION
+
+        reduced_proteins = []
+        for prot in cluster_proteins:
+            if prot.start > min_start and prot.stop < max_end:
+                reduced_proteins.append(prot)
+        return reduced_proteins
+
+    def __equal_to_query_strand_orientation(self, cluster):
+        """
+        Check if the cluster orientation is the same as the query orientation. This
+        is done by checking for each blast hit in the cluster if it has the same
+        orientation as the protein in blasted against.
+
+        :param cluster: a Cluster object
+        :return: a Boolean
+        """
+        equal_score = 0
+        for protein_name, result_set in cluster.blast_hit_proteins.items():
+            for blast_result in result_set:
+                # compare the query protein strand with that of the cluster
+                if blast_result.query_protein.strand == cluster.get_protein(
+                        protein_name).strand:
+                    equal_score += 1
+                else:
+                    equal_score -= 1
+        return equal_score >= 0
+
 
 def parse_absolute_paths(infile):
     #Parse absolute paths if found
@@ -1424,10 +1444,10 @@ def sort_hits_per_scaffold(blast_dict, database):
                 query_per_blast_hit[hit.subject].append(hit)
             else:
                 query_per_blast_hit[hit.subject] = [hit]
-            if subject_protein.genbank_file not in hits_per_contig:
-                hits_per_contig[subject_protein.genbank_file] = set([subject_protein])
+            if subject_protein.contig_id not in hits_per_contig:
+                hits_per_contig[subject_protein.contig_id] = set([subject_protein])
             else:
-                hits_per_contig[subject_protein.genbank_file].add(subject_protein)
+                hits_per_contig[subject_protein.contig_id].add(subject_protein)
     #sort each contig using start and stop locations
     for scaffold in hits_per_contig:
         hits_per_contig[scaffold] = list(hits_per_contig[scaffold])
@@ -1464,7 +1484,7 @@ def find_blast_clusters(hits_per_contig, query_per_blast_hit, extra_distance):
             next_protein = scaffold_proteins[index + 1]
             blast_hits.append(protein)
             if protein.stop + extra_distance < next_protein.start:
-                c = Cluster(start - extra_distance, protein.stop + extra_distance, protein.genbank_file)
+                c = Cluster(start - extra_distance, protein.stop + extra_distance, protein.contig_id, protein.contig_description)
                 #add all the blast_hits to the cluster together with the query
                 #gene they originate from
                 for hit in blast_hits:
@@ -1475,7 +1495,7 @@ def find_blast_clusters(hits_per_contig, query_per_blast_hit, extra_distance):
                 blast_hits = [next_protein]
             index += 1
         #make sure to add the final cluster
-        c = Cluster(start - extra_distance, scaffold_proteins[index].stop + extra_distance, scaffold_proteins[index].genbank_file)
+        c = Cluster(start - extra_distance, scaffold_proteins[index].stop + extra_distance, scaffold_proteins[index].contig_id, scaffold_proteins[index].contig_description)
         for hit in blast_hits:
             for result in query_per_blast_hit[hit.name]:
                 c.add_protein(hit, result)
@@ -1534,7 +1554,7 @@ class Cluster:
     added.
     """
     COUNTER = 0
-    def __init__(self, start, stop, contig):
+    def __init__(self, start, stop, contig, contig_description):
         """
         :param start: an integer that is the start of the cluster. Is allowed to
         be negative, this just means that the cluster starts from 0
@@ -1551,6 +1571,7 @@ class Cluster:
         self.start = start
         self.stop = stop
         self.contig = contig
+        self.contig_description = contig_description
         #all proteins in the cluster
         self.__proteins = OrderedDict()
         self.__protein_indexes = OrderedDict()
@@ -1632,8 +1653,9 @@ class Cluster:
         self.__score["accumulated_blast_score"] = accumulated_blast_score
         self.__score["number unique hits"] = number_unique_hits
 
-    def segmented_score(self):
-        return self.__score
+    def segmented_score(self, names = ["synteny", "accumulated_blast_score", "number unique hits"]):
+        requested_scores = [val for key, val in self.__score.items () if key in names]
+        return requested_scores
 
     @property
     def proteins(self):
@@ -1673,7 +1695,7 @@ class Cluster:
 
         :return: a string
         """
-        return "Cluster {}\t{}\t{:.7f}\t{}".format(self.no, self.contig, self.score, len(self.__blast_proteins))
+        return "Cluster {}\t{}\t{:.3f}\t{}".format(self.no, self.contig, self.score, len(self.__blast_proteins))
 
     def summary(self):
         """
@@ -1841,26 +1863,25 @@ def write_svg_files(clusters, user_options, query_cluster, blast_dict):
     except(IOError,OSError):
         pass
     gene_color_dict = calculate_colorgroups(blast_dict, query_cluster)
+    svg_images = {}
     for index, cluster in enumerate(clusters):
         svg_clusters = [cluster]
-        svg_image = draw_cluster_collections(query_cluster, svg_clusters, gene_color_dict, user_options)
+        collection = ClusterCollectionSvg(query_cluster, svg_clusters, gene_color_dict, user_options)
+        svg_images["clusterblast_{}".format(cluster.no)] = collection
 
-        outfile = open("svg/clusterblast_{}.svg".format(cluster.no),"w")
-        outfile.write(svg_image.getXML())
-        outfile.close()
         if index % HITS_PER_PAGE == 0:
             page_nr = int(index / HITS_PER_PAGE)
             #when max pages are reached stop
             if page_nr > user_options.pages:
                 break
             #Create svgs for multiple gene cluster alignment
-            page_genes = clusters[page_nr * HITS_PER_PAGE : min((page_nr + 1) * HITS_PER_PAGE, len(clusters))]
-            svg_image = draw_cluster_collections(query_cluster, page_genes, gene_color_dict, user_options)
+            page_clusters = clusters[page_nr * HITS_PER_PAGE : min((page_nr + 1) * HITS_PER_PAGE, len(clusters))]
+            collection = ClusterCollectionSvg(query_cluster, page_clusters, gene_color_dict, user_options)
 
-            outfile = open("svg/clusterblast_page{}_all.svg".format(page_nr + 1),"w")
-            outfile.write(svg_image.getXML())
-            outfile.close()
+            svg_images["clusterblast_page{}_all".format(page_nr + 1)] = collection
+
             logging.info("Visual output page {}/{} created.".format(page_nr + 1, min(user_options.pages, int((len(clusters) - 1) / HITS_PER_PAGE) + 1)))
+    return svg_images
 
 def runmuscle(args):
     os.system("muscle " + args)
@@ -1930,241 +1951,244 @@ def align_muscle(include_muscle, colorschemedict, seqdict):
                     break
     return musclegroups
 
-def create_xhtml_template(queryclusterdata, page, pages):
-    #Create HTML file with gene cluster info in hidden div tags
-    htmlfile = open(MGBPATH + os.sep + "empty.xhtml","r")
-    html = htmlfile.read()
-    html = html.replace("\r","\n")
-    htmlparts = html.split("<SPLIT HERE>")
-    htmloutfile = open("displaypage" + str(page) + ".xhtml","w")
-    htmloutfile.write(htmlparts[0] + '  displaycblastresults("' + str(page) + '","all")' + htmlparts[1])
-    htmloutfile.write("var list=[" + ",".join([str(nr + (page - 1) * 50 + 1) for nr in range(queryclusterdata[1][0])]) + ",'all'];" + htmlparts[2])
-    htmloutfile.write("var list=[" + ",".join([str(nr + (page - 1) * 50 + 1) for nr in range(queryclusterdata[1][0])]) + ",'all'];" + htmlparts[3])
-    htmloutfile.write('<a class="bigtext"><br/><br/>&nbsp;Results pages: ')
-    for pagenr in [pagenr + 1 for pagenr in range(pages)]:
-        htmloutfile.write('<a href="displaypage' + str(pagenr) + '.xhtml" class="bigtext">' + str(pagenr) + '</a>')
-        if pagenr != pages:
-            htmloutfile.write(", ")
-        else:
-            htmloutfile.write("</a>")
-    htmloutfile.write(htmlparts[4])
-    return htmloutfile, htmlparts
+def create_xhtml_template(html_parts, page_indx, page_sizes):
 
-def write_xhtml_output(htmloutfile, queryclusterdata, clusters, clusterblastpositiondata, nucname, page, screenwidth, blastdetails, mgb_scores, musclegroups, colorschemedict, dbtype):
+    html_outfile = open("displaypage{}.xhtml".format(page_indx + 1),"w")
+    html_outfile.write('{}  displaycblastresults("{}","all"){}'.format(html_parts[0], page_indx + 1, html_parts[1]))
+    inner_string = "var list=[{},'all'];".format(",".join([str(nr + page_indx * 50 + 1) for nr in range(page_sizes[page_indx])]))
+    html_outfile.write(inner_string + html_parts[2])
+    html_outfile.write(inner_string + html_parts[3])
+    html_outfile.write('<a class="bigtext"><br/><br/>&nbsp;Results pages: ')
+    for page_nr in [nr + 1 for nr in range(len(page_sizes))]:
+        html_outfile.write('<a href="displaypage{}.xhtml" class="bigtext">{}</a>'.format(page_nr, page_nr))
+        if page_nr != len(page_sizes):
+            html_outfile.write(", ")
+        else:
+            html_outfile.write("</a>")
+    html_outfile.write(html_parts[4])
+    return html_outfile
+
+def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_size, user_options, svg_images):
     #Write ClusterBlast divs with pictures and description pop-up tags
-    frame_update()
-    htmloutfile.write('<div id="clusterblastview" class="clusterdescr">\n\n')
+    screenwidth = user_options.screenwidth
+    html_outfile.write('<div id="clusterblastview" class="clusterdescr">\n\n')
     #Add menu bar 3
-    htmloutfile.write('<div id="bartext3" style="color:#FFFFFF; font-size:1em; position:absolute; z-index:2; top:3px; left:20px;"><b>MultiGeneBlast hits</b></div>')
-    htmloutfile.write('<div id="descrbar3" style="position:absolute; z-index:1; top:0px;"><img src="images/bar.png" height="25" width="' + str(int(0.75*screenwidth)) + '"/></div>')
-    htmloutfile.write('<div class="help" id="help3" style="position:absolute; z-index:1; top:2px; left:' + str(int(screenwidth * 0.75) - 30) + 'px;"><a href="http://multigeneblast.sourceforge.net/usage.html" target="_blank"><img border="0" src="images/help.png"/></a></div>')
-    qclusternr = page
-    nrhitclusters = queryclusterdata[1][0]
-    hitclusterdata = queryclusterdata[1][1]
-    htmloutfile.write('<div id="qcluster' + str(qclusternr) + '">\n<br/><br/>\n<div align="left">\n<form name="clusterform' + str(qclusternr) + '">\n<select name="selection' + str(qclusternr) + '" onchange="javascript:navigate(this);">\n')
-    htmloutfile.write('<option value="">Select gene cluster alignment</option>\n')
-    for i in range(nrhitclusters):
-        cdescription = hitclusterdata[i + 1 + (page - 1) * 50][5][i].replace("&","&amp;")
-        if len(cdescription) > 80:
-            cdescription = cdescription[:77] + "..."
-        htmloutfile.write('<option value="javascript:displaycblastresults(' + str(page) + ',' + str(i+1 + (page - 1) * 50) + ')">' + cdescription + '</option>\n')
-    htmloutfile.write('</select>\n</form>\n\n</div>')
-    htmloutfile.write('<div style="position:absolute; top:33px; left:' + str(screenwidth*0.625) + 'px;"><img src="images/button.gif" name="button' + str(qclusternr) + '" onclick="javascript:displaybutton(' + str(qclusternr) + ');"/></div>')
-    for i in range(nrhitclusters):
-        frame_update()
-        hitclusterdata = queryclusterdata[1][1]
-        queryclustergenes = hitclusterdata[list(hitclusterdata.keys())[0]][3]
-        queryclustergenesdetails = hitclusterdata[list(hitclusterdata.keys())[0]][4]
-        hitclusternumber =  i + 1 + (page - 1) * 50
-        cluster_acc = hitclusterdata[hitclusternumber][6]
-        cluster_blastdetails = blastdetails[cluster_acc]
-        mgbscore = mgb_scores[cluster_acc][0]
-        cumblastscore = mgb_scores[cluster_acc][1]
-        hitclustergenes = clusters[cluster_acc][0]
-        hitclustergenesdetails = hitclusterdata[hitclusternumber][2]
-        relpositiondata = clusterblastpositiondata[str(page) + "_" + str(i + 1 + (page - 1) * 50)]
-        qrel_starts = relpositiondata[0][0]
-        qrel_ends = relpositiondata[0][1]
-        hrel_starts = relpositiondata[1][hitclusternumber][0]
-        hrel_ends = relpositiondata[1][hitclusternumber][1]
-        strandsbalance = relpositiondata[2][hitclusternumber]
-        hstarts = relpositiondata[3][hitclusternumber][0]
-        hends = relpositiondata[3][hitclusternumber][1]
-        invertedhstarts = [str(100000000 - int(l)) for l in hstarts]
-        invertedhends = [str(100000000 - int(l)) for l in hends]
-        if strandsbalance < 0:
-            hitclustergenes.reverse()
-        htmloutfile.write('<div id="hitcluster' + str(qclusternr) + '_' + str(i + 1 + (page - 1) * 50) + '">\n')
+    html_outfile.write('<div id="bartext3" style="color:#FFFFFF; font-size:1em; position:absolute; z-index:2; top:3px; left:20px;"><b>MultiGeneBlast hits</b></div>')
+    html_outfile.write('<div id="descrbar3" style="position:absolute; z-index:1; top:0px;"><img src="images/bar.png" height="25" width="{}"/></div>'.format(int(screenwidth * 0.8)))
+    html_outfile.write('<div class="help" id="help3" style="position:absolute; z-index:1; top:2px; left:{}px;"><a href="http://multigeneblast.sourceforge.net/usage.html"'
+                      ' target="_blank"><img border="0" src="images/help.png"/></a></div>'.format(int(screenwidth * 0.8 -30)))
+    page_nr = page_indx + 1
+    html_outfile.write('<div id="qcluster{}">\n<br/><br/>\n<div align="left">\n<form name="clusterform{}">\n<select name="selection{}" onchange="javascript:navigate(this);">\n'.format(page_nr, page_nr, page_nr))
+    html_outfile.write('<option value="">Select gene cluster alignment</option>\n')
+    for index, cluster in enumerate(clusters):
+        cluster_summary = cluster.short_summary()
+        if len(cluster_summary) > 80:
+            cluster_summary = "{}...".format(cluster_summary[:77])
+        html_outfile.write('<option value="javascript:displaycblastresults({},{})">{}</option>\n'.format(page_nr, index + 1 + page_indx * HITS_PER_PAGE, cluster_summary))
+    html_outfile.write('</select>\n</form>\n\n</div>')
+    html_outfile.write('<div style="position:absolute; top:33px; left:{}px;"><img src="images/button.gif" name="button{}" onclick="javascript:displaybutton({})'
+                       ';"/></div>'.format(user_options.screenwidth * 0.625, page_nr, page_nr))
+    for index, cluster in enumerate(clusters):
+        html_outfile.write('<div id="hitcluster{}_{}">\n'.format(page_nr, index + 1 + page_indx * HITS_PER_PAGE))
+
         #Load svg and embed it into XHTML
-        svglines = open("svg" + os.sep + "clusterblast" + str(qclusternr) + '_' + str(i + 1 + (page - 1) * 50) + ".svg","r").read().split("\n")
-        htmloutfile.write("\n" + svglines[0][:-1] + 'id="svg' + str(qclusternr) + '_' + str(i + 1 + (page - 1) * 50) + '" >' + "\n")
-        for svgline in svglines[1:]:
-            htmloutfile.write(svgline + "\n")
-        #Insert gene cluster descriptions
-        cgbkdescription = hitclusterdata[i + 1 + (page - 1) * 50][5][i].replace("&","&amp;").replace("\t"," ").partition(" ")[2].partition(" ")[2].split(", whole")[0].split(", complete")[0].split(", partial")[0]
-        if len(cgbkdescription) > 90:
-            cgbkdescription = cgbkdescription[:87] + "..."
-        if testaccession(cluster_acc.rpartition("_")[0]) == "y":
-            cdescription = '<a href="http://www.ncbi.nlm.nih.gov/nuccore/' + cluster_acc.rpartition("_")[0] + '" target="_blank"> ' + cluster_acc.rpartition("_")[0] + "</a>" + " : " + cgbkdescription + "&nbsp;&nbsp;&nbsp;&nbsp;Total score: " + mgbscore + "&nbsp;&nbsp;&nbsp;&nbsp; Cumulative Blast bit score: " + cumblastscore
-        else:
-            cdescription = cluster_acc.rpartition("_")[0] + " : " + cgbkdescription + "&nbsp;&nbsp;&nbsp;&nbsp;Total score: " + mgbscore + "&nbsp;&nbsp;&nbsp;&nbsp; Cumulative Blast bit score: " + cumblastscore
-        if len(nucname) < 90:
-            qdescription = "Query: " + nucname
-        else:
-            qdescription = "Query: " + nucname[0:87] + "..."
-        htmloutfile.write('<div id="descriptionquery" style="text-align:left; position:absolute; top:60px; left:10px; font-size:10px; font-style:italic">' + qdescription + '</div>\n')
-        htmloutfile.write('<div id="description' + str(qclusternr) + '" style="text-align:left; position:absolute; top:115px; left:10px; font-size:10px; font-style:italic">' + cdescription + '</div>\n')
-        #Insert NCBI links
-        htmloutfile.write('<div id="pub_pics" style="position:absolute; top:175px; left:' + str(int(screenwidth * 0.0)) + 'px; font-size:10px"> Hit cluster cross-links: \n')
-        htmloutfile.write('&nbsp;&nbsp;<a href="http://www.ncbi.nlm.nih.gov/nuccore/' + cluster_acc.rpartition("_")[0] + '" target="_blank"><img align="absmiddle" border="0" src="images/genbank.gif"/></a>\n')
-        htmloutfile.write('</div>\n\n')
-        #Create gene pop-ups
-        a = 0
-        for j in queryclustergenes:
-            j_accession = j
-            htmloutfile.write('<div id="q' + str(qclusternr) + "_" + str(hitclusternumber) + "_" + str(a) + '_div" class="hidden popup" style="position:absolute; top:' + str(100) + 'px; left:' + str(int(float(qrel_starts[a])*0.875)) + 'px;">\n')
-            htmloutfile.write(queryclustergenesdetails[j][3].replace("_"," ").replace("&","&amp;") + "\n")
-            link = "http://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE=Proteins&amp;PROGRAM=blastp&amp;BLAST_PROGRAMS=blastp&amp;QUERY=" + j_accession + "&amp;LINK_LOC=protein&amp;PAGE_TYPE=BlastSearch"
-            if j != queryclustergenesdetails[j][4] and testaccession(j) == "y":
-                htmloutfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/' + j + '" target="_blank">' + j + "</a>\n")
-            htmloutfile.write("<br/>Location: " + str(queryclustergenesdetails[j][0]) + "-" + str(queryclustergenesdetails[j][1]) + "\n")
-            htmloutfile.write("</div>\n\n")
-            htmloutfile.write('<div id="q' + str(qclusternr) + "_" + str(hitclusternumber) + "_" + str(a) + '_divtext" class="hidden genenames" style="position:absolute; top:' + str(75) + 'px; left:' + str(int(float((float(qrel_starts[a])+float(qrel_ends[a]))/2)*0.9375)) + 'px;">\n')
-            if queryclustergenesdetails[j][4] != "" and queryclustergenesdetails[j][4] != "no_locus_tag":
-                htmloutfile.write(queryclustergenesdetails[j][4])
-            else:
-                htmloutfile.write(j)
-            htmloutfile.write("</div>\n\n")
-            a+= 1
-        a = 0
-        for j in hitclustergenes:
-            if ((hitclustergenesdetails[j][0] in hstarts or hitclustergenesdetails[j][0] in hends) and (hitclustergenesdetails[j][1] in hends or hitclustergenesdetails[j][1] in hstarts)) or ((hitclustergenesdetails[j][1] in invertedhstarts or hitclustergenesdetails[j][1] in invertedhends) and (hitclustergenesdetails[j][0] in invertedhends or hitclustergenesdetails[j][0] in invertedhstarts)):
-                j_accession = j
-                htmloutfile.write('<div id="h' + str(qclusternr) + "_" + str(hitclusternumber) + "_" + str(a) + '_div" class="hidden popup" style="position:absolute; top:' + str(151) + 'px; left:' + str(int(float(hrel_starts[a])*0.875)) + 'px;">\n')
-                htmloutfile.write(hitclustergenesdetails[j][3].replace("_"," ").replace("&","&amp;") + "\n")
-                link = "http://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE=Proteins&amp;PROGRAM=blastp&amp;BLAST_PROGRAMS=blastp&amp;QUERY=" + j_accession + "&amp;LINK_LOC=protein&amp;PAGE_TYPE=BlastSearch"
-                if dbtype == "nucl":
-                    htmloutfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/nuccore/' + j.rpartition("_")[0] + '" target="_blank">' + j.rpartition("_")[0] + "</a>\n")
-                elif j != hitclustergenesdetails[j][4] and testaccession(j) == "y":
-                    htmloutfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/' + j + '" target="_blank">' + j + "</a>\n")
-                htmloutfile.write("<br/>Location: " + str(hitclustergenesdetails[j][0]) + "-" + str(hitclustergenesdetails[j][1]) + "\n")
-                if j in cluster_blastdetails:
-                    for blasthit in cluster_blastdetails[j]:
-                        htmloutfile.write("<br/><br/><b>BlastP hit with " + blasthit[0] + "</b>\n<br/>Percentage identity: " + blasthit[1] + " %\n")
-                        htmloutfile.write("<br/>BlastP bit score: " + blasthit[2] + "\n<br/>Sequence coverage: " + blasthit[3].partition(".")[0] + " %\n")
-                        htmloutfile.write("<br/>E-value: " + blasthit[4] + "\n<br/>")
-                if testaccession(j) == "y" and dbtype != "nucl":
-                    htmloutfile.write("<br/><a href=\"" + link + "\" target=\"_blank\"> NCBI BlastP on this gene </a>\n")
-                if j in colorschemedict and colorschemedict[j] in musclegroups:
-                    htmloutfile.write("<br/><a href=\"fasta" + os.sep + "orthogroup" + str(colorschemedict[j]) + "_muscle.fasta\" target=\"_blank\"> Muscle alignment of this gene with homologs </a>\n")
-                htmloutfile.write("</div>\n\n")
-                htmloutfile.write('<div id="h' + str(qclusternr) + "_" + str(hitclusternumber) + "_" + str(a) + '_divtext" class="hidden genenames" style="position:absolute; top:' + str(126) + 'px; left:' + str(int(float((float(hrel_starts[a])+float(hrel_ends[a]))/2)*0.9375)) + 'px;">\n')
-                if hitclustergenesdetails[j][4] != "" and hitclustergenesdetails[j][4] != "no_locus_tag":
-                    htmloutfile.write(hitclustergenesdetails[j][4])
+        svg_image = svg_images["clusterblast_{}".format(str(cluster.no))]
+        names = list(svg_image.cluster_svgs.keys())
+        svg_lines = svg_image.XML.split("\n")
+        html_outfile.write('\n{}id="svg{}_{}" >\n'.format(svg_lines[0][:-1], page_nr, index + 1 + page_indx * HITS_PER_PAGE))
+        name_index = -1
+        protein_index = 0
+        for svg_line in svg_lines[1:]:
+            if svg_line.startswith("</g>"):
+                name_index += 1
+                protein_index = 0
+                html_outfile.write(svg_line + "\n")
+            elif svg_line.startswith("<polygon"):
+                if names[name_index] == "query":
+                    html_outfile.write('<g id="{}{}_{}_{}"  >\n'.format("q", page_nr, page_indx * HITS_PER_PAGE + name_index + 1, protein_index))
                 else:
-                    htmloutfile.write(j)
-                htmloutfile.write("</div>\n\n")
-                a += 1
-        htmloutfile.write('</div>\n')
-    #Find new relative positions for display of all gene clusters in one picture
-    relpositiondata = clusterblastpositiondata[str(page) + "_all"]
-    if len(relpositiondata[0]) > 0:
-        qrel_starts = relpositiondata[0][0]
-        qrel_ends = relpositiondata[0][1]
-        htmloutfile.write('<div id="hitcluster' + str(page) + '_all" style="display:none">\n')
-        #Load svg and embed it into XHTML
-        svglines = open("svg" + os.sep + "clusterblast" + str(qclusternr) + "_all.svg","r").read().split("\n")
-        htmloutfile.write("\n" + svglines[0][:-1] + 'id="svg' + str(qclusternr) + '_all" >' + "\n")
-        for svgline in svglines[1:]:
-            htmloutfile.write(svgline + "\n")
-        if len(nucname) < 90:
-            qdescription = "Query: " + nucname
-        else:
-            qdescription = "Query: " + nucname[0:87] + "..."
-        htmloutfile.write('<div id="descriptionquery" style="text-align:left; position:absolute; top:60px; left:10px; font-size:10px; font-style:italic">' + qdescription + '</div>\n')
-        for i in range(nrhitclusters):
-            frame_update()
-            hitclusterdata = queryclusterdata[1][1]
-            queryclustergenes = hitclusterdata[list(hitclusterdata.keys())[0]][3]
-            queryclustergenesdetails = hitclusterdata[list(hitclusterdata.keys())[0]][4]
-            hitclusternumber =  i + 1 + (page - 1) * 50
-            hrel_starts = relpositiondata[1][hitclusternumber][0]
-            hrel_ends = relpositiondata[1][hitclusternumber][1]
-            cluster_acc = hitclusterdata[hitclusternumber][6]
-            cluster_blastdetails = blastdetails[cluster_acc]
-            mgbscore = mgb_scores[cluster_acc][0]
-            cumblastscore = mgb_scores[cluster_acc][1]
-            hitclustergenes = clusters[cluster_acc][0]
-            hitclustergenesdetails = hitclusterdata[hitclusternumber][2]
-            strandsbalance = relpositiondata[2][hitclusternumber]
-            hstarts = relpositiondata[3][hitclusternumber][0]
-            hends = relpositiondata[3][hitclusternumber][1]
-            invertedhstarts = [str(100000000 - int(l)) for l in hstarts]
-            invertedhends = [str(100000000 - int(l)) for l in hends]
-            cgbkdescription = hitclusterdata[i + 1 + (page - 1) * 50][5][i].replace("&","&amp;").replace("\t"," ").partition(" ")[2].partition(" ")[2].split(", whole")[0].split(", complete")[0].split(", partial")[0]
-            if len(cgbkdescription) > 90:
-                cgbkdescription = cgbkdescription[:87] + "..."
-            if testaccession(cluster_acc.rpartition("_")[0]) == "y":
-                cdescription = str(i+1 + (page - 1) * 50) + ". : " + '<a href="http://www.ncbi.nlm.nih.gov/nuccore/' + cluster_acc.rpartition("_")[0] + '" target="_blank"> ' + cluster_acc.rpartition("_")[0] + "</a> " + cgbkdescription + "&nbsp;&nbsp;&nbsp;&nbsp; Total score: " + mgbscore + "&nbsp;&nbsp;&nbsp;&nbsp; Cumulative Blast bit score: " + cumblastscore
+                    html_outfile.write('<g id="{}{}_{}_{}"  >\n'.format("h", page_nr, page_indx * HITS_PER_PAGE + name_index + 1, protein_index))
+                html_outfile.write(svg_line + "\n")
+                html_outfile.write('</g>\n')
+                protein_index += 1
             else:
-                cdescription = str(i+1 + (page - 1) * 50) + ". : " + cluster_acc.rpartition("_")[0] + " " + cgbkdescription + "&nbsp;&nbsp;&nbsp;&nbsp; Total score: " + mgbscore + "&nbsp;&nbsp;&nbsp;&nbsp; Cumulative Blast bit score: " + cumblastscore
-            htmloutfile.write('<div id="description' + str(qclusternr) + '" style="text-align:left; position:absolute; top:' + str(int(63 + (51.7 * (hitclusternumber - (page - 1) * 50)))) + 'px; left:10px; font-size:10px; font-style:italic">' + cdescription + '</div>\n')
-            if hitclusternumber == 1 + (page - 1) * 50:
-                a = 0
-                for j in queryclustergenes:
-                    htmloutfile.write('<div id="all_' + str(qclusternr) + "_0_" + str(a) + '_div" class="hidden popup" style="position:absolute; top:' + str(100) + 'px; left:' + str(int(float(qrel_starts[a])*0.875)) + 'px; z-index:2;">\n')
-                    htmloutfile.write(queryclustergenesdetails[j][3].replace("_"," ").replace("&","&amp;") + "\n")
-                    link = "http://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE=Proteins&amp;PROGRAM=blastp&amp;BLAST_PROGRAMS=blastp&amp;QUERY=" + j + "&amp;LINK_LOC=protein&amp;PAGE_TYPE=BlastSearch"
-                    if j != queryclustergenesdetails[j][4] and testaccession(j) == "y":
-                        htmloutfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/' + j + '" target="_blank">' + j + "</a>\n")
-                    htmloutfile.write("<br/>Location: " + str(queryclustergenesdetails[j][0]) + "-" + str(queryclustergenesdetails[j][1]) + "\n")
-                    if testaccession(j) == "y":
-                        htmloutfile.write("<br/><a href=\"" + link + "\" target=\"_blank\"> NCBI BlastP on this gene </a>\n")
-                    if j in colorschemedict and colorschemedict[j] in musclegroups:
-                        htmloutfile.write("<br/><a href=\"fasta" + os.sep + "orthogroup" + str(colorschemedict[j]) + "_muscle.fasta\" target=\"_blank\"> Muscle alignment of this gene with homologs </a>\n")
-                    htmloutfile.write("</div>\n\n")
-                    htmloutfile.write('<div id="all_' + str(qclusternr) + "_0_" + str(a) + '_divtext" class="hidden genenames" style="position:absolute; top:' + str(75) + 'px; left:' + str(int(float((float(qrel_starts[a])+float(qrel_ends[a]))/2)*0.9375)) + 'px;">\n')
-                    if queryclustergenesdetails[j][4] != "" and queryclustergenesdetails[j][4] != "no_locus_tag":
-                        htmloutfile.write(queryclustergenesdetails[j][4])
-                    else:
-                        htmloutfile.write(j)
-                    htmloutfile.write("</div>\n\n")
-                    a+= 1
-            a = 0
-            for j in hitclustergenes:
-                if ((hitclustergenesdetails[j][0] in hstarts or hitclustergenesdetails[j][0] in hends) and (hitclustergenesdetails[j][1] in hends or hitclustergenesdetails[j][1] in hstarts)) or ((hitclustergenesdetails[j][1] in invertedhstarts or hitclustergenesdetails[j][1] in invertedhends) and (hitclustergenesdetails[j][0] in invertedhends or hitclustergenesdetails[j][0] in invertedhstarts)):
-                    htmloutfile.write('<div id="all_' + str(qclusternr) + "_" + str(hitclusternumber) + "_" + str(a) + '_div" class="hidden popup" style="position:absolute; top:' + str(int(100 + 51.7 * (hitclusternumber - (page - 1) * 50))) + 'px; left:' + str(int(float(hrel_starts[a])*0.875)) + 'px; z-index:2;">\n')
-                    htmloutfile.write(hitclustergenesdetails[j][3].replace("_"," ").replace("&","&amp;") + "\n")
-                    link = "http://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE=Proteins&amp;PROGRAM=blastp&amp;BLAST_PROGRAMS=blastp&amp;QUERY=" + j + "&amp;LINK_LOC=protein&amp;PAGE_TYPE=BlastSearch"
-                    if dbtype == "nucl":
-                        htmloutfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/nuccore/' + j.rpartition("_")[2] + '" target="_blank">' + j.rpartition("_")[2] + "</a>\n")
-                    elif j != hitclustergenesdetails[j][4] and testaccession(j) == "y":
-                        htmloutfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/' + j + '" target="_blank">' + j + "</a>\n")
-                    htmloutfile.write("<br/>Location: " + str(hitclustergenesdetails[j][0]) + "-" + str(hitclustergenesdetails[j][1]) + "\n")
-                    if j in cluster_blastdetails:
-                        for blasthit in cluster_blastdetails[j]:
-                            htmloutfile.write("<br/><br/><b>BlastP hit with " + blasthit[0] + "</b>\n<br/>Percentage identity: " + blasthit[1] + " %\n")
-                            htmloutfile.write("<br/>BlastP bit score: " + blasthit[2] + "\n<br/>Sequence coverage: " + blasthit[3].partition(".")[0] + " %\n")
-                            htmloutfile.write("<br/>E-value: " + blasthit[4] + "\n<br/>")
-                    if testaccession(j) == "y" and dbtype != "nucl":
-                        htmloutfile.write("<br/><a href=\"" + link + "\" target=\"_blank\"> NCBI BlastP on this gene </a>\n")
-                    if j in colorschemedict and colorschemedict[j] in musclegroups:
-                        htmloutfile.write("<br/><a href=\"fasta" + os.sep + "orthogroup" + str(colorschemedict[j]) + "_muscle.fasta\" target=\"_blank\"> Muscle alignment of this gene with homologs </a>\n")
-                    htmloutfile.write("</div>\n\n")
-                    htmloutfile.write('<div id="all_' + str(qclusternr) + "_" + str(hitclusternumber) + "_" + str(a) + '_divtext" class="hidden genenames" style="position:absolute; top:' + str(int(75 + 51.7 * (hitclusternumber - (page - 1) * 50))) + 'px; left:' + str(int(float((float(hrel_starts[a])+float(hrel_ends[a]))/2)*0.9375)) + 'px;">\n')
-                    if hitclustergenesdetails[j][4] != "" and hitclustergenesdetails[j][4] != "no_locus_tag":
-                        htmloutfile.write(hitclustergenesdetails[j][4])
-                    else:
-                        htmloutfile.write(j)
-                    htmloutfile.write("</div>\n\n")
-                    a += 1
-        htmloutfile.write('</div>\n')
-        htmloutfile.write('</div>\n\n')
+                html_outfile.write(svg_line + "\n")
+
+        #Insert gene cluster descriptions
+        contig_desc = cluster.contig_description
+        if len(contig_desc) > 90:
+            contig_desc = "{}...".format(contig_desc[:87])
+        if testaccession(cluster.contig):
+            cluster_desc = '<a href="http://www.ncbi.nlm.nih.gov/nuccore/{}" target="_blank"> {}</a> : {}&nbsp;&nbsp;&nbsp;&nbsp;Total' \
+                           ' score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp; Cumulative Blast bit score {:.2f}'.format(cluster.contig, cluster.contig,contig_desc,
+                                                                                cluster.score,cluster.segmented_score("accumulated_blast_score")[0] * 1_000_000)
+        else:
+            cluster_desc = '{} : {}&nbsp;&nbsp;&nbsp;&nbsp;Total score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp;' \
+                           ' Cumulative Blast bit score: {:.2f}'.format(cluster.contig, contig_desc, cluster.scorecluster,
+                                cluster.segmented_score("accumulated_blast_score")[0] * 1_000_000)
+        query_desc = query_cluster.contig_description
+        if len(query_desc) < 90:
+            query_desc = "Query: {}".format(query_desc)
+        else:
+            query_desc = "Query: {}...".format(query_desc[:87])
+        html_outfile.write('<div id="descriptionquery" style="text-align:left; position:absolute; top:60px;'
+                           ' left:10px; font-size:10px; font-style:italic">{}</div>\n'.format(query_desc))
+        html_outfile.write('<div id="description{}" style="text-align:left; position:absolute; top:115px;'
+                           ' left:10px; font-size:10px; font-style:italic">{}</div>\n'.format(page_nr, cluster_desc))
+
+        #Insert NCBI links
+        html_outfile.write('<div id="pub_pics" style="position:absolute; top:175px; left:0px; font-size:10px"> Hit cluster cross-links: \n')
+        html_outfile.write('&nbsp;&nbsp;<a href="http://www.ncbi.nlm.nih.gov/nuccore/{}"'
+                           ' target="_blank"><img align="absmiddle" border="0" src="images/genbank.gif"/></a>\n'.format(cluster.contig))
+        html_outfile.write('</div>\n\n')
+
+        #Create gene pop-ups
+        query_starts = [arrow.start for arrow in svg_image.cluster_svgs["query"].gene_arrows.values()]
+        query_ends = [arrow.stop for arrow in svg_image.cluster_svgs["query"].gene_arrows.values()]
+        for pindex, protein in enumerate(query_cluster.proteins.values()):
+            html_outfile.write('<div id="q{}_{}_{}_div" class="hidden popup" style="position:absolute; top:100px; left:{}px;">\n'.format(page_nr, page_indx * HITS_PER_PAGE + index + 1 ,pindex, int(query_starts[pindex] * 0.875)))
+            html_outfile.write("{}\n".format(protein.annotation.replace("_", " ")))
+            if protein.protein_id != "" and testaccession(protein.protein_id):
+                html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}" target="_blank">{}</a>\n'.format(protein.protein_id, protein.protein_id))
+            html_outfile.write("<br/>Location:{}-{}\n".format(protein.start, protein.stop))
+            html_outfile.write("</div>\n\n")
+            html_outfile.write('<div id="q{}_{}_{}_divtext" class="hidden genenames" style="position:absolute; top:75px; left:'
+                               '{}px;">\n'.format(page_nr, page_indx * HITS_PER_PAGE + index + 1 ,pindex, ((query_starts[pindex] + query_ends[pindex]) / 2) * 0.9375))
+            if protein.locus_tag != "":
+                html_outfile.write(protein.locus_tag)
+            else:
+                html_outfile.write(protein.protein_id)
+            html_outfile.write("</div>\n\n")
+
+        #all the protein names that are actually visually displayed
+        cluster_protein_names = svg_image.cluster_svgs[cluster.no].gene_arrows.keys()
+        prot_starts = [arrow.start for arrow in svg_image.cluster_svgs[cluster.no].gene_arrows.values()]
+        prot_ends = [arrow.stop for arrow in svg_image.cluster_svgs[cluster.no].gene_arrows.values()]
+        for pindex, protein_name in enumerate(cluster_protein_names):
+            protein = cluster.get_protein(protein_name)
+            html_outfile.write('<div id="h{}_{}_{}_div" class="hidden popup" style="position:absolute; top:151px; left:{}px;">\n'.format(page_nr, page_indx * HITS_PER_PAGE + index + 1 ,pindex, int(prot_starts[pindex] * 0.875)))
+            html_outfile.write("{}\n".format(protein.annotation.replace("_"," ")))
+            link = "http://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE=Proteins&amp;PROGRAM=blastp&amp;BLAST_PROGRAMS=blastp&amp;QUERY={}&amp;LINK_LOC=protein&amp;PAGE_TYPE=BlastSearch".format(protein.protein_id)
+            if user_options.dbtype == "nucl":
+                htmloutfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/nuccore/{}" target="_blank">{}</a>\n'.format(protein.protein_id, protein.protein_id))
+            elif protein.locus_tag != "" and testaccession(protein.locus_tag):
+                html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}" target="_blank">{}</a>\n'.format(protein.locus_tag, protein.locus_tag))
+            html_outfile.write("<br/>Location: {}-{}\n".format(protein.start, protein.stop))
+            if protein_name in cluster.blast_hit_proteins:
+                for blast_result in cluster.blast_hit_proteins[protein_name]:
+                    html_outfile.write("<br/><br/><b>BlastP hit with {}</b>\n<br/>Percentage identity: {} %\n".format(blast_result.query, blast_result.percent_identity))
+                    html_outfile.write("<br/>BlastP bit score: {}\n<br/>Sequence coverage: {:.1f} %\n".format(blast_result.bit_score, blast_result.percent_coverage))
+                    html_outfile.write("<br/>E-value: {}\n<br/>".format(blast_result.evalue))
+            if testaccession(protein.protein_id) and user_options.dbtype != "nucl":
+                html_outfile.write('<br/><a href="{}" target="_blank"> NCBI BlastP on this gene </a>\n'.format(link))
+            # if j in colorschemedict and colorschemedict[j] in musclegroups:
+            #     html_outfile.write("<br/><a href=\"fasta" + os.sep + "orthogroup" + str(colorschemedict[j]) + "_muscle.fasta\" target=\"_blank\"> Muscle alignment of this gene with homologs </a>\n")
+            html_outfile.write("</div>\n\n")
+            html_outfile.write('<div id="h{}_{}_{}_divtext" class="hidden genenames" style="position:absolute; top:126px; left:'
+                               '{}px;">\n'.format(page_nr, page_indx * HITS_PER_PAGE + index + 1 ,pindex,((prot_starts[pindex] + prot_ends[pindex]) / 2) * 0.9375))
+            if protein.locus_tag != "":
+                html_outfile.write(protein.locus_tag)
+            else:
+                html_outfile.write(protein.protein_id)
+            html_outfile.write("</div>\n\n")
+        html_outfile.write('</div>\n')
+    #writing the full page with all the proteins
+    all_svg_image = svg_images["clusterblast_page{}_all".format(page_indx + 1)]
+    names = list(all_svg_image.cluster_svgs.keys())
+    html_outfile.write('<div id="hitcluster{}_all" style="display:none">\n'.format(page_nr))
+    all_svg_lines = all_svg_image.XML.split("\n")
+    html_outfile.write('\n{}id="svg{}_all" >\n'.format(all_svg_lines[0][:-1], page_nr))
+    name_index = -1
+    protein_index = 0
+    for svg_line in all_svg_lines[1:]:
+        if svg_line.startswith("</g>"):
+            name_index += 1
+            protein_index = 0
+            html_outfile.write(svg_line + "\n")
+        elif svg_line.startswith("<polygon"):
+            if names[name_index] == "query":
+                html_outfile.write('<g id="all_{}_0_{}"  >\n'.format(page_nr, protein_index))
+            else:
+                html_outfile.write('<g id="all_{}_{}_{}"  >\n'.format(page_nr, page_indx * HITS_PER_PAGE + name_index + 1 - 1, protein_index))
+            html_outfile.write(svg_line + "\n")
+            html_outfile.write('</g>\n')
+            protein_index += 1
+        else:
+            html_outfile.write(svg_line + "\n")
+
+    query_desc = query_cluster.contig_description
+    if len(query_desc) < 90:
+        query_desc = "Query: {}".format(query_desc)
     else:
-        htmloutfile.write('<br/>No homologous gene clusters found.</div>\n')
-    htmloutfile.write('</div>\n')
-    htmloutfile.write('<div id="creditsbar' + str(i) + '" class="banner" style="position:absolute; width:' + str(int(0.98 * screenwidth)) +'px; align:\'left\'; height:75; top:2750px; left:0px; color:#000066; z-index:-1;">')
-    htmloutfile.write('<div style="float:center; font-size:0.9em;">\n<div style="position:absolute; top:0px; left:30px;">\n<img src="images/ruglogo.gif" border="0"/>&nbsp;&nbsp;&nbsp;&nbsp;\n<img src="images/gbblogo.gif" border="0"/>&nbsp;&nbsp;&nbsp;&nbsp;\n</div>\n<div style="position:absolute; top:10px; left:340px;">\nDetecting sequence homology at the gene cluster level with MultiGeneBlast.\n<br/>Marnix H. Medema, Rainer Breitling &amp; Eriko Takano (2013)\n<br/><i>Molecular Biology and Evolution</i> , 30: 1218-1223.\n</div>\n</div>\n</div>')
+        query_desc = "Query: {}...".format(query_desc[:87])
+    html_outfile.write('<div id="descriptionquery" style="text-align:left; position:absolute; top:60px; left:10px; font-size:10px; font-style:italic">{}</div>\n'.format(query_desc))
+    for index, cluster in enumerate(clusters):
+        # Insert gene cluster descriptions
+        contig_desc = cluster.contig_description
+        if len(contig_desc) > 90:
+            contig_desc = "{}...".format(contig_desc[:87])
+        if testaccession(cluster.contig):
+            cluster_desc = '<a href="http://www.ncbi.nlm.nih.gov/nuccore/{}" target="_blank"> {}</a> : {}&nbsp;&nbsp;&nbsp;&nbsp;Total' \
+                           ' score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp; Cumulative Blast bit score {:.2f}'.format(cluster.contig, cluster.contig,contig_desc,
+                                                                                cluster.score,cluster.segmented_score("accumulated_blast_score")[0] * 1_000_000)
+        else:
+            cluster_desc = '{} : {}&nbsp;&nbsp;&nbsp;&nbsp;Total score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp;' \
+                           ' Cumulative Blast bit score: {:.2f}'.format(cluster.contig, contig_desc, cluster.scorecluster,
+                                cluster.segmented_score("accumulated_blast_score")[0] * 1_000_000)
+        html_outfile.write('<div id="description{}" style="text-align:left; position:absolute; top:{}px; left:10px; font-size:10px; font-style:italic">{}</div>\n'.format(page_nr, int(63 + (51.7 * (index + 1))), cluster_desc))
+        #add query for the first index
+        if index == 0:
+            query_starts = [arrow.start for arrow in all_svg_image.cluster_svgs["query"].gene_arrows.values()]
+            query_ends = [arrow.stop for arrow in all_svg_image.cluster_svgs["query"].gene_arrows.values()]
+            for pindex, protein in enumerate(query_cluster.proteins.values()):
+                html_outfile.write('<div id="all_{}_0_{}_div" class="hidden popup" style="position:absolute; top:100px; left:{}px;">\n'.format(page_nr ,pindex, int(query_starts[pindex] * 0.875)))
+                html_outfile.write("{}\n".format(protein.annotation.replace("_", " ")))
+                if protein.protein_id != "" and testaccession(protein.protein_id):html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}"'
+                                                                                                     ' target="_blank">{}</a>\n'.format(protein.protein_id, protein.protein_id))
+                html_outfile.write("<br/>Location:{}-{}\n".format(protein.start,protein.stop))
+                html_outfile.write("</div>\n\n")
+                html_outfile.write('<div id="all_{}_0_{}_divtext" class="hidden genenames" style="position:absolute; top:75px; left:''{}px;'
+                                   '">\n'.format(page_nr, pindex, ((query_starts[pindex] + query_ends[pindex]) / 2) * 0.9375))
+                if protein.locus_tag != "":
+                    html_outfile.write(protein.locus_tag)
+                else:
+                    html_outfile.write(protein.protein_id)
+                html_outfile.write("</div>\n\n")
+        cluster_protein_names = all_svg_image.cluster_svgs[cluster.no].gene_arrows.keys()
+        prot_starts = [arrow.start for arrow in all_svg_image.cluster_svgs[cluster.no].gene_arrows.values()]
+        prot_ends = [arrow.stop for arrow in all_svg_image.cluster_svgs[cluster.no].gene_arrows.values()]
+
+        for pindex, protein_name in enumerate(cluster_protein_names):
+            protein = cluster.get_protein(protein_name)
+            html_outfile.write('<div id="all_{}_{}_{}_div" class="hidden popup" style="position:absolute; top:{}px; left:{}px;">\n'.format(page_nr, index + 1 + page_indx * HITS_PER_PAGE ,pindex, int(100 + (51.7 * (index + 1))), int(prot_starts[pindex] * 0.875)))
+            html_outfile.write("{}\n".format(protein.annotation.replace("_", " ")))
+            link = "http://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE=Proteins&amp;PROGRAM=blastp&amp;BLAST_PROGRAMS=blastp&amp;QUERY={}&amp;LINK_LOC=protein&amp;PAGE_TYPE=BlastSearch".format(protein.protein_id)
+            if user_options.dbtype == "nucl":
+                htmloutfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/nuccore/{}" target="_blank">{}</a>\n'.format(protein.protein_id, protein.protein_id))
+            elif protein.locus_tag != "" and testaccession(protein.locus_tag):
+                html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}" target="_blank">{}</a>\n'.format(protein.locus_tag, protein.locus_tag))
+            html_outfile.write("<br/>Location: {}-{}\n".format(protein.start, protein.stop))
+            if protein_name in cluster.blast_hit_proteins:
+                for blast_result in cluster.blast_hit_proteins[protein_name]:
+                    html_outfile.write("<br/><br/><b>BlastP hit with {}</b>\n<br/>Percentage identity: {} %\n".format(blast_result.query, blast_result.percent_identity))
+                    html_outfile.write("<br/>BlastP bit score: {}\n<br/>Sequence coverage: {:.1f} %\n".format(blast_result.bit_score,blast_result.percent_coverage))
+                    html_outfile.write("<br/>E-value: {}\n<br/>".format(blast_result.evalue))
+            if testaccession(protein.protein_id) and user_options.dbtype != "nucl":
+                html_outfile.write('<br/><a href="{}" target="_blank"> NCBI BlastP on this gene </a>\n'.format(link))
+            # if j in colorschemedict and colorschemedict[j] in musclegroups:
+            #     html_outfile.write("<br/><a href=\"fasta" + os.sep + "orthogroup" + str(colorschemedict[j]) + "_muscle.fasta\" target=\"_blank\"> Muscle alignment of this gene with homologs </a>\n")
+            html_outfile.write("</div>\n\n")
+            html_outfile.write('<div id="all_{}_{}_{}_divtext" class="hidden genenames" style="position:absolute; top:{}px; left:{}px;">\n'.format(page_nr, index + 1 + page_indx * HITS_PER_PAGE ,pindex, int(75 + (51.7 * (index + 1))), ((prot_starts[pindex]+prot_ends[pindex])/2)*0.9375))
+            if protein.locus_tag != "":
+                html_outfile.write(protein.locus_tag)
+            else:
+                html_outfile.write(protein.protein_id)
+            html_outfile.write("</div>\n\n")
+    html_outfile.write('</div>\n')
+    html_outfile.write('</div>\n\n')
+    html_outfile.write('</div>\n')
+    html_outfile.write('<div id="creditsbar{}" class="banner" style="position:absolute; width:{}px; align:\'left\'; height:75; top:2750px; left:0px; color:#000066; z-index:-1;">'.format(index, int(0.98 * screenwidth)))
+    html_outfile.write('<div style="float:center; font-size:0.9em;">\n<div style="position:absolute; top:0px; left:30px;">\n<img src="images/ruglogo.gif" border="0"/>&nbsp;&nbsp;&nbsp;&nbsp;\n<img src="images/gbblogo.gif" border="0"/>&nbsp;&nbsp;&nbsp;&nbsp;\n</div>\n<div style="position:absolute; top:10px; left:340px;">\nDetecting sequence homology at the gene cluster level with MultiGeneBlast.\n<br/>Marnix H. Medema, Rainer Breitling &amp; Eriko Takano (2013)\n<br/><i>Molecular Biology and Evolution</i> , 30: 1218-1223.\n</div>\n</div>\n</div>')
 
 def finalize_xhtml(htmloutfile, htmlparts):
     #Add final part of HTML file
@@ -2185,10 +2209,28 @@ def finalize_xhtml(htmloutfile, htmlparts):
     #Close open html file
     htmloutfile.close()
 
-def create_xhtml_file(queryclusterdata, clusters, clusterblastpositiondata, nucname, page, pages, screenwidth, blastdetails, mgb_scores, musclegroups, colorschemedict, dbtype):
-    htmloutfile, htmlparts = create_xhtml_template(queryclusterdata, page, pages)
-    write_xhtml_output(htmloutfile, queryclusterdata, clusters, clusterblastpositiondata, nucname, page, screenwidth, blastdetails, mgb_scores, musclegroups, colorschemedict, dbtype)
-    finalize_xhtml(htmloutfile, htmlparts)
+def create_xhtml_file(clusters, query_cluster, blast_dict, user_options, svg_images):
+    page_total, last_page_l = divmod(len(clusters), HITS_PER_PAGE)
+    page_sizes = [HITS_PER_PAGE for _ in range(page_total)] + [last_page_l]
+
+    #Create HTML file with gene cluster info in hidden div tags for all pages
+    try:
+        with open(MGBPATH + os.sep + "empty.xhtml", "r") as htmlfile:
+            html = htmlfile.read()
+            html = html.replace("\r", "\n")
+            html_parts = html.split("<SPLIT HERE>")
+    except:
+        logging.critical("empty.xhml is missing from {}. Cannot create "
+                         "the full html page. Exiting...".format(MGBPATH))
+        raise MultiGeneBlastException(
+            "empty.xhml is missing from {}. Cannot create "
+            "the full html page.".format(MGBPATH))
+    for page_indx in range(len(page_sizes)):
+        #note this returns an open file stream. Take care addign code in this loop
+        page_clusters = clusters[page_indx * HITS_PER_PAGE: min((page_indx + 1) * HITS_PER_PAGE, len(clusters))]
+        html_outfile = create_xhtml_template(html_parts, page_indx, page_sizes)
+        write_xhtml_output(html_outfile, page_clusters, query_cluster, page_indx, page_sizes[page_indx], user_options, svg_images)
+        finalize_xhtml(html_outfile, html_parts)
 
 def move_outputfiles(foldername, pages):
     global MGBPATH
@@ -2215,7 +2257,6 @@ def move_outputfiles(foldername, pages):
         except:
             pass
     filestomove = ["clusterblast_output.txt", "svg", "fasta"]
-    frame_update()
     for f in filestomove:
         try:
             os.remove(foldername + os.sep + f)
@@ -2228,7 +2269,6 @@ def move_outputfiles(foldername, pages):
             shutil.move(f, foldername + os.sep + f)
         except:
             pass
-    frame_update()
     filestocopy = ["style.css", "jquery.svg.js", "jquery-1.4.2.min.js", "jquery.svgdom.js"]
     for f in filestocopy:
         try:
@@ -2301,24 +2341,22 @@ def main():
 
     #Output. From here, iterate for every page
     # for page in [pagenr + 1 for pagenr in range(int(opts.pages))]:
-    page = 1
     #Step 9: Write MultiGeneBlast SVGs
-    write_svg_files(clusters, user_options, query_cluster, blast_dict)
+    svg_images = write_svg_files(clusters, user_options, query_cluster, blast_dict)
     logging.info("Step 10/11: Results have been written to svg files.")
-    return
-    #Step 10: Create muscle alignments
-    musclegroups = align_muscle(opts.muscle, colorschemedict, seqdict)
-    print(("Step 10/11, page " + str(page) + ": Time since start: " + str((time.time() - starttime))))
+    # #Step 10: Create muscle alignments
+    # musclegroups = align_muscle(opts.muscle, colorschemedict, seqdict)
+    # print(("Step 10/11, page " + str(page) + ": Time since start: " + str((time.time() - starttime))))
 
     #Step 11: Create XHTML output file
-    create_xhtml_file(queryclusterdata, clusters, clusterblastpositiondata, nucname, page, int(opts.pages), opts.screenwidth, blastdetails, mgb_scores, musclegroups, colorschemedict, opts.dbtype)
-    print(("Step 11/11, page " + str(page) + ": Time since start: " + str((time.time() - starttime))))
+    create_xhtml_file(clusters, query_cluster, blast_dict, user_options, svg_images)
+    # print(("Step 11/11, page " + str(page) + ": Time since start: " + str((time.time() - starttime))))
 
     #Move all files to specified output folder
-    move_outputfiles(opts.outputfolder, int(opts.pages))
+    move_outputfiles(user_options.outdir, 2)
 
     #Close log file
-    print(("MultiGeneBlast successfully finished in " + str((time.time() - starttime)) + " seconds.\n"))
+    # print(("MultiGeneBlast successfully finished in " + str((time.time() - starttime)) + " seconds.\n"))
 
 def setup_logger(outdir, starttime):
     """

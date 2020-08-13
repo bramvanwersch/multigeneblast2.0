@@ -43,7 +43,7 @@ class Protein:
 
         #gene name
         self.name = remove_illegal_characters(name)
-        self.annotation = annotation
+        self.annotation = remove_illegal_characters(annotation)
 
         self.locus_tag = locus_tag
         self.protein_id = protein_id
@@ -229,7 +229,7 @@ class Contig:
                     self.definition += def_line.strip()
         # Test if accession number is probably real GenBank/RefSeq acc nr
         if not testaccession(self.accession):
-            logging.debug("Probably invalid GenBank/Refseq accesion found for {}.".format(self.file))
+            logging.debug("Probably invalid GenBank/Refseq accesion {} found.".format(self.accession))
             self.accession = ""
         if self.accession == "":
             logging.debug("No valid accesion found for file {}".format(self.file))
@@ -507,7 +507,7 @@ def testaccession(accession):
                 nrnumbers += 1
         except:
             pass
-    return nrnumbers < 3 or nrletters < 1
+    return not (nrnumbers < 3 or nrletters < 1)
 
 def remove_illegal_characters(string):
     """
