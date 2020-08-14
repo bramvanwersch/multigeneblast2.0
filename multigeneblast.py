@@ -25,7 +25,7 @@ import shutil
 #own imports
 from genbank_parsing import GenbankFile
 from visualisation import ClusterCollectionSvg, create_xhtml_file
-from utilies import MultiGeneBlastException
+from utilities import MultiGeneBlastException
 from constants import *
 
 

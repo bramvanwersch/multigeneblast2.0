@@ -2,8 +2,6 @@
 #imports
 import os, sys
 
-from utilies import MultiGeneBlastException
-
 
 #shared constants between files
 HITS_PER_PAGE = 50

@@ -4,8 +4,7 @@ import logging
 from string import ascii_letters
 from collections import OrderedDict
 
-from constants import ILLEGAL_CHARACTERS
-from utilies import testaccession, remove_illegal_characters, complement, MultiGeneBlastException
+from utilities import *
 
 class Protein:
     """
@@ -230,7 +229,7 @@ class Contig:
                         break
                     self.definition += def_line.strip()
         # Test if accession number is probably real GenBank/RefSeq acc nr
-        if not testaccession(self.accession):
+        if not is_valid_accession(self.accession):
             logging.debug("Probably invalid GenBank/Refseq accesion {} found.".format(self.accession))
             self.accession = ""
         if self.accession == "":

@@ -14,8 +14,8 @@ from pysvg.text import *
 from pysvg.builders import *
 
 from constants import *
-from utilies import testaccession
-from utilies import MultiGeneBlastException
+from utilities import is_valid_accession
+from utilities import MultiGeneBlastException
 
 
 class ClusterCollectionSvg:
@@ -443,7 +443,7 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
         contig_desc = cluster.contig_description
         if len(contig_desc) > 90:
             contig_desc = "{}...".format(contig_desc[:87])
-        if testaccession(cluster.contig):
+        if is_valid_accession(cluster.contig):
             cluster_desc = 'Cluster{}: <a href="http://www.ncbi.nlm.nih.gov/nuccore/{}" target="_blank"> {}</a> {}&nbsp;&nbsp;&nbsp;&nbsp;Total' \
                            ' score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp; Cumulative Blast bit score {:.2f}'.format(cluster.no, cluster.contig, cluster.contig,contig_desc,
                                                                                 cluster.score,cluster.segmented_score("accumulated_blast_score")[0] * 1_000_000)
@@ -473,7 +473,7 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
         for pindex, protein in enumerate(query_cluster.proteins.values()):
             html_outfile.write('<div id="q{}_{}_{}_div" class="hidden popup" style="position:absolute; top:100px; left:{}px;">\n'.format(page_nr, page_indx * HITS_PER_PAGE + index + 1 ,pindex, int(query_starts[pindex] * 0.875)))
             html_outfile.write("{}\n".format(protein.annotation.replace("_", " ")))
-            if protein.protein_id != "" and testaccession(protein.protein_id):
+            if protein.protein_id != "" and is_valid_accession(protein.protein_id):
                 html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}" target="_blank">{}</a>\n'.format(protein.protein_id, protein.protein_id))
             html_outfile.write("<br/>Location:{}-{}\n".format(protein.start, protein.stop))
             html_outfile.write("</div>\n\n")
@@ -496,7 +496,7 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
             link = "http://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE=Proteins&amp;PROGRAM=blastp&amp;BLAST_PROGRAMS=blastp&amp;QUERY={}&amp;LINK_LOC=protein&amp;PAGE_TYPE=BlastSearch".format(protein.protein_id)
             if user_options.dbtype == "nucl":
                 htmloutfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/nuccore/{}" target="_blank">{}</a>\n'.format(protein.protein_id, protein.protein_id))
-            elif protein.locus_tag != "" and testaccession(protein.locus_tag):
+            elif protein.locus_tag != "" and is_valid_accession(protein.locus_tag):
                 html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}" target="_blank">{}</a>\n'.format(protein.locus_tag, protein.locus_tag))
             html_outfile.write("<br/>Location: {}-{}\n".format(protein.start, protein.stop))
             if protein_name in cluster.blast_hit_proteins:
@@ -504,7 +504,7 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
                     html_outfile.write("<br/><br/><b>BlastP hit with {}</b>\n<br/>Percentage identity: {} %\n".format(blast_result.query, blast_result.percent_identity))
                     html_outfile.write("<br/>BlastP bit score: {}\n<br/>Sequence coverage: {:.1f} %\n".format(blast_result.bit_score, blast_result.percent_coverage))
                     html_outfile.write("<br/>E-value: {}\n<br/>".format(blast_result.evalue))
-            if testaccession(protein.protein_id) and user_options.dbtype != "nucl":
+            if is_valid_accession(protein.protein_id) and user_options.dbtype != "nucl":
                 html_outfile.write('<br/><a href="{}" target="_blank"> NCBI BlastP on this gene </a>\n'.format(link))
             # if j in colorschemedict and colorschemedict[j] in musclegroups:
             #     html_outfile.write("<br/><a href=\"fasta" + os.sep + "orthogroup" + str(colorschemedict[j]) + "_muscle.fasta\" target=\"_blank\"> Muscle alignment of this gene with homologs </a>\n")
@@ -554,7 +554,7 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
         contig_desc = cluster.contig_description
         if len(contig_desc) > 90:
             contig_desc = "{}...".format(contig_desc[:87])
-        if testaccession(cluster.contig):
+        if is_valid_accession(cluster.contig):
             cluster_desc = 'Cluster{}: <a href="http://www.ncbi.nlm.nih.gov/nuccore/{}" target="_blank"> {}</a> {}&nbsp;&nbsp;&nbsp;&nbsp;Total' \
                            ' score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp; Cumulative Blast bit score {:.2f}'.format(cluster.no, cluster.contig, cluster.contig,contig_desc,
                                                                                 cluster.score,cluster.segmented_score("accumulated_blast_score")[0] * 1_000_000)
@@ -572,7 +572,7 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
             for pindex, protein in enumerate(query_cluster.proteins.values()):
                 html_outfile.write('<div id="all_{}_0_{}_div" class="hidden popup" style="position:absolute; top:100px; left:{}px;">\n'.format(page_nr ,pindex, int(query_starts[pindex] * 0.875)))
                 html_outfile.write("{}\n".format(protein.annotation.replace("_", " ")))
-                if protein.protein_id != "" and testaccession(protein.protein_id):html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}"'
+                if protein.protein_id != "" and is_valid_accession(protein.protein_id):html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}"'
                                                                                                      ' target="_blank">{}</a>\n'.format(protein.protein_id, protein.protein_id))
                 html_outfile.write("<br/>Location:{}-{}\n".format(protein.start,protein.stop))
                 html_outfile.write("</div>\n\n")
@@ -594,7 +594,7 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
             link = "http://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE=Proteins&amp;PROGRAM=blastp&amp;BLAST_PROGRAMS=blastp&amp;QUERY={}&amp;LINK_LOC=protein&amp;PAGE_TYPE=BlastSearch".format(protein.protein_id)
             if user_options.dbtype == "nucl":
                 htmloutfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/nuccore/{}" target="_blank">{}</a>\n'.format(protein.protein_id, protein.protein_id))
-            elif protein.locus_tag != "" and testaccession(protein.locus_tag):
+            elif protein.locus_tag != "" and is_valid_accession(protein.locus_tag):
                 html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}" target="_blank">{}</a>\n'.format(protein.locus_tag, protein.locus_tag))
             html_outfile.write("<br/>Location: {}-{}\n".format(protein.start, protein.stop))
             if protein_name in cluster.blast_hit_proteins:
@@ -602,7 +602,7 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
                     html_outfile.write("<br/><br/><b>BlastP hit with {}</b>\n<br/>Percentage identity: {} %\n".format(blast_result.query, blast_result.percent_identity))
                     html_outfile.write("<br/>BlastP bit score: {}\n<br/>Sequence coverage: {:.1f} %\n".format(blast_result.bit_score,blast_result.percent_coverage))
                     html_outfile.write("<br/>E-value: {}\n<br/>".format(blast_result.evalue))
-            if testaccession(protein.protein_id) and user_options.dbtype != "nucl":
+            if is_valid_accession(protein.protein_id) and user_options.dbtype != "nucl":
                 html_outfile.write('<br/><a href="{}" target="_blank"> NCBI BlastP on this gene </a>\n'.format(link))
             # if j in colorschemedict and colorschemedict[j] in musclegroups:
             #     html_outfile.write("<br/><a href=\"fasta" + os.sep + "orthogroup" + str(colorschemedict[j]) + "_muscle.fasta\" target=\"_blank\"> Muscle alignment of this gene with homologs </a>\n")
