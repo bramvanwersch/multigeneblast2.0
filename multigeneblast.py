@@ -128,10 +128,9 @@ from http.client import BadStatusLine,HTTPException
 import urllib.request, urllib.parse, urllib.error
 import tarfile
 import pickle as pickle
-from tkinter import *
-from tkinter.messagebox import askyesno, showerror
 import shutil
 
+#own imports
 from genbank_parsing import GenbankFile, testaccession
 
 ### GENERAL UTILITY###
@@ -603,44 +602,6 @@ def embl_to_genbank(emblfile):
     logging.debug("Embl file {} made readable for genbank file object.".format(emblfile))
     return "\n".join(text_lines)
 
-
-##Functions necessary for this script
-def get_sequence(fasta):
-    """get the description and trimmed dna sequence"""
-    in_file = open(fasta, 'r')
-    content = in_file.readlines()
-    in_file.close()
-    content2 = []
-    for i in content:
-        if i != "":
-            content2.append(i)
-    content = content2
-    while content[0] == "" or content[0] == "\n":
-        content = content[1:]
-    header = content[0]
-    content = content[1:]
-    content = [x.rstrip() for x in content]
-    seq = "".join(content)
-    if ">" not in header or ">" in seq:
-        print("FASTA file not properly formatted; should be single sequence starting with '>' and sequence name.", file=sys.stderr)
-        sys.exit(1)
-    return seq
-
-def parse_dna_from_embl(embl_string):
-    "Parse DNA sequence from EMBL input"
-    seq_array = []
-    lines = embl_string.split('\n')
-    for line in lines:
-        if line.lower().find('sequence') > -1:
-            continue
-        line = line.strip()
-        line = line.rstrip('0123456789')
-        line = line.rstrip('/')
-        line = line.strip()
-        seq_array.append(line)
-
-    return "".join(seq_array)
-
 def translate(sequence):
     #TODO take a better look at this function, for now it seems fine :)
     #Translation table standard genetic code; according to http://www.ncbi.nlm.nih.gov/Taxonomy/Utils/wprintgc.cgi
@@ -785,28 +746,6 @@ def run_commandline_command(command, max_retries = 5):
         command_stdout = command_stdout.stdout.read()
         retries += 1
 
-#TODO see where these are used
-def sortdictkeysbyvalues(dict):
-    items = [(value, key) for key, value in list(dict.items())]
-    items.sort()
-    return [key for value, key in items]
-
-def sortdictvaluesbykeys(dict):
-    items = [(key, value) for key, value in list(dict.items())]
-    items.sort()
-    return [value for key, value in items]
-
-def sortdictkeysbyvaluesrev(dict):
-    items = [(value, key) for key, value in list(dict.items())]
-    items.sort()
-    items.reverse()
-    return [key for value, key in items]
-
-def sortdictkeysbyvaluesrevv(dict):
-    items = [(value, key) for key, value in list(dict.items())]
-    items.sort()
-    items.reverse()
-    return [value for value, key in items]
 
 class BlastResult:
     """
@@ -1092,6 +1031,9 @@ def calculate_colorgroups(blast_dict, query_cluster):
 
 
 class ClusterSvg:
+    """
+    An svg of an individual cluster containing one or more proteins
+    """
     def __init__(self, proteins, dpn, index, screenwidth, color_dict, line = True, reverse=False):
         """
         :param proteins: a list of Protein objects
@@ -1117,12 +1059,22 @@ class ClusterSvg:
         else:
             start_offset = (self.total_width - (self.stop - self.start)) / 2
 
+        #gene arrow object saved by protein names
         self.gene_arrows = self.__configure_gene_arrows(proteins, start_offset, color_dict)
 
+        #the final complete image of all gene arrow objects
         self.cluster_image_groups = self._cluster_image(color_dict, line)
 
     def __configure_gene_arrows(self, proteins, start_offset, color_dict):
+        """
+        Create GeneArrow objects for all proteins.
 
+        :param proteins: a list of Protein objects
+        :param start_offset: an offset from the start of the image to center
+        the cluster on the line
+        :param color_dict:
+        :return:
+        """
         arrows = OrderedDict()
         for prot in proteins:
             if prot.name in color_dict:
@@ -1131,13 +1083,6 @@ class ClusterSvg:
                 color = "#FFFFFF"
             arrows[prot.name] = GeneArrow(prot, start_offset, self.start, self.dpn, color, self.start_height, reverse=self.reversed)
         return arrows
-
-    def __get_relative_protein_values(self, proteins):
-        rel_proteins = {}
-        for prot in proteins:
-            rel_prot = {}
-            rel_prot["start"]
-            rel_proteins[prot.name] = rel_prot
 
     def _cluster_image(self, color_dict, line):
         """
@@ -1155,6 +1100,11 @@ class ClusterSvg:
         if line:
             group.addElement(builder.createLine(10, self.start_height - 5, self.total_width,
                                                 self.start_height - 5, strokewidth=1, stroke="grey"))
+        else:
+            #create an invisible line to allow the xhtml to properly work but for
+            #it not to show
+            group.addElement(builder.createLine(10, self.start_height - 5, self.total_width,
+                                   self.start_height - 5, strokewidth=1,stroke="white"))
         groups.append(group)
 
         for gene_arrow in self.gene_arrows.values():
@@ -1163,7 +1113,22 @@ class ClusterSvg:
         return groups
 
 class GeneArrow:
+    """
+    A polygon that represents an arrow that has a proportional size to the
+    window size
+    """
+    ARROW_HEIGHT = 10
     def __init__(self, protein, start_offset, cluster_start, dpn, color, start_height, reverse = False):
+        """
+        :param protein: a Protein object that the arrow should be made of
+        :param start_offset: a x offset
+        :param cluster_start: the scaled start of the first protein in the cluster
+        :param dpn: stands for distance per nucleotide. This is the distance on the
+        svg object per nucleotide on the protein
+        :param color: the rgb color of the protein
+        :param start_height: a y offset
+        :param reverse: if the cluster of the gene is reversed or not
+        """
         self.start = int(abs(start_offset + (protein.start * dpn - cluster_start)))
         self.stop = int(abs(start_offset + (protein.stop * dpn - cluster_start)))
         
@@ -1171,9 +1136,16 @@ class GeneArrow:
         self.strand = self.__configure_strand(protein.strand, reverse)
         self.color = color
         
-        self.arrow = self._gene_arrow(start_height, 10)
+        self.arrow = self._gene_arrow(start_height, self.ARROW_HEIGHT)
 
     def __configure_strand(self, prot_strand, reverse):
+        """
+        Flips the strand of if reverse is True
+
+        :param prot_strand: a strand orientation '+' or '-'
+        :param reverse: a boolean
+        :return: a strand orientation '+' or '-'
+        """
         if reverse:
             if prot_strand == "+":
                 return "-"
@@ -1182,6 +1154,13 @@ class GeneArrow:
         return prot_strand
 
     def _gene_arrow(self, start_height, height):
+        """
+        Create a gene arrow using a polygon
+
+        :param start_height:
+        :param height: height of the arrow
+        :return:
+        """
         # TODO look to clean up this function if there is time left
         halfheight = height / 2
         if self.start > self.stop:
@@ -1189,16 +1168,16 @@ class GeneArrow:
             stop2 = self.start
             self.start = start2
             self.stop = stop2
-        oh = ShapeBuilder()
+        builder = ShapeBuilder()
         if (self.stop - self.start) < halfheight:
             if (self.strand == "+"):
-                pointsAsTuples = [(self.start, start_height),
+                points_as_tuples = [(self.start, start_height),
                                   (self.stop, start_height - halfheight),
                                   (self.start, start_height - height),
                                   (self.start, start_height)
                                   ]
             if (self.strand == "-"):
-                pointsAsTuples = [(self.start, start_height - halfheight),
+                points_as_tuples = [(self.start, start_height - halfheight),
                                   (self.stop, start_height - height),
                                   (self.stop, start_height),
                                   (self.start, start_height - halfheight)
@@ -1206,7 +1185,7 @@ class GeneArrow:
         else:
             if (self.strand == "+"):
                 arrowstart = self.stop - halfheight
-                pointsAsTuples = [(self.start, start_height),
+                points_as_tuples = [(self.start, start_height),
                                   (arrowstart, start_height),
                                   (self.stop, start_height - halfheight),
                                   (arrowstart, start_height - height),
@@ -1215,20 +1194,29 @@ class GeneArrow:
                                   ]
             if (self.strand == "-"):
                 arrowstart = self.start + halfheight
-                pointsAsTuples = [(self.start, start_height - halfheight),
+                points_as_tuples = [(self.start, start_height - halfheight),
                                   (arrowstart, start_height - height),
                                   (self.stop, start_height - height),
                                   (self.stop, start_height),
                                   (arrowstart, start_height),
                                   (self.start, start_height - halfheight)
                                   ]
-        pg = oh.createPolygon(
-            points=oh.convertTupleArrayToPoints(pointsAsTuples), strokewidth=1,
-            stroke='black', fill=self.color)
+        pg = builder.createPolygon(points=builder.convertTupleArrayToPoints(points_as_tuples),
+                                   strokewidth=1,stroke='black', fill=self.color)
         return pg
         
 class ClusterCollectionSvg:
+    """
+    Contains a list of all the clusters in the collection as well as an image
+    that is the collection of clusters.
+    """
     def __init__(self,query_cluster, clusters, gene_color_dict, user_options):
+        """
+        :param query_cluster: a Cluster object containing the user defined cluster
+        :param clusters: a list of Cluster objects
+        :param gene_color_dict: a dictionary linking protein names to rgb colors
+        :param user_options: an option object with user defined options
+        """
         self.width = user_options.screenwidth
         self.dpn = self.__calculate_distance_per_nucleotide(clusters + [query_cluster])
         self.cluster_svgs = self.__configure_cluster_svgs(clusters, query_cluster, gene_color_dict, user_options)
@@ -1236,9 +1224,20 @@ class ClusterCollectionSvg:
 
     @property
     def XML(self):
+        """
+        Create an XML string that can be used in an XHTML file for visuals
+
+        :return: a string
+        """
         return self.cluster_image.getXML()
 
     def __create_image(self):
+        """
+        Create an image from all the elements saved in the self.cluster_svgs
+        value
+
+        :return: an svg object
+        """
         svg_image = svg(x=0, y=0, width=int(self.width * 0.75), height=2770)
         viewbox = "0 0 " + str(int(self.width * 0.8)) + " " + str(2680)
         svg_image.set_viewBox(viewbox)
@@ -1249,6 +1248,14 @@ class ClusterCollectionSvg:
         return svg_image
 
     def __calculate_distance_per_nucleotide(self, all_clusters):
+        """
+        Calculate a distance per nucleotide for the biggest cluster in
+        all_clusters. This is a fraction that needs to be applied to start and
+        stop locations to scale them to the size of the display window
+
+        :param all_clusters: a list of Cluster objects including the query cluster
+        :return: a float
+        """
         # biggest core size
         biggest_size = 0
         for cluster in all_clusters:
@@ -1302,7 +1309,7 @@ class ClusterCollectionSvg:
         """
         Get a list of proteins of the cluster that contains all proteins with blast
         hits and not to many of the surrounding proteins. The size has to be minimal
-        0.8 * that of the query if the size of the cluster allows that
+        0.8 * that of the query if the size of the cluster allows that.
 
         :param cluster: a Cluster object
         :param query_cluster_size: the size of the query cluster
@@ -1695,7 +1702,7 @@ class Cluster:
 
         :return: a string
         """
-        return "Cluster {}\t{}\t{:.3f}\t{}".format(self.no, self.contig, self.score, len(self.__blast_proteins))
+        return "Cluster {}\t{}\t{:.7f}\t{}".format(self.no, self.contig, self.score, len(self.__blast_proteins))
 
     def summary(self):
         """
@@ -1855,13 +1862,24 @@ def write_txt_output(query_proteins, clusters, blast_output, user_options):
         out_file.write("{}\n".format(cluster.summary()))
     out_file.close()
 
-def write_svg_files(clusters, user_options, query_cluster, blast_dict):
-    logging.info("Writing visualization SVGs and XHTML...")
-    try:
-        os.mkdir("svg/")
-    #if the folder exists ignore the error
-    except(IOError,OSError):
-        pass
+def write_svg_files(clusters, user_options, query_cluster, blast_dict, page_nr):
+    """
+    Write clusters into svgs of comparissons between the query and each
+    individual cluster as well as an svg as a complete overview of all clusters
+    on a page
+
+    :param clusters: a list of Cluster objects
+    :param user_options: an option object with user defined options
+    :param query_cluster: a Cluster ibject with the user defined query
+    :param blast_dict: a dictionary that contains a key for every query that
+    had a siginificant blast result with the values being BlastResult objects
+    :param page_nr: integer of the current page
+    :return: a dictionary of ClusterCollectionSvg objects that contain all the
+    information to draw the clusters as well as location information to place
+    tooltips in the right place
+    """
+    logging.debug("Writing visualization SVGs and XHTML...")
+
     gene_color_dict = calculate_colorgroups(blast_dict, query_cluster)
     svg_images = {}
     for index, cluster in enumerate(clusters):
@@ -1869,18 +1887,10 @@ def write_svg_files(clusters, user_options, query_cluster, blast_dict):
         collection = ClusterCollectionSvg(query_cluster, svg_clusters, gene_color_dict, user_options)
         svg_images["clusterblast_{}".format(cluster.no)] = collection
 
-        if index % HITS_PER_PAGE == 0:
-            page_nr = int(index / HITS_PER_PAGE)
-            #when max pages are reached stop
-            if page_nr > user_options.pages:
-                break
-            #Create svgs for multiple gene cluster alignment
-            page_clusters = clusters[page_nr * HITS_PER_PAGE : min((page_nr + 1) * HITS_PER_PAGE, len(clusters))]
-            collection = ClusterCollectionSvg(query_cluster, page_clusters, gene_color_dict, user_options)
+    #Create svgs for multiple gene cluster alignment
+    collection = ClusterCollectionSvg(query_cluster, clusters, gene_color_dict, user_options)
+    svg_images["clusterblast_page{}_all".format(page_nr)] = collection
 
-            svg_images["clusterblast_page{}_all".format(page_nr + 1)] = collection
-
-            logging.info("Visual images {}/{} created.".format(page_nr + 1, min(user_options.pages, int((len(clusters) - 1) / HITS_PER_PAGE) + 1)))
     return svg_images
 
 def runmuscle(args):
@@ -1952,6 +1962,15 @@ def align_muscle(include_muscle, colorschemedict, seqdict):
     return musclegroups
 
 def create_xhtml_template(html_parts, page_indx, page_sizes):
+    """
+    Open the xhtml file and load some pre written information into the file
+
+    :param html_parts: a list of prewriten code to put in the xhtml file at the
+    beginning
+    :param page_sizes: a list of integers with the size of all pages
+    :param page_indx: the index of the current page in the page_sizes list
+    :return: an opened file object
+    """
 
     html_outfile = open("displaypage{}.xhtml".format(page_indx + 1),"w")
     html_outfile.write('{}  displaycblastresults("{}","all"){}'.format(html_parts[0], page_indx + 1, html_parts[1]))
@@ -1969,7 +1988,19 @@ def create_xhtml_template(html_parts, page_indx, page_sizes):
     return html_outfile
 
 def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_size, user_options, svg_images):
-    #Write ClusterBlast divs with pictures and description pop-up tags
+    """
+    Write ClusterBlast divs with pictures and description pop-up tags
+    
+    :param html_outfile: an open file object where the xhtml output is written
+    into
+    :param clusters: a list of Cluster objects retrieved by MultiGeneBlast 
+    :param query_cluster: a Cluster object that contains the query
+    :param page_indx: the index of the current page that is being drawn
+    :param page_size: the size of the current page (max = HITS_PER_PAGE)
+    :param user_options: an Option object containing user defined options
+    :param svg_images: A dictionary with classes containing information for
+    creating all the svg images needed for the visual output.
+    """
     screenwidth = user_options.screenwidth
     html_outfile.write('<div id="clusterblastview" class="clusterdescr">\n\n')
     #Add menu bar 3
@@ -1981,9 +2012,9 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
     html_outfile.write('<div id="qcluster{}">\n<br/><br/>\n<div align="left">\n<form name="clusterform{}">\n<select name="selection{}" onchange="javascript:navigate(this);">\n'.format(page_nr, page_nr, page_nr))
     html_outfile.write('<option value="">Select gene cluster alignment</option>\n')
     for index, cluster in enumerate(clusters):
-        cluster_summary = cluster.short_summary()
-        if len(cluster_summary) > 80:
-            cluster_summary = "{}...".format(cluster_summary[:77])
+        cluster_summary = "Cluster{}: {}, {}, {}, {}, {}".format(cluster.no, *cluster.proteins.keys())
+        if len(cluster_summary) > 50:
+            cluster_summary = "{}...".format(cluster_summary[:47])
         html_outfile.write('<option value="javascript:displaycblastresults({},{})">{}</option>\n'.format(page_nr, index + 1 + page_indx * HITS_PER_PAGE, cluster_summary))
     html_outfile.write('</select>\n</form>\n\n</div>')
     html_outfile.write('<div style="position:absolute; top:33px; left:{}px;"><img src="images/button.gif" name="button{}" onclick="javascript:displaybutton({})'
@@ -2019,12 +2050,12 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
         if len(contig_desc) > 90:
             contig_desc = "{}...".format(contig_desc[:87])
         if testaccession(cluster.contig):
-            cluster_desc = '<a href="http://www.ncbi.nlm.nih.gov/nuccore/{}" target="_blank"> {}</a> : {}&nbsp;&nbsp;&nbsp;&nbsp;Total' \
-                           ' score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp; Cumulative Blast bit score {:.2f}'.format(cluster.contig, cluster.contig,contig_desc,
+            cluster_desc = 'Cluster{}: <a href="http://www.ncbi.nlm.nih.gov/nuccore/{}" target="_blank"> {}</a> {}&nbsp;&nbsp;&nbsp;&nbsp;Total' \
+                           ' score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp; Cumulative Blast bit score {:.2f}'.format(cluster.no, cluster.contig, cluster.contig,contig_desc,
                                                                                 cluster.score,cluster.segmented_score("accumulated_blast_score")[0] * 1_000_000)
         else:
-            cluster_desc = '{} : {}&nbsp;&nbsp;&nbsp;&nbsp;Total score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp;' \
-                           ' Cumulative Blast bit score: {:.2f}'.format(cluster.contig, contig_desc, cluster.scorecluster,
+            cluster_desc = 'Cluster{}: {} {}&nbsp;&nbsp;&nbsp;&nbsp;Total score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp;' \
+                           ' Cumulative Blast bit score: {:.2f}'.format(cluster.no, cluster.contig, contig_desc, cluster.scorecluster,
                                 cluster.segmented_score("accumulated_blast_score")[0] * 1_000_000)
         query_desc = query_cluster.contig_description
         if len(query_desc) < 90:
@@ -2130,14 +2161,15 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
         if len(contig_desc) > 90:
             contig_desc = "{}...".format(contig_desc[:87])
         if testaccession(cluster.contig):
-            cluster_desc = '<a href="http://www.ncbi.nlm.nih.gov/nuccore/{}" target="_blank"> {}</a> : {}&nbsp;&nbsp;&nbsp;&nbsp;Total' \
-                           ' score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp; Cumulative Blast bit score {:.2f}'.format(cluster.contig, cluster.contig,contig_desc,
+            cluster_desc = 'Cluster{}: <a href="http://www.ncbi.nlm.nih.gov/nuccore/{}" target="_blank"> {}</a> {}&nbsp;&nbsp;&nbsp;&nbsp;Total' \
+                           ' score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp; Cumulative Blast bit score {:.2f}'.format(cluster.no, cluster.contig, cluster.contig,contig_desc,
                                                                                 cluster.score,cluster.segmented_score("accumulated_blast_score")[0] * 1_000_000)
         else:
-            cluster_desc = '{} : {}&nbsp;&nbsp;&nbsp;&nbsp;Total score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp;' \
-                           ' Cumulative Blast bit score: {:.2f}'.format(cluster.contig, contig_desc, cluster.scorecluster,
+            cluster_desc = 'Cluster{}: {} {}&nbsp;&nbsp;&nbsp;&nbsp;Total score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp;' \
+                           ' Cumulative Blast bit score: {:.2f}'.format(cluster.no, cluster.contig, contig_desc, cluster.scorecluster,
                                 cluster.segmented_score("accumulated_blast_score")[0] * 1_000_000)
-        html_outfile.write('<div id="description{}" style="text-align:left; position:absolute; top:{}px; left:10px; font-size:10px; font-style:italic">{}</div>\n'.format(page_nr, int(63 + (51.7 * (index + 1))), cluster_desc))
+        html_outfile.write('<div id="description{}" style="text-align:left; position:absolute; top:{}px; left:10px; font-size:10px;'
+                           ' font-style:italic">{}</div>\n'.format(page_nr, int(63 + (51.7 * (index + 1))), cluster_desc))
         #add query for the first index
     for index, cluster in enumerate(clusters):
         if index == 0:
@@ -2193,9 +2225,18 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
     html_outfile.write('<div id="creditsbar{}" class="banner" style="position:absolute; width:{}px; align:\'left\'; height:75; top:2750px; left:0px; color:#000066; z-index:-1;">'.format(index, int(0.98 * screenwidth)))
     html_outfile.write('<div style="float:center; font-size:0.9em;">\n<div style="position:absolute; top:0px; left:30px;">\n<img src="images/ruglogo.gif" border="0"/>&nbsp;&nbsp;&nbsp;&nbsp;\n<img src="images/gbblogo.gif" border="0"/>&nbsp;&nbsp;&nbsp;&nbsp;\n</div>\n<div style="position:absolute; top:10px; left:340px;">\nDetecting sequence homology at the gene cluster level with MultiGeneBlast.\n<br/>Marnix H. Medema, Rainer Breitling &amp; Eriko Takano (2013)\n<br/><i>Molecular Biology and Evolution</i> , 30: 1218-1223.\n</div>\n</div>\n</div>')
 
-def create_xhtml_file(clusters, query_cluster, blast_dict, user_options, svg_images):
-    page_total, last_page_l = divmod(len(clusters), HITS_PER_PAGE)
-    page_sizes = [HITS_PER_PAGE for _ in range(page_total)] + [last_page_l]
+def create_xhtml_file(clusters, query_cluster, user_options, svg_images, page_sizes, page_indx):
+    """
+    Create an XHTML file for a set of clusters.
+
+    :param clusters: a list of Cluster objects
+    :param query_cluster: a Cluster objects with the user defined query genes
+    :param user_options: an Option object with user defined options
+    :param svg_images: a Dictionary of ClusterCollectionSvg objects, that contian
+    information to create the svg images
+    :param page_sizes: a list of integers with the size of all pages
+    :param page_indx: the index of the current page in the page_sizes list
+    """
 
     #Create HTML file with gene cluster info in hidden div tags for all pages
     try:
@@ -2209,83 +2250,103 @@ def create_xhtml_file(clusters, query_cluster, blast_dict, user_options, svg_ima
         raise MultiGeneBlastException(
             "empty.xhml is missing from {}. Cannot create "
             "the full html page.".format(MGBPATH))
-    for page_indx in range(len(page_sizes)):
-        #note this returns an open file stream. Take care addign code in this loop
-        page_clusters = clusters[page_indx * HITS_PER_PAGE: min((page_indx + 1) * HITS_PER_PAGE, len(clusters))]
-        html_outfile = create_xhtml_template(html_parts, page_indx, page_sizes)
-        write_xhtml_output(html_outfile, page_clusters, query_cluster, page_indx, page_sizes[page_indx], user_options, svg_images)
+    #note this returns an open file stream. Take care addign code in this loop
+    html_outfile = create_xhtml_template(html_parts, page_indx, page_sizes)
+    write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_sizes[page_indx], user_options, svg_images)
 
-        html_outfile.write(html_parts[-1])
-        html_outfile.close()
-        logging.info("XHTML page {}/{} created.".format(page_indx + 1, len(page_sizes)))
+    html_outfile.write(html_parts[-1])
+    html_outfile.close()
 
 
-def move_outputfiles(foldername, pages):
+def move_outputfiles(outdir, pages):
+    """
+    Delete temporary folders and move files to the output folder
+
+    :param outdir: The name output folder, defined  by the user
+    :param pages: the amount of pages of visual output produced
+    """
     logging.info("Cleaning up the last files and moving output...")
-    #TODO see what to clean up here
     global MGBPATH
-    #Move output files to specified output folder. Overwriting when files/folders are already present there
+
+    #create folder for visuals
     try:
-        os.mkdir(foldername)
+        os.mkdir(outdir + os.sep + "visual")
     except:
         pass
-    try:
-        shutil.rmtree(foldername + os.sep + "svg")
-    except:
-        pass
-    try:
-        shutil.rmtree(foldername + os.sep + "fasta")
-    except:
-        pass
-    for page in range(pages):
+
+    #move the page visuals from temp to outdir
+    for page_indx in range(pages):
+        page_nr = page_indx + 1
         try:
-            os.remove(foldername + os.sep + "displaypage" + str(page + 1) + ".xhtml")
+            os.remove(outdir + os.sep + "visual" + os.sep + "displaypage{}.xhtml".format(page_nr))
         except:
             pass
         try:
-            shutil.move("displaypage" + str(page + 1) + ".xhtml", foldername + os.sep + "displaypage" + str(page + 1) + ".xhtml")
+            shutil.move("displaypage{}.xhtml".format(page_nr), outdir + os.sep + "visual" + os.sep + "displaypage{}.xhtml".format(page_nr))
         except:
             pass
-    filestomove = ["clusterblast_output.txt", "svg", "fasta"]
+    filestomove = ["fasta"]
     for f in filestomove:
         try:
-            os.remove(foldername + os.sep + f)
+            os.remove(outdir + os.sep + f)
         except:
             try:
-                shutil.rmtree(foldername + os.sep + f)
+                shutil.rmtree(outdir + os.sep + f)
             except:
                 pass
         try:
-            shutil.move(f, foldername + os.sep + f)
+            shutil.move(f, outdir + os.sep + f)
         except:
             pass
+
+    #copy visual files and folders for the xhtml page
     filestocopy = ["style.css", "jquery.svg.js", "jquery-1.4.2.min.js", "jquery.svgdom.js"]
     for f in filestocopy:
         try:
-            os.remove(foldername + os.sep + f)
+            os.remove(outdir + os.sep + "visual" + os.sep + f)
         except:
             pass
-        shutil.copy(MGBPATH + os.sep + f, foldername + os.sep + f)
+        shutil.copy(MGBPATH + os.sep + f, outdir + os.sep + "visual" + os.sep + f)
+
     folderstocopy = ["images"]
     for f in folderstocopy:
         try:
-            shutil.rmtree(foldername + os.sep + f)
+            shutil.rmtree(outdir + os.sep + "visual" + os.sep + f)
         except:
             pass
-        shutil.copytree(MGBPATH + os.sep + f, foldername + os.sep + f)
+        shutil.copytree(MGBPATH + os.sep + f, outdir + os.sep + "visual" + os.sep + f)
+
+def get_page_sizes(total_clusters, max_pages):
+    """
+    Get the sizes of each page that is created by the user
+
+    :param total_clusters: an Integer that is the size of the total amount of
+    clusters produced
+    :param max_pages: the maximum amount of pages allowed by the user
+    :return: a list of sizes of each page. The page sizes are HITS_PER_PAGE
+    escept for the last page that can be smaller
+    """
+    page_total, last_page_lenght = divmod(total_clusters, HITS_PER_PAGE)
+    if page_total >= max_pages:
+        page_total = max_pages - 1
+        last_page_lenght = HITS_PER_PAGE
+    page_sizes = [HITS_PER_PAGE for _ in range(page_total)] + [last_page_lenght]
+    return page_sizes
 
 
 def main():
+    """
+    Starting point of the program
+    """
     #if the GUI is active or not.
-    global GUI
+
     #path to temporary file directory. This is for windows a Temp directory on the c drive
     global TEMP
     #path to the multiGeneBlast source files
     global MGBPATH
-    os.environ['BLASTDB'] = MGBPATH
 
+    #set the current directory to the temporary directory
     os.chdir(TEMP)
-    GUI = "n"
     starttime = time.time()
 
     #Step 1: parse options into an Option Object
@@ -2329,21 +2390,26 @@ def main():
     write_txt_output(query_proteins, clusters, blast_output, user_options)
     logging.info("Step 9/11: Results have been written to a text file.")
 
-    svg_images = write_svg_files(clusters, user_options, query_cluster, blast_dict)
-    logging.info("Step 10/11: Results have been written to svg files.")
+    logging.info("Creating visual output...")
+    page_sizes = get_page_sizes(len(clusters), user_options.pages)
+    for page_indx, page_size in enumerate(page_sizes):
+        page_clusters = clusters[page_indx * HITS_PER_PAGE: min((page_indx + 1) * HITS_PER_PAGE, len(clusters))]
 
-    #TODO look into implementing this or maybe dropping depending
-    # #Step 10: Create muscle alignments
-    # musclegroups = align_muscle(opts.muscle, colorschemedict, seqdict)
-    # print(("Step 10/11, page " + str(page) + ": Time since start: " + str((time.time() - starttime))))
+        svg_images = write_svg_files(page_clusters, user_options, query_cluster, blast_dict, page_indx + 1)
+        logging.info("Step 10/11: Visual images {}/{} created.".format(page_indx + 1, len(page_sizes)))
 
-    #Step 11: Create XHTML output file
-    create_xhtml_file(clusters, query_cluster, blast_dict, user_options, svg_images)
-    logging.info("Step 11/11: XHTML files are created and can be viewed in {}".format(user_options.outdir))
+        #TODO look into implementing this or maybe dropping depending
+        # #Step 10: Create muscle alignments
+        # musclegroups = align_muscle(opts.muscle, colorschemedict, seqdict)
+        # print(("Step 10/11, page " + str(page) + ": Time since start: " + str((time.time() - starttime))))
+
+        #Step 11: Create XHTML output file
+        create_xhtml_file(page_clusters, query_cluster, user_options, svg_images, page_sizes, page_indx)
+        logging.info("Step 11/11: XHTML page {}/{} created.".format(page_indx + 1, len(page_sizes)))
+
 
     #Move all files to specified output folder
-    #TODO the amount of pages is currently hardcoded
-    move_outputfiles(user_options.outdir, 2)
+    move_outputfiles(user_options.outdir, len(page_sizes))
     logging.info("MultiGeneBlast succesfully finished.")
 
 
