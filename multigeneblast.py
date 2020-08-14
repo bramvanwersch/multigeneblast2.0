@@ -9,7 +9,6 @@
 import os
 from os import system
 import sys
-import datetime
 import time
 import multiprocessing
 from multiprocessing import Process, freeze_support
@@ -25,7 +24,7 @@ import shutil
 #own imports
 from genbank_parsing import GenbankFile
 from visualisation import ClusterCollectionSvg, create_xhtml_file
-from utilities import MultiGeneBlastException
+from utilities import MultiGeneBlastException, setup_logger
 from constants import *
 
 
@@ -171,7 +170,7 @@ def get_arguments():
     #nargs allows one or more arguments
     group.add_argument("-g", "-genes", help="Accession codes of genes constituting "
                                       "query multigene module", nargs='+'
-                       , metavar="coma-separted gene identifiers")
+                       , metavar="space-separted gene identifiers")
 
     parser.add_argument("-t", "-to", help="End position of query region", type=int,
                         metavar="Int")
@@ -259,7 +258,7 @@ def check_in_file(path):
     if not os.path.isfile(path):
         raise argparse.ArgumentTypeError("Provided database file is not a file.")
     root, ext = os.path.splitext(path)
-    if ext.lower() not in [*GENBANK_EXTENSIONS, *EMBL_EXTENSIONS, *FASTA_EXTENSIONS]:
+    if ext.lower() not in GENBANK_EXTENSIONS + EMBL_EXTENSIONS + FASTA_EXTENSIONS:
         raise argparse.ArgumentTypeError("Please supply input file with valid"
                                      " GBK / EMBL extension (homology search)"
                                      " or FASTA extension (architecture search).")
@@ -280,18 +279,12 @@ def check_out_folder(path):
     path = os.path.join(my_path, path)
 
     to_path, folder_name = os.path.split(path)
-    if os.path.exists(path):
-        if not os.path.isdir(path):
-            raise argparse.ArgumentTypeError("No valid output directory"
-                                             " provided")
-    else:
+    if not os.path.exists(to_path):
         raise argparse.ArgumentTypeError("No valid output directory"
                                          " provided")
-
-
     #assert that the folder name does not contain illegal characters
-    if not folder_name.replace("_", "").isalnum():
-        raise argparse.ArgumentTypeError("Output folder name is illegal.")
+    elif not folder_name.replace("_", "").isalnum():
+        raise argparse.ArgumentTypeError("Output directory name is illegal.")
     return path
 
 def check_db_folder(path):
@@ -1586,65 +1579,6 @@ def main():
     move_outputfiles(user_options.outdir, len(page_sizes))
     logging.info("MultiGeneBlast succesfully finished.")
 
-
-def setup_logger(outdir, starttime):
-    """
-    Function for setting up a logger that will write output to file as well as
-    to sdout.
-
-    :param outdir: output directory specified by the user. this is where the
-    log file should end up.
-    :param starttime: the time the program was started. The logger is created
-    slightly later.
-    """
-
-    #if the directory exists simply ignore it, that can be expected
-    dir_exists = False
-    try:
-        os.mkdir(outdir)
-    except FileExistsError:
-        dir_exists = True
-
-    log_file_loc = "{}{}{}".format(outdir, os.sep, 'run.log')
-    #make sure that a potentially existing logfile is emptied
-    if os.path.exists(log_file_loc):
-        open(log_file_loc, "w").close()
-
-    #TODO think about making the level a user definable parameter
-    logging.basicConfig(filename=log_file_loc, level=logging.DEBUG, format='%(levelname)s: %(asctime)s - %(message)s')
-
-    #configure a handler that formats the logged events properly and prints the events to file as well as stdout
-    handler = logging.StreamHandler(sys.stdout)
-    formatter = MyFormatter('%(currentTime)s (%(passedTime)s sec) - %(message)s', starttime=starttime)
-    formatter
-    handler.setFormatter(formatter)
-    logging.getLogger().addHandler(handler)
-
-    logging.debug('Logger created')
-
-    if dir_exists:
-        logging.warning("The output directory already exists. Files may be overwritten.")
-
-class MyFormatter(logging.Formatter):
-    """
-    Formatter subclass that saves the start time so the time can be displayed
-    since starting to run MultiGeneBlast
-    """
-    def __init__(self, fmt, starttime=time.time()):
-        logging.Formatter.__init__(self, fmt)
-        self._start_time = starttime
-
-    def format(self, record):
-        """
-        Overwrite of the format function that prints the passed time and adds
-        current time to the existing format
-
-        :See: logging.Formatter.format()
-        """
-        #difference = datetime.datetime.now() - self._start_time
-        record.passedTime = "{:.3f}".format(time.time() - self._start_time)
-        record.currentTime = datetime.datetime.now().time()
-        return super(MyFormatter, self).format(record)
 
 if __name__ == '__main__':
     freeze_support()

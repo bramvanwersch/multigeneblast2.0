@@ -2,8 +2,73 @@
 
 # imports
 from string import ascii_letters
+import logging
+import time
+import os, sys
+import datetime
 
 ILLEGAL_CHARACTERS = ["'",'"','=',';',':','[',']','>','<','|','\\',"/",'*','-','_','.',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
+
+
+def setup_logger(outdir, starttime, level=logging.DEBUG):
+    """
+    Function for setting up a logger that will write output to file as well as
+    to sdout.
+
+    :param outdir: output directory specified by the user. this is where the
+    log file should end up.
+    :param starttime: the time the program was started. The logger is created
+    slightly later.
+    :param level: the logging level, default is DEBUG
+    """
+
+    #if the directory exists simply ignore it, that can be expected
+    dir_exists = False
+    try:
+        os.mkdir(outdir)
+    except FileExistsError:
+        dir_exists = True
+
+    log_file_loc = "{}{}{}".format(outdir, os.sep, 'run.log')
+    #make sure that a potentially existing logfile is emptied
+    if os.path.exists(log_file_loc):
+        open(log_file_loc, "w").close()
+
+    #TODO think about making the level a user definable parameter
+    logging.basicConfig(filename=log_file_loc, level=level, format='%(levelname)s: %(asctime)s - %(message)s')
+
+    #configure a handler that formats the logged events properly and prints the events to file as well as stdout
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = MyFormatter('%(currentTime)s (%(passedTime)s sec) - %(message)s', starttime=starttime)
+    handler.setFormatter(formatter)
+    logging.getLogger().addHandler(handler)
+
+    logging.debug('Logger created')
+
+    if dir_exists:
+        logging.warning("The output directory already exists. Files may be overwritten.")
+
+
+class MyFormatter(logging.Formatter):
+    """
+    Formatter subclass that saves the start time so the time can be displayed
+    since starting to run MultiGeneBlast
+    """
+    def __init__(self, fmt, starttime=time.time()):
+        logging.Formatter.__init__(self, fmt)
+        self._start_time = starttime
+
+    def format(self, record):
+        """
+        Overwrite of the format function that prints the passed time and adds
+        current time to the existing format
+
+        :See: logging.Formatter.format()
+        """
+        #difference = datetime.datetime.now() - self._start_time
+        record.passedTime = "{:.3f}".format(time.time() - self._start_time)
+        record.currentTime = datetime.datetime.now().time()
+        return super(MyFormatter, self).format(record)
 
 
 class MultiGeneBlastException(Exception):
