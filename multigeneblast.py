@@ -249,21 +249,22 @@ def check_in_file(path):
     :return: the original path
     """
 
-    try:
-        #make sure relatively defined paths are also correct
-        my_path = os.path.abspath(os.path.dirname(__file__))
-        path = os.path.join(my_path, path)
+    #make sure relatively defined paths are also correct
+    my_path = os.path.abspath(os.path.dirname(__file__))
+    path = os.path.join(my_path, path)
 
-        assert os.path.exists(path)
-        #the extension of the file
-        ext = os.path.split(path)[1].split(".")[1]
-        assert ext.lower() in [*GENBANK_EXTENSIONS, *EMBL_EXTENSIONS, *FASTA_EXTENSIONS]
-        return path
-    except (AssertionError, IndexError):
+    if not os.path.exists(path):
+        raise argparse.ArgumentTypeError("File path to database is invalid")
+
+    if not os.path.isfile(path):
+        raise argparse.ArgumentTypeError("Provided database file is not a file.")
+    root, ext = os.path.splitext(path)
+    if ext.lower() not in [*GENBANK_EXTENSIONS, *EMBL_EXTENSIONS, *FASTA_EXTENSIONS]:
         raise argparse.ArgumentTypeError("Please supply input file with valid"
-                                         " GBK / EMBL extension (homology "
-                                         "search) or FASTA extension "
-                                         "(architecture search).")
+                                     " GBK / EMBL extension (homology search)"
+                                     " or FASTA extension (architecture search).")
+    return path
+
 
 def check_out_folder(path):
     """
@@ -274,20 +275,24 @@ def check_out_folder(path):
     specified name for the folder contains illegal characters
     :return: the original path
     """
-    try:
-        #make sure relatively defined paths are also correct
-        my_path = os.path.abspath(os.path.dirname(__file__))
-        path = os.path.join(my_path, path)
+    #make sure relatively defined paths are also correct
+    my_path = os.path.abspath(os.path.dirname(__file__))
+    path = os.path.join(my_path, path)
 
-        to_path, folder_name = os.path.split(path)
-        assert os.path.exists(to_path)
+    to_path, folder_name = os.path.split(path)
+    if os.path.exists(path):
+        if not os.path.isdir(path):
+            raise argparse.ArgumentTypeError("No valid output directory"
+                                             " provided")
+    else:
+        raise argparse.ArgumentTypeError("No valid output directory"
+                                         " provided")
 
-        #assert that the folder name does not contain illegal characters
-        assert folder_name.replace("_", "").isalnum()
-        return path
-    except AssertionError:
-        raise argparse.ArgumentTypeError("Output folder does exist or cannot be"
-                                         " created.")
+
+    #assert that the folder name does not contain illegal characters
+    if not folder_name.replace("_", "").isalnum():
+        raise argparse.ArgumentTypeError("Output folder name is illegal.")
+    return path
 
 def check_db_folder(path):
     """

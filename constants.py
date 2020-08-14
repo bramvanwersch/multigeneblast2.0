@@ -5,9 +5,9 @@ import os, sys
 
 #shared constants between files
 HITS_PER_PAGE = 50
-FASTA_EXTENSIONS = ("fasta","fas","fa","fna")
-EMBL_EXTENSIONS = ("embl","emb")
-GENBANK_EXTENSIONS = ("gbk","gb","genbank")
+FASTA_EXTENSIONS = (".fasta",".fas",".fa",".fna")
+EMBL_EXTENSIONS = (".embl",".emb")
+GENBANK_EXTENSIONS = (".gbk",".gb",".genbank")
 SVG_CORE_EXTENSION = 5000
 
 #path constants
@@ -32,9 +32,8 @@ def get_mgb_path():
     except:
         pass
     if mgb_path == "":
-        # TODO raise mgb error
-        print("Error: Please add the MultiGeneBlast installation directory to your $PATH environment variable before running the executable from another folder.")
-        sys.exit(1)
+        raise Exception("Error: Please add the MultiGeneBlast installation directory to"
+                        " your $PATH environment variable before running the executable from another folder.")
     return mgb_path
 
 
@@ -59,9 +58,8 @@ def get_appdata_path():
                     os.mkdir(os.environ['HOME'] + os.sep + "multigeneblast_data")
                     appdata = os.environ['HOME'] + os.sep + "multigeneblast_data"
             except:
-                #TODO raise mgb error
-                print("No permission to write to installation folder. Please change user or save somewhere else.")
-                sys.exit()
+                raise Exception("No permission to write to installation folder. Please change user or save somewhere else.")
+
     if sys.platform == ('darwin') or sys.platform == ('win32'):
         try:
             os.mkdir(appdata + os.sep + 'MultiGeneBlast')
