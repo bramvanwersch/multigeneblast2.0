@@ -1,9 +1,11 @@
+
+# imports
 import logging
 from string import ascii_letters
-#to ensure compatibility with older then 3.7 python versions
 from collections import OrderedDict
-ILLEGAL_CHARACTERS = ["'",'"','=',';',':','[',']','>','<','|','\\',"/",'*','-','.',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
 
+from constants import ILLEGAL_CHARACTERS
+from utilies import testaccession, remove_illegal_characters, complement, MultiGeneBlastException
 
 class Protein:
     """
@@ -473,52 +475,3 @@ def clean_dna_sequence(dna_seq):
     dna_seq = dna_seq.replace("/", "")
     return dna_seq
 
-def complement(seq):
-    """
-    Create the complement strand of a sequence. Use replacing for speed
-
-    :param seq: a DNA sequence as a string
-    :return: the complement of that string
-    """
-    seq = seq.replace("a", "x").replace("A", "X")
-    seq = seq.replace("t", "a").replace("T", "A")
-    seq = seq.replace("x", "t").replace("X", "T")
-
-    seq = seq.replace("c", "x").replace("C", "X")
-    seq = seq.replace("g", "c").replace("G", "C")
-    seq = seq.replace("x", "g").replace("X", "G")
-    return seq
-
-def testaccession(accession):
-    #TODO look into this function at some time
-    #Test if accession number is probably real GenBank/RefSeq acc nr
-    numbers = list(range(0,10))
-    letters = []
-    for i in ascii_letters:
-        letters.append(i)
-    nrnumbers = 0
-    nrletters = 0
-    for i in accession:
-        if i in letters:
-            nrletters += 1
-        try:
-            j = int(i)
-            if j in numbers:
-                nrnumbers += 1
-        except:
-            pass
-    return not (nrnumbers < 3 or nrletters < 1)
-
-def remove_illegal_characters(string):
-    """
-    Remove any character from ILLEGAL_CHARACTERS from string
-
-    :param string: a string
-    :return: the string without illegal characters. If no illegal characters
-    are found the originall string is returned
-    """
-    clean_string = ""
-    for letter in string:
-        if letter not in ILLEGAL_CHARACTERS:
-            clean_string += letter
-    return clean_string
