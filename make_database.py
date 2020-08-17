@@ -79,6 +79,29 @@ def check_out_folder(path):
         raise argparse.ArgumentTypeError("Output directory name is illegal.")
     return path
 
+def clean_outdir(dbname, outdir, dbtype="prot"):
+    """
+    Clean the output directory if files that have the same name as files that
+    are going to be added
+
+    :param dbname: the name of the database
+    :param outdir: the directory where the database files need to go
+    """
+    files = os.listdir(outdir)
+
+    if dbtype == "prot":
+        database_alias_file = dbname + ".pal"
+    else:
+        database_alias_file = dbname + ".nal"
+    remove_files = [dbname + ext for ext in DATABASE_EXTENSIONS]
+    remove_files.append(database_alias_file)
+    for file in files:
+        if file in remove_files:
+            os.remove(outdir + os.sep + file)
+            logging.debug("Removed {} because it is going to be created.".format(file))
+
+
+
 def write_nal_pal_file(dbname, outdir, dbtype = "prot"):
     """
     Write a database alias file so Blast+ programs can acces it.
@@ -105,32 +128,37 @@ def main():
     setup_logger(outdir, starttime)
     logging.info("Step 1/6: Parsed options.")
 
+    #make sure to clear all files in the destination folder that have the same
+    #name as files that are going to be added
+    clean_outdir(dbname, outdir)
+    logging.info("Step 2/7: Cleaned the output directory of potential duplicate files.")
+
     #create a database object
     base_path = os.path.abspath(os.path.dirname(__file__))
     db = DataBase(base_path, inputfiles)
     db.create(outdir, dbname)
-    logging.info("Step 2/6: Created the MultiGeneBlast database")
+    logging.info("Step 3/7: Created the MultiGeneBlast database")
 
     #write the database to fasta for makeblastdb
     logging.info("Writing MultiGeneBlast database to fasta...")
     with open(outdir + os.sep + dbname + "_dbbuild.fasta", "w") as f:
         f.write(db.get_fasta())
-    logging.info("Step 3/6: Written MultiGeneBlast database to fasta format.")
+    logging.info("Step 4/7: Written MultiGeneBlast database to fasta format.")
 
     #Create Blast database, set the outdir as the current directory to amke sure that the files end up in the right place
     logging.info("Creating Blast+ database...")
     os.chdir(outdir)
     command = "{}\\exec_new\\makeblastdb.exe -dbtype prot -out {} -in {}{}{}_dbbuild.fasta".format(base_path, dbname, outdir, os.sep, dbname)
     run_commandline_command(command, max_retries=0)
-    logging.info("Step 4/6: Blast+ database created.")
+    logging.info("Step 5/7: Blast+ database created.")
 
     #write nal/pal file as main entry for the database
     write_nal_pal_file(dbname, outdir)
-    logging.info("Step 5/6: Created nal/pal file.")
+    logging.info("Step 6/7: Created nal/pal file.")
 
     #cleaning up the fasta file
     os.remove(outdir + os.sep + dbname + "_dbbuild.fasta")
-    logging.info("Step 6/6: Cleaned up left over files.")
+    logging.info("Step 7/7: Cleaned up left over files.")
     logging.info("Database was succesfully created.")
 
 

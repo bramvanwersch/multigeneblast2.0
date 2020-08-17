@@ -17,6 +17,8 @@ from constants import *
 from utilities import is_valid_accession
 from utilities import MultiGeneBlastException
 
+#constant specifically required for mbg
+MGBPATH = get_mgb_path()
 
 class ClusterCollectionSvg:
     """
