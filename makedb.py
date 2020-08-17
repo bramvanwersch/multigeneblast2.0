@@ -5,143 +5,123 @@
 ## License: GNU General Public License v3 or later
 ## A copy of GNU GPL v3 should have been included in this software package in LICENSE.txt.
 
-import os, re
+import os
 import sys
+import pickle as pickle
+import argparse
+import logging
+import time
+
+
 from dblib.parse_gbk import parse_gbk_embl, fix_wgs_master_record, fix_supercontig_record
 from dblib.utils import fasta_names, make_blast_db, clean_up, get_accession
 from dblib.generate_genecords_tar import generate_genecords_tar
 from dblib.generate_proteininfo_tar import generate_proteininfo_tar
 
-from genbank_parsing import GenbankFile
-import pickle as pickle
-
-#Find path to mgb files if run from another directory
-pathfolders = os.environ['PATH'].split(os.pathsep)
-pathfolders.append(os.getcwd())
-pathfolders.append(os.getcwd().rpartition(os.sep)[0])
-CURRENTDIR = os.getcwd()
-MGBPATH = ""
-for folder in pathfolders:
-    try:
-        if "read_input_gui.py" in os.listdir(folder) and "guilib.py" in os.listdir(folder) and "empty.xhtml" in os.listdir(folder) and "multigeneblast.py" in os.listdir(folder) and "mgb_gui.py" in os.listdir(folder):
-            MGBPATH = folder
-            break
-    except:
-        pass
-if MGBPATH == "":
-    print("Error: Please add the MultiGeneBlast installation directory to your $PATH environment variable before running the executable from another folder.")
-    sys.exit(1)
-#Set other environment variables
-os.environ['EXEC'] = MGBPATH + os.sep + "exec"
-os.environ['PATH'] = os.environ['EXEC'] + os.pathsep + os.environ['PATH']
-
-def parse_options(args):
-    #Parse options
-    if len(args) < 2:
-        print("""
-    MAKEDB usage:
-    
-    Please specify database name and either one or more input files or a folder with input files.
-    Usage for files: 'makedb dbname yourfile1.gbk yourfile2.gbk'
-    Usage for folder: 'makedb dbname <folder name with input files>'
-    """)
-        sys.exit(1)
-    dbname = args[0]
-    overwrite = ""
-    if dbname + ".nal" in os.listdir(".") or dbname + ".pal" in os.listdir("."):
-        while overwrite != "y" and overwrite != "n":
-            overwrite = eval(input("Database with name exists in this folder. Overwrite? (y/n)"))
-        if overwrite == "n":
-            sys.exit(1)
-        if dbname + ".nal" in os.listdir("."):
-            os.remove(dbname + ".nal")
-        else:
-            os.remove(dbname + ".pal")
-    inputfiles = []
-    for arg in [arg for arg in args if ".py" not in arg and "makedb" not in arg][1:]:
-        root, ext = os.path.splitext(arg)
-        if ext.lower() not in [".gbk",".gb",".genbank",".embl",".emb"]:
-            if arg.rpartition(os.sep)[2] in os.listdir(".") or os.path.exists(arg) or os.path.exists(os.getcwd() + os.sep + arg):
-                try:
-                    os.chdir(arg.rpartition(os.sep)[2])
-                except:
-                    try:
-                        os.chdir(arg)
-                    except:
-                        try:
-                            os.chdir(os.getcwd() + os.sep + arg)
-                        except:
-                            print(("Error: cannot open folder", arg.rpartition(os.sep)[2], "or file does not have GBK/EMBL/FASTA extension"))
-                            sys.exit()
-                filesfound = "n"
-                for filename in os.listdir("."):
-                    root, fext = os.path.splitext(filename)
-                    if fext.lower() in [".gbk",".gb",".genbank",".embl",".emb"]:
-                        inputfiles.append(arg.rpartition(os.sep)[2] + os.sep + filename)
-                        filesfound = "y"
-                if filesfound == "n":
-                    print(("Error: no GBK/EMBL files found in folder", arg))
-                    sys.exit(1)
-                os.chdir("..")
-            else:
-                print("Please supply input file with valid GBK / EMBL extension.")
-                sys.exit(1)
-        elif arg in os.listdir(".") or (os.sep in arg and arg.rpartition(os.sep)[2] in os.listdir(arg.rpartition(os.sep)[0])):
-            inputfiles.append(arg)
-        else:
-            print(("Error: specified input file", arg , "not found."))
-            sys.exit(1)
+from genbank_parsing import DataBase
+from constants import *
+from utilities import MultiGeneBlastException, remove_illegal_characters, setup_logger, run_commandline_command
 
 
-    return inputfiles, dbname
+def get_arguments():
+    parser = argparse.ArgumentParser(description='Create a database for offline '
+                                                 'search in MultiGeneBlast.')
+    parser.add_argument("-i", "-in", help="GBK/EMBL files for creating the "
+                                          "database", nargs='+'
+                        , metavar="space-separted file paths", required=True,
+                        type=check_in_file)
+    parser.add_argument("-n", "-name", help="The name for the database files.",
+                        required=True, type=remove_illegal_characters)
+    parser.add_argument("-o", "-out", help="Optional output folder for the "
+                                           "database files.", type=check_out_folder,
+                        default=CURRENTDIR + os.sep + "database")
+    name_space = parser.parse_args()
+    return name_space.n, name_space.o, name_space.i
+
+def check_in_file(in_file):
+    """
+    Check if all provided input files have the right extensions
+
+    :param files: a list of file locations
+    :return: the original list of files
+    """
+    root, ext = os.path.splitext(in_file)
+    if not os.path.exists(in_file):
+        raise argparse.ArgumentTypeError("No valid path provided for {}".format(in_file))
+    elif not os.path.isfile(in_file):
+        raise argparse.ArgumentTypeError("{} is not a file".format(in_file))
+    elif ext.lower() not in EMBL_EXTENSIONS + GENBANK_EXTENSIONS:
+        raise argparse.ArgumentTypeError("No correct extension, {}, for input file {}.".format(ext, root))
+    return in_file
+
+def check_out_folder(path):
+    """
+    Check the provided output folder
+
+    :param path: a string that is an absolute or relative path
+    :raises ArgumentTypeError: when the path provided does not exist or the
+    specified name for the folder contains illegal characters
+    :return: the original path
+    """
+    #make sure relatively defined paths are also correct
+    my_path = os.path.abspath(os.path.dirname(__file__))
+    path = os.path.join(my_path, path)
+
+    to_path, folder_name = os.path.split(path)
+    if not os.path.exists(to_path):
+        raise argparse.ArgumentTypeError("No valid output directory"
+                                         " provided")
+    #assert that the folder name does not contain illegal characters
+    elif not folder_name.replace("_", "").isalnum():
+        raise argparse.ArgumentTypeError("Output directory name is illegal.")
+    return path
+
+def write_nal_pal_file(dbname, outdir, dbtype = "prot"):
+    logging.info("Writing nal/pal file...")
+    ext = ".pal"
+    if dbtype == "nucl":
+        ext = ".nal"
+    with open(outdir + os.sep + dbname + ext, "w") as f:
+        f.write("TITLE " + dbname + "\nDBLIST " + dbname + "\n")
+
 
 def main():
-    #TODO make sure to reformat these files if there is time.
-    global GUI
-    GUI = "n"
-    args = sys.argv
-    if "makedb" in args[0]:
-        args = args[1:]
-    inputfiles, dbname = parse_options(args)
-    logfile = open("makedb.log","w")
-    #TODO this only takes one file now allow multiple
-    gb_file = GenbankFile(inputfiles[0])
-    with open(dbname + "_dbbuild.fasta", "w") as f:
-        f.write(gb_file.fasta_text())
 
-    #Create FASTA database
-    print("Creating FASTA file")
-    # descriptions = parse_gbk_embl(inputfiles, dbname)
+    starttime = time.time()
+    #parse options
+    dbname, outdir, inputfiles = get_arguments()
 
-    #Create Blast database
-    print("Constructing Blast+ database")
-    os.system(os.getcwd() + "\\exec_new\\makeblastdb.exe -dbtype prot -out " + dbname + " -in " + dbname + "_dbbuild.fasta")
+    #setup a logger
+    setup_logger(outdir, starttime)
+    logging.info("Step 1/6: Parsed options.")
 
-    #Create genbank_mf_all.txt file
-    print("Generating _all.txt file")
-    fasta_names(dbname + "_dbbuild.fasta", dbname + "_all.txt")
+    #create a database object
+    base_path = os.path.abspath(os.path.dirname(__file__))
+    db = DataBase(base_path, inputfiles)
+    db.create(outdir, dbname)
+    logging.info("Step 2/6: Created the MultiGeneBlast database")
 
-    #Create genbank_mf_all_descrs.txt file
-    print(("Generating " + dbname + "_all_descr.txt file"))
-    descrfile = open(dbname + "_all_descrs.txt","w")
+    #write the database to fasta for makeblastdb
+    logging.info("Writing MultiGeneBlast database to fasta...")
+    with open(outdir + os.sep + dbname + "_dbbuild.fasta", "w") as f:
+        f.write(db.get_fasta())
+    logging.info("Step 3/6: Written MultiGeneBlast database to fasta format.")
 
-    for contig in gb_file.contigs.values():
-        descrfile.write(contig.accession + "\t" + contig.definition + "\n")
-    descrfile.close()
-    #Create Blast database and TAR archives
-    if "\n" not in open(dbname + "_dbbuild.fasta","r").read():
-        print("Error making BLAST database; no suitable sequences found in input.")
-        clean_up(dbname)
-        sys.exit()
-    make_blast_db(dbname, dbname + "_dbbuild.fasta")
+    #Create Blast database, set the outdir as the current directory to amke sure that the files end up in the right place
+    logging.info("Creating Blast+ database...")
+    os.chdir(outdir)
+    command = "{}\\exec_new\\makeblastdb.exe -dbtype prot -out {} -in {}{}{}_dbbuild.fasta".format(base_path, dbname, outdir, os.sep, dbname)
+    run_commandline_command(command, max_retries=0)
+    logging.info("Step 4/6: Blast+ database created.")
 
-    #TODO test this properly for multiple files
-    for file in inputfiles:
-        with open(dbname + ".pickle", "wb") as f:
-            pickle.dump(gb_file, f)
+    #write nal/pal file as main entry for the database
+    write_nal_pal_file(dbname, outdir)
+    logging.info("Step 5/6: Created nal/pal file.")
 
-    #Clean up
-    clean_up(dbname)
+    #cleaning up the fasta file
+    os.remove(outdir + os.sep + dbname + "_dbbuild.fasta")
+    logging.info("Step 6/6: Cleaned up left over files.")
+    logging.info("Database was succesfully created.")
 
 
 if __name__ == "__main__":

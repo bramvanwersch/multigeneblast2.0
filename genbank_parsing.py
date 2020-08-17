@@ -1,80 +1,164 @@
 
 # imports
 import logging
+import tarfile
+import pickle
+import os
+import shutil
 from string import ascii_letters
 from collections import OrderedDict
 
 from utilities import *
+from constants import GENBANK_EXTENSIONS, EMBL_EXTENSIONS, TEMP
 
-class Protein:
+
+def clean_dna_sequence(dna_seq):
     """
-    A representation of a protein, containing some optional fields that can or
-    cannot be specified.
+    Clean a DNA sequence that is formatted like;
+
+          1 atgcggcggg aaatt etc.
+
+    :param dna_seq: a DNA sequence in the afformentioned format as a string
+    :return: a DNA sequence that only contains nucleotides
     """
-    def __init__(self, sequence, start, name, strand, end = None, annotation = "",
-                 locus_tag = "", contig_id = "", contig_description = "", protein_id = ""):
-        """
-        :param sequence: a string that is the amino acid sequence of the protein
-        :param start: an integer that is the start coordinate in the the protein
-        in the larger contig it is located
-        :param name: the gene name of the protein
-        :param strand: the + or - strand the protein can be located on
-        :param end: optional parameter to set the stop of the protein manually
-        :param annotation: the optional annotation of the protein, description of
-        function
-        :param locus_tag: an optional locus tag of the protein
-        :param contig_id: The ID of the contig as defined in the genbank file
-        :param contig_description: the description of the contig as defined in
-        the genbank file
-        :param protein_id: an optional id of the protein
-        :param start_header: the start of the fasta header. This can be used in
-        the case of query proteins to allow certain identifyers
-        """
-        self.sequence = sequence
-        self.strand = strand
-        self.aa_lenght = len(self.sequence)
-        self.nt_lenght = self.aa_lenght * 3
+    dna_seq = dna_seq.replace(" ", "")
+    dna_seq = dna_seq.replace("\t", "")
+    dna_seq = dna_seq.replace("\n", "")
+    dna_seq = dna_seq.replace("0", "")
+    dna_seq = dna_seq.replace("1", "")
+    dna_seq = dna_seq.replace("2", "")
+    dna_seq = dna_seq.replace("3", "")
+    dna_seq = dna_seq.replace("4", "")
+    dna_seq = dna_seq.replace("5", "")
+    dna_seq = dna_seq.replace("6", "")
+    dna_seq = dna_seq.replace("7", "")
+    dna_seq = dna_seq.replace("8", "")
+    dna_seq = dna_seq.replace("9", "")
+    dna_seq = dna_seq.replace("/", "")
+    return dna_seq
 
-        #both in nucleotides
-        self.start = start
-        if end:
-            self.stop = end
-        else:
-            self.stop = self.start + self.nt_lenght
+def embl_to_genbank(embl_filepath):
+    """
+    Convert an embl file in such a way that the GenbankFile object can read it
+    and convert it appropriately
 
-        #gene name
-        self.name = remove_illegal_characters(name)
-        self.annotation = remove_illegal_characters(annotation)
+    :param embl_filepath: a path to an embl file.
+    :return: a string that can be read by a GenbankFile object
+    """
+    logging.debug("Converting to make embl file {} readable for the GenbankFile object".format(embl_filepath))
+    try:
+        with open(embl_filepath, "r") as f:
+            file_text = f.read()
+    except Exception as e:
+        logging.critical("Invalid embl file {}. Exiting...".format(embl_filepath))
+        raise MultiGeneBlastException("Invalid embl file {}.".format(embl_filepath))
 
-        self.locus_tag = locus_tag
-        self.protein_id = protein_id
-        self.contig_id = contig_id
-        self.contig_description = contig_description
+    # make sure to remove potential old occurances of \r. Acts like a \n
+    file_text = file_text.replace("\r", "\n")
 
-    def summary(self):
-        lt = self.locus_tag
-        if self.locus_tag == "":
-            lt = "No locus tag"
-        return "{}\t{}\t{}\t{}\t{}\t{}".format(self.name, self.start, self.stop,
-                                               self.strand, self.annotation, lt)
+    # do a basic check to see if the embl file is valid
+    if "FT   CDS " not in file_text or ("\nSQ" not in file_text):
+        logging.critical("Embl file {} is not properly formatted or contains no sequences. Exiting...".format(embl_filepath))
+        raise MultiGeneBlastException("Embl file {} is not properly formatted or contains no sequences".format(embl_filepath))
+    text_lines = file_text.split("\n")
 
-    def fasta_text(self):
-        """
-        Full fasta entry for writing into a fasta file. Uses the pre computed
-        header and the sequence
+    #change certain line starts
+    line_count = 0
+    while line_count < len(text_lines):
+        line = text_lines[line_count]
+        if line.startswith("FT"):
+            text_lines[line_count] = line.replace("FT", "  ", 1)
+        if line.startswith("SQ"):
+            text_lines[line_count] = "ORIGIN"
+        elif line.startswith("AC"):
+            text_lines[line_count] = line.replace("AC   ", "ACCESSION   ", 1)
+        elif line.startswith("DE"):
+            #change all the definition lines to make them readable
+            text_lines[line_count] = line.replace("DE   ", "DEFINITION  ", 1)
+            line_count += 1
+            def_line = text_lines[line_count]
+            while not def_line.startswith("XX"):
+                text_lines[line_count] = def_line.replace("DE   ", "            ", 1)
+                line_count += 1
+                def_line = text_lines[line_count]
+        line_count += 1
+    logging.debug("Embl file {} made readable for genbank file object.".format(embl_filepath))
+    return "\n".join(text_lines)
 
-        :return: a string that is a complete fasta entry
-        """
-        text = ">{}\n{}\n".format(self.name, self.sequence)
-        return text
+class DataBase:
+    def __init__(self, base_path, paths):
+        logging.info("Started creating database...")
+        #care this is a generator object not a list
+        self.__gb_files = self.__read_files(base_path, paths)
+
+    def create(self, outdir, dbname):
+        self.__write_files(outdir, dbname)
+        self.__create_tar_files(outdir, dbname)
+        self.__cleanup_pickles()
+
+    def get_fasta(self):
+        full_fasta = ""
+        for gb_file in self.__gb_files:
+            full_fasta += gb_file.fasta_text()
+        return full_fasta
+
+    def __read_files(self, base_path, paths):
+        files = []
+        for path in paths:
+            #allow relative paths to b
+            path = os.path.join(base_path, path)
+            root, ext = os.path.splitext(path)
+            if ext in GENBANK_EXTENSIONS:
+                file = GenbankFile(path)
+            elif ext in EMBL_EXTENSIONS:
+                file_text = embl_to_genbank(path)
+                file = GenbankFile(path, file_text=file_text)
+            else:
+                logging.warning("Invalid extension {}. Skipping file {}.".format(ext, path))
+                continue
+            files.append(file)
+        return files
+
+    def __write_files(self, outdir, dbname):
+        #TODO think about handling double contigs. I would think not to relevant
+
+        #create a directory for the pickle files, if the directory is there clean it
+        try:
+            os.mkdir(TEMP + os.sep + "pickles")
+        except FileExistsError:
+            shutil.rmtree(TEMP + os.sep + "pickles")
+            os.mkdir(TEMP + os.sep + "pickles")
+
+        #construct a string that indexes the database into a tsv format for fast retrieval
+        index_string = ""
+        count = 0
+        for gb_file in self.__gb_files:
+            for contig in gb_file.contigs:
+                index_string += "contig{}".format(count) + "\t"
+                index_string += "\t".join(gb_file.contigs[contig].proteins.keys()) + "\n"
+                with open("{}{}pickles{}contig{}.pickle".format(TEMP, os.sep, os.sep, count), "wb") as f:
+                    pickle.dump(gb_file.contigs[contig], f)
+                count += 1
+        with open("{}{}{}_database_index.tsv".format(outdir, os.sep, dbname), "w") as f:
+            f.write(index_string)
+
+    def __create_tar_files(self, outdir, dbname):
+        logging.info("Writing to tar file...")
+        with tarfile.open("{}{}{}_contigs.tar.gz".format(outdir, os.sep, dbname), "w:gz") as tar:
+            tar.add("{}{}pickles".format(TEMP, os.sep), arcname=os.path.basename(dbname))
+
+    def __cleanup_pickles(self):
+        logging.debug("Cleaning up pickle files...")
+        shutil.rmtree(TEMP + os.sep + "pickles")
+
 
 class GenbankFile:
     """
     An Object for easily disecting a genbank file into the individual proteins
     """
-    def __init__(self, file, file_text = None, protein_range=None, allowed_proteins=None):
+    def __init__(self, path, file_text = None, protein_range=None, allowed_proteins=None):
         """
-        :param file: a path to a genbank file
+        :param path: a path to a genbank file
         :param file_text: an optional parameter that will be used as the file text
         instead of the read version of the file.
         :param protein_range: an optional range in which proteins can be selected
@@ -82,14 +166,14 @@ class GenbankFile:
         :param allowed_proteins: a list of protein IDs that can be selected from
         the genbank file instead of all proteins
         """
-        logging.debug("Started parsing genbank file {}.".format(file))
+        logging.debug("Started parsing genbank path {}.".format(path))
         if file_text == None:
-            self.file = file
-            file_text = self.__read_genbank_file(file)
+            self.file = path
+            file_text = self.__read_genbank_file(path)
         self.contigs = self.__create_contigs(file_text, protein_range, allowed_proteins)
         self.proteins = self.__list_proteins() #an OrderedDict.
 
-        logging.debug("Finished parsing genbank file {}.".format(file))
+        logging.debug("Finished parsing genbank path {}.".format(path))
 
     def fasta_text(self):
         text = ""
@@ -449,28 +533,64 @@ class GenbankEntry:
                        contig_description=self.contig_description)
 
 
-def clean_dna_sequence(dna_seq):
+class Protein:
     """
-    Clean a DNA sequence that is formatted like;
-
-          1 atgcggcggg aaatt etc.
-
-    :param dna_seq: a DNA sequence in the afformentioned format as a string
-    :return: a DNA sequence that only contains nucleotides
+    A representation of a protein, containing some optional fields that can or
+    cannot be specified.
     """
-    dna_seq = dna_seq.replace(" ", "")
-    dna_seq = dna_seq.replace("\t", "")
-    dna_seq = dna_seq.replace("\n", "")
-    dna_seq = dna_seq.replace("0", "")
-    dna_seq = dna_seq.replace("1", "")
-    dna_seq = dna_seq.replace("2", "")
-    dna_seq = dna_seq.replace("3", "")
-    dna_seq = dna_seq.replace("4", "")
-    dna_seq = dna_seq.replace("5", "")
-    dna_seq = dna_seq.replace("6", "")
-    dna_seq = dna_seq.replace("7", "")
-    dna_seq = dna_seq.replace("8", "")
-    dna_seq = dna_seq.replace("9", "")
-    dna_seq = dna_seq.replace("/", "")
-    return dna_seq
+    def __init__(self, sequence, start, name, strand, end = None, annotation = "",
+                 locus_tag = "", contig_id = "", contig_description = "", protein_id = ""):
+        """
+        :param sequence: a string that is the amino acid sequence of the protein
+        :param start: an integer that is the start coordinate in the the protein
+        in the larger contig it is located
+        :param name: the gene name of the protein
+        :param strand: the + or - strand the protein can be located on
+        :param end: optional parameter to set the stop of the protein manually
+        :param annotation: the optional annotation of the protein, description of
+        function
+        :param locus_tag: an optional locus tag of the protein
+        :param contig_id: The ID of the contig as defined in the genbank file
+        :param contig_description: the description of the contig as defined in
+        the genbank file
+        :param protein_id: an optional id of the protein
+        :param start_header: the start of the fasta header. This can be used in
+        the case of query proteins to allow certain identifyers
+        """
+        self.sequence = sequence
+        self.strand = strand
+        self.aa_lenght = len(self.sequence)
+        self.nt_lenght = self.aa_lenght * 3
 
+        #both in nucleotides
+        self.start = start
+        if end:
+            self.stop = end
+        else:
+            self.stop = self.start + self.nt_lenght
+
+        #gene name
+        self.name = remove_illegal_characters(name)
+        self.annotation = remove_illegal_characters(annotation)
+
+        self.locus_tag = locus_tag
+        self.protein_id = protein_id
+        self.contig_id = contig_id
+        self.contig_description = contig_description
+
+    def summary(self):
+        lt = self.locus_tag
+        if self.locus_tag == "":
+            lt = "No locus tag"
+        return "{}\t{}\t{}\t{}\t{}\t{}".format(self.name, self.start, self.stop,
+                                               self.strand, self.annotation, lt)
+
+    def fasta_text(self):
+        """
+        Full fasta entry for writing into a fasta file. Uses the pre computed
+        header and the sequence
+
+        :return: a string that is a complete fasta entry
+        """
+        text = ">{}\n{}\n".format(self.name, self.sequence)
+        return text

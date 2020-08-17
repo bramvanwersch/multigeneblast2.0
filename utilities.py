@@ -3,6 +3,7 @@
 # imports
 from string import ascii_letters
 import logging
+import subprocess
 import time
 import os, sys
 import datetime
@@ -69,6 +70,31 @@ class MyFormatter(logging.Formatter):
         record.passedTime = "{:.3f}".format(time.time() - self._start_time)
         record.currentTime = datetime.datetime.now().time()
         return super(MyFormatter, self).format(record)
+
+def run_commandline_command(command, max_retries = 5):
+    """
+    Run a command line command that can be repeadet when a error is returned.
+    This function is meant to run the BLAST+ command line tools
+
+    :param command: a string that can be deployed on the command line as a
+    command
+    :param max_retries: The maximum amount of times the program should retry the
+    command when an error is returned
+    :raises MultiGeneBlastError: when the command returned max_retries amount of
+    errors
+    """
+    new_env = os.environ.copy()
+    command_stdout = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=new_env)
+    command_stdout = command_stdout.stdout.read()
+    retries = 0
+    while "error" in str(command_stdout.lower()):
+        logging.debug("The following command {} returned the following error {}. Retrying: {}/{}".format(command, command_stdout, retries, max_retries))
+        if max_retries <= retries:
+            logging.critical("Command {} keeps returing an error. Exiting...".format(command))
+            raise MultiGeneBlastException()
+        command_stdout = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=new_env)
+        command_stdout = command_stdout.stdout.read()
+        retries += 1
 
 
 class MultiGeneBlastException(Exception):
