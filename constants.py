@@ -9,6 +9,7 @@ FASTA_EXTENSIONS = (".fasta",".fas",".fa",".fna")
 EMBL_EXTENSIONS = (".embl",".emb")
 GENBANK_EXTENSIONS = (".gbk",".gb",".genbank")
 SVG_CORE_EXTENSION = 5000
+DATABASE_EXTENSIONS = ["_database_index.pickle","_contigs.tar.gz",".psq",".psi",".psd",".pin",".phr"]
 
 #path constants
 def get_mgb_path():

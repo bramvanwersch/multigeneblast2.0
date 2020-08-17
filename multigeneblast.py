@@ -8,6 +8,7 @@
 # imports
 import os
 from os import system
+import tarfile
 import sys
 import time
 import multiprocessing
@@ -24,7 +25,7 @@ import shutil
 #own imports
 from genbank_parsing import GenbankFile
 from visualisation import ClusterCollectionSvg, create_xhtml_file
-from utilities import MultiGeneBlastException, setup_logger
+from utilities import MultiGeneBlastException, setup_logger, run_commandline_command
 from constants import *
 
 
@@ -253,10 +254,10 @@ def check_in_file(path):
     path = os.path.join(my_path, path)
 
     if not os.path.exists(path):
-        raise argparse.ArgumentTypeError("File path to database is invalid")
+        raise argparse.ArgumentTypeError("File path to query is invalid")
 
     if not os.path.isfile(path):
-        raise argparse.ArgumentTypeError("Provided database file is not a file.")
+        raise argparse.ArgumentTypeError("Provided query file is not a file.")
     root, ext = os.path.splitext(path)
     if ext.lower() not in GENBANK_EXTENSIONS + EMBL_EXTENSIONS + FASTA_EXTENSIONS:
         raise argparse.ArgumentTypeError("Please supply input file with valid"
@@ -297,28 +298,31 @@ def check_db_folder(path):
     database folder does not contain all neccesairy files
     :return: the original path
     """
-    try:
-        #make sure relatively defined paths are also correct
-        my_path = os.path.abspath(os.path.dirname(__file__))
-        path = os.path.join(my_path, path)
 
-        assert os.path.exists(path)
-        to_path, db_file = os.path.split(path)
+    #make sure relatively defined paths are also correct
+    my_path = os.path.abspath(os.path.dirname(__file__))
+    path = os.path.join(my_path, path)
 
-        #make sure the databae file is of the correct file type
-        db_name, ext = db_file.split(".")
-        assert ext in ("pal", "nal")
-        #make sure the db folder contains all files required
-        db_folder = os.listdir(to_path)
-        #TODO make sure that not more files need to be checked
-        if ext == "pal":
-            assert "{}.{}".format(db_name, "phr") in db_folder
-        else:
-            assert "{}.{}".format(db_name, "nhr") in db_folder
-        return path
-    except (AssertionError, IndexError):
-        raise argparse.ArgumentTypeError("The provided path is incorrect or "
-                                "not all neccesairy data base files exist.")
+    if not os.path.exists(path):
+        raise argparse.ArgumentTypeError("Database path does not exist")
+    to_path, db_file = os.path.split(path)
+
+    #make sure the databae file is of the correct file type
+    root, ext = os.path.splitext(path)
+    dbname = root.split(os.sep)[-1]
+    if not ext in (".pal", ".nal"):
+        raise argparse.ArgumentTypeError("Incorrect extension {} for database file."
+                                         "Should be .pal or .nal".format(ext))
+
+    #make sure the db folder contains all files required
+    db_folder = os.listdir(to_path)
+    expected_files = [dbname + ext for ext in DATABASE_EXTENSIONS]
+    for file in expected_files:
+        if file not in db_folder:
+            raise argparse.ArgumentTypeError("Expected a file named {} in "
+                                             "the database folder".format(file))
+    return path
+
 
 def determine_cpu_nr(cores):
     """
@@ -382,12 +386,16 @@ def read_query_file(user_options):
         write_fasta(query_proteins.values(), "query.fasta")
         return query_proteins
     elif any(user_options.infile.lower().endswith(ext) for ext in GENBANK_EXTENSIONS):
+        logging.debug("Started parsing genbank query file...")
         gb_file = GenbankFile(user_options.infile, protein_range=[user_options.startpos, user_options.endpos], allowed_proteins=user_options.ingenes)
         query_proteins = gb_file.proteins
+        logging.debug("Finished parsing.")
     else:
+        logging.debug("Started parsing embl query file")
         genbank_file = embl_to_genbank(user_options.infile)
         gb_file = GenbankFile(user_options.infile, file_text=genbank_file, protein_range=[user_options.startpos, user_options.endpos], allowed_proteins=user_options.ingenes)
         query_proteins = gb_file.proteins
+        logging.debug("Finished parsing.")
 
     if len(query_proteins) == 0:
         logging.critical("No proteins found in the provided query. Exiting...")
@@ -424,54 +432,6 @@ def query_proteins_from_fasta(fasta_file):
         total_lenght += entry_protein.nt_lenght + 100
     logging.debug("Finished parsing architecture input file")
     return query_proteins
-
-def embl_to_genbank(emblfile):
-    """
-    Convert an embl file in such a way that the GenbankFile object can read it
-    and convert it appropriately
-
-    :param emblfile: a path to an embl file.
-    :return: a string that can be read by a GenbankFile object
-    """
-    logging.debug("Converting to make embl file {} readable for the GenbankFile object".format(emblfile))
-    try:
-        with open(emblfile, "r") as f:
-            file_text = f.read()
-    except Exception as e:
-        logging.critical("Invalid embl file {}. Exiting...".format(emblfile))
-        raise MultiGeneBlastException("Invalid embl file {}.".format(emblfile))
-
-    # make sure to remove potential old occurances of \r. Acts like a \n
-    file_text = file_text.replace("\r", "\n")
-
-    # do a basic check to see if the embl file is valid
-    if "FT   CDS " not in file_text or ("\nSQ" not in file_text):
-        logging.critical("Embl file {} is not properly formatted or contains no sequences. Exiting...".format(emblfile))
-        raise MultiGeneBlastException("Embl file {} is not properly formatted or contains no sequences".format(emblfile))
-    text_lines = file_text.split("\n")
-
-    #change certain line starts
-    line_count = 0
-    while line_count < len(text_lines):
-        line = text_lines[line_count]
-        if line.startswith("FT"):
-            text_lines[line_count] = line.replace("FT", "  ", 1)
-        if line.startswith("SQ"):
-            text_lines[line_count] = "ORIGIN"
-        elif line.startswith("AC"):
-            text_lines[line_count] = line.replace("AC   ", "ACCESSION   ", 1)
-        elif line.startswith("DE"):
-            #change all the definition lines to make them readable
-            text_lines[line_count] = line.replace("DE   ", "DEFINITION  ", 1)
-            line_count += 1
-            def_line = text_lines[line_count]
-            while not def_line.startswith("XX"):
-                text_lines[line_count] = def_line.replace("DE   ", "            ", 1)
-                line_count += 1
-                def_line = text_lines[line_count]
-        line_count += 1
-    logging.debug("Embl file {} made readable for genbank file object.".format(emblfile))
-    return "\n".join(text_lines)
 
 def internal_blast(user_options, query_proteins):
     """
@@ -529,31 +489,6 @@ def internal_blast(user_options, query_proteins):
         for blast_result in results:
             query_cluster.add_protein(query_proteins[blast_result.subject], blast_result)
     return query_cluster
-
-def run_commandline_command(command, max_retries = 5):
-    """
-    Run a command line command that can be repeadet when a error is returned.
-    This function is meant to run the BLAST+ command line tools
-
-    :param command: a string that can be deployed on the command line as a
-    command
-    :param max_retries: The maximum amount of times the program should retry the
-    command when an error is returned
-    :raises MultiGeneBlastError: when the command returned max_retries amount of
-    errors
-    """
-    new_env = os.environ.copy()
-    command_stdout = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=new_env)
-    command_stdout = command_stdout.stdout.read()
-    retries = 0
-    while "error" in str(command_stdout.lower()):
-        logging.debug("The following command {} returned the following error {}. Retrying: {}/{}".format(command, command_stdout, retries, max_retries))
-        if max_retries <= retries:
-            logging.critical("Command {} keeps returing an error. Exiting...".format(command))
-            raise MultiGeneBlastException()
-        command_stdout = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=new_env)
-        command_stdout = command_stdout.stdout.read()
-        retries += 1
 
 
 class BlastResult:
@@ -856,23 +791,34 @@ def load_genecluster_info(dbname, allgenomes):
 
 
 def load_databases(query_proteins, blast_dict, user_options):
-    #TODO improve this to only include scaffolds with a hit. Needs improvement in general in combination with improving the database
+
     logging.info("Loading GenBank positional info into memory...")
     db_path = os.environ["BLASTDB"]
 
-    picklefile = open("{}{}{}.pickle".format(db_path, os.sep, user_options.db), "rb")
-    p_gbk = pickle.load(picklefile)
-    picklefile.close()
+    covered_contigs = set()
+    with open("{}{}{}_database_index.pickle".format(db_path, os.sep, user_options.db), "rb") as index_file:
+        list_of_contig_proteins = pickle.load(index_file)
+    for results in blast_dict.values():
+        for result in results:
+            protein = result.subject
+            for contig_nr, contig in enumerate(list_of_contig_proteins):
+                if contig_nr in covered_contigs:
+                    continue
+                if protein in contig:
+                    covered_contigs.add(contig_nr)
+            if len(covered_contigs) == len(list_of_contig_proteins):
+                #all contigs have been selected
+                break
+    contigs = []
+    with tarfile.open("{}{}{}_contigs.tar.gz".format(db_path, os.sep, user_options.db), "r:gz") as tf:
+        for contig_nr in covered_contigs:
+            for entry in tf:
+                if "{}/{}.pickle".format(user_options.db, contig_nr) == entry.name:
+                    file_obj = tf.extractfile(entry)
+                    contigs.append(pickle.load(file_obj))
 
-    return p_gbk
-    # #Load GenBank positional info into memory
-    # if user_options.dbtype == "prot":
-    #     hit_proteins = load_dbproteins_info(query_proteins, blast_dict, user_options.db)
-    #     proteininfo = load_other_genes(allgenomes, proteininfo, dbname, blastdict)
-    # else:
-    #     allgenomes, nucdict, proteininfo = load_ndb_info(querylist, blastdict, dbname)
-    # nucdescriptions, clusters = load_genecluster_info(dbname, allgenomes)
-    # return nucdescriptions, nucdict, proteininfo
+    gb_collection = GenbankFile(contigs=contigs)
+    return gb_collection
 
 def find_gene_clusters(blast_dict, user_options, database):
     """

@@ -121,7 +121,7 @@ class DataBase:
 
     def __write_files(self, outdir, dbname):
         #TODO think about handling double contigs. I would think not to relevant
-
+        index_list = []
         #create a directory for the pickle files, if the directory is there clean it
         try:
             os.mkdir(TEMP + os.sep + "pickles")
@@ -129,18 +129,15 @@ class DataBase:
             shutil.rmtree(TEMP + os.sep + "pickles")
             os.mkdir(TEMP + os.sep + "pickles")
 
-        #construct a string that indexes the database into a tsv format for fast retrieval
-        index_string = ""
         count = 0
         for gb_file in self.__gb_files:
             for contig in gb_file.contigs:
-                index_string += "contig{}".format(count) + "\t"
-                index_string += "\t".join(gb_file.contigs[contig].proteins.keys()) + "\n"
-                with open("{}{}pickles{}contig{}.pickle".format(TEMP, os.sep, os.sep, count), "wb") as f:
+                with open("{}{}pickles{}{}.pickle".format(TEMP, os.sep, os.sep, count), "wb") as f:
                     pickle.dump(gb_file.contigs[contig], f)
                 count += 1
-        with open("{}{}{}_database_index.tsv".format(outdir, os.sep, dbname), "w") as f:
-            f.write(index_string)
+                index_list.append(set(gb_file.contigs[contig].proteins.keys()))
+        with open("{}{}{}_database_index.pickle".format(outdir, os.sep, dbname), "wb") as f:
+            pickle.dump(index_list, f)
 
     def __create_tar_files(self, outdir, dbname):
         logging.info("Writing to tar file...")
@@ -156,24 +153,29 @@ class GenbankFile:
     """
     An Object for easily disecting a genbank file into the individual proteins
     """
-    def __init__(self, path, file_text = None, protein_range=None, allowed_proteins=None):
+    def __init__(self, path = None, file_text = None, contigs = None, protein_range=None, allowed_proteins=None):
         """
         :param path: a path to a genbank file
         :param file_text: an optional parameter that will be used as the file text
         instead of the read version of the file.
+        :param contigs: a optional list of contigs to skip reading the file
         :param protein_range: an optional range in which proteins can be selected
         from the file instead of all proteins
         :param allowed_proteins: a list of protein IDs that can be selected from
         the genbank file instead of all proteins
         """
-        logging.debug("Started parsing genbank path {}.".format(path))
-        if file_text == None:
-            self.file = path
+        if contigs != None:
+            self.contigs = {cont.accession:cont for cont in contigs}
+        elif file_text != None:
+            self.contigs = self.__create_contigs(file_text, protein_range, allowed_proteins)
+        elif path != None:
             file_text = self.__read_genbank_file(path)
-        self.contigs = self.__create_contigs(file_text, protein_range, allowed_proteins)
+            self.contigs = self.__create_contigs(file_text, protein_range, allowed_proteins)
+        else:
+            raise MultiGeneBlastException("One of the three options; path, file_text,"
+                                          " or contigs need to be selected")
         self.proteins = self.__list_proteins() #an OrderedDict.
 
-        logging.debug("Finished parsing genbank path {}.".format(path))
 
     def fasta_text(self):
         text = ""
@@ -203,16 +205,16 @@ class GenbankFile:
             with open(file, "r") as f:
                 file_text = f.read()
         except Exception as e:
-            logging.critical("Invalid genbank file {}. Exiting...".format(self.file))
-            raise MultiGeneBlastException("Invalid genbank file {}.".format(self.file))
+            logging.critical("Invalid genbank file {}. Exiting...".format(file))
+            raise MultiGeneBlastException("Invalid genbank file {}.".format(file))
 
         # make sure to remove potential old occurances of \r. Acts like a \n
         file_text = file_text.replace("\r", "\n")
 
         # do a basic check to see if the genbank file is valid
         if "     CDS             " not in file_text or "\nORIGIN" not in file_text:
-            logging.critical("Genbank file {} is not properly formatted or contains no sequences".format(self.file))
-            raise MultiGeneBlastException("Genbank file {} is not properly formatted or contains no sequences".format(self.file))
+            logging.critical("Genbank file {} is not properly formatted or contains no sequences".format(file))
+            raise MultiGeneBlastException("Genbank file {} is not properly formatted or contains no sequences".format(file))
         return file_text
 
     def __create_contigs(self, text, protein_range, allowed_proteins):
