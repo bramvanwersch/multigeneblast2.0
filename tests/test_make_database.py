@@ -5,7 +5,7 @@ import os
 import shutil
 from constants import DATABASE_EXTENSIONS
 
-def create_database(command):
+def test_database(command):
     os.system(command)
 
     #make sure that even when chaning directories the directory can be found
@@ -25,19 +25,19 @@ def create_database(command):
 if __name__ == "__main__":
     #basic command using gbk
     command1 = "..\\make_database.py -o tests\\test_data_base -n test -i tests\\GCA_000204155.1_ASM20415v1_genomic.gbk"
-    create_database(command1)
+    test_database(command1)
     print("Finished running gbk test...")
     print()
 
     #command for embl
     command2 = "..\\make_database.py -o tests\\test_data_base -n test -i tests\\GCA_000204155.1_ASM20415v1_genomic.embl"
-    create_database(command2)
+    test_database(command2)
     print("Finished running embl test...")
     print()
 
     #command for combined
     command3 = "..\\make_database.py -o tests\\test_data_base -n test -i tests\\GCA_000204155.1_ASM20415v1_genomic.gbk tests\\GCA_000204155.1_ASM20415v1_genomic.embl"
-    create_database(command3)
+    test_database(command3)
     print("Finished running combined test...")
     print()
     print("3/3 tests succesfully finished.")
