@@ -162,11 +162,14 @@ class DataBase:
             os.mkdir(TEMP + os.sep + "pickles")
 
         #pickle each contig
+        total_pickles = 0
         for gb_file in self.__gb_files:
             for index, contig in enumerate(gb_file.contigs):
                 with open("{}{}pickles{}{}.pickle".format(TEMP, os.sep, os.sep, index), "wb") as f:
                     pickle.dump(gb_file.contigs[contig], f)
+                    total_pickles += 1
                 index_list.append(set(gb_file.contigs[contig].proteins.keys()))
+        logging.debug("Created {} contig pickles in total.".format(total_pickles))
 
         #write pickle index file
         with open("{}{}{}_database_index.pickle".format(outdir, os.sep, dbname), "wb") as f:

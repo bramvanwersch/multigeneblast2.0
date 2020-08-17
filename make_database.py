@@ -46,6 +46,8 @@ def check_in_file(in_file):
     :raises ArgumentTypeError: when the file does not exist or is not a file or
     has not the correct extension.
     """
+    my_path = os.path.abspath(os.path.dirname(__file__))
+    in_file = os.path.join(my_path, in_file)
     root, ext = os.path.splitext(in_file)
     if not os.path.exists(in_file):
         raise argparse.ArgumentTypeError("No valid path provided for {}".format(in_file))

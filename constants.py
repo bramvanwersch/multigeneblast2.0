@@ -85,7 +85,6 @@ def get_temp_data():
     return temp
 
 #path constants
-MGBPATH = get_mgb_path()
 CURRENTDIR = os.getcwd()
 APPDATA = get_appdata_path()
 TEMP = get_temp_data()

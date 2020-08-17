@@ -23,11 +23,13 @@ import pickle as pickle
 import shutil
 
 #own imports
-from genbank_parsing import GenbankFile
+from databases import GenbankFile
 from visualisation import ClusterCollectionSvg, create_xhtml_file
 from utilities import MultiGeneBlastException, setup_logger, run_commandline_command
 from constants import *
 
+#constant specifically required for mbg
+MGBPATH = get_mgb_path()
 
 def write_fasta(protein_list, file):
     """
