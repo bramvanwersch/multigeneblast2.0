@@ -12,18 +12,17 @@ import argparse
 import logging
 import time
 
-
-from dblib.parse_gbk import parse_gbk_embl, fix_wgs_master_record, fix_supercontig_record
-from dblib.utils import fasta_names, make_blast_db, clean_up, get_accession
-from dblib.generate_genecords_tar import generate_genecords_tar
-from dblib.generate_proteininfo_tar import generate_proteininfo_tar
-
-from genbank_parsing import DataBase
+from databases import DataBase
 from constants import *
 from utilities import MultiGeneBlastException, remove_illegal_characters, setup_logger, run_commandline_command
 
 
 def get_arguments():
+    """
+    Get arguments supplied by the user using argparse
+
+    :return: a list of three values that are the user defined options
+    """
     parser = argparse.ArgumentParser(description='Create a database for offline '
                                                  'search in MultiGeneBlast.')
     parser.add_argument("-i", "-in", help="GBK/EMBL files for creating the "
@@ -40,10 +39,12 @@ def get_arguments():
 
 def check_in_file(in_file):
     """
-    Check if all provided input files have the right extensions
+    Check if a provided input files has the right extensions
 
-    :param files: a list of file locations
-    :return: the original list of files
+    :param in_file: a string path to a file
+    :return: the original file
+    :raises ArgumentTypeError: when the file does not exist or is not a file or
+    has not the correct extension.
     """
     root, ext = os.path.splitext(in_file)
     if not os.path.exists(in_file):
@@ -77,6 +78,13 @@ def check_out_folder(path):
     return path
 
 def write_nal_pal_file(dbname, outdir, dbtype = "prot"):
+    """
+    Write a database alias file so Blast+ programs can acces it.
+
+    :param dbname: a string as name of the database
+    :param outdir: a string as path to the output directory
+    :param dbtype: the type of the database, 'prot' or 'nucl'
+    """
     logging.info("Writing nal/pal file...")
     ext = ".pal"
     if dbtype == "nucl":

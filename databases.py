@@ -86,23 +86,48 @@ def embl_to_genbank(embl_filepath):
     return "\n".join(text_lines)
 
 class DataBase:
+    """
+    Tracks multiple genbank and embl files and can write the output into a format
+    that can be used by MultiGeneBlast
+    """
     def __init__(self, base_path, paths):
         logging.info("Started creating database...")
         #care this is a generator object not a list
         self.__gb_files = self.__read_files(base_path, paths)
 
     def create(self, outdir, dbname):
+        """
+        Create the files for the database using the self.__gb_files genbank
+        objects
+
+        :param outdir: an output directory for the database
+        :param dbname: the name of all files in the output directory
+        """
         self.__write_files(outdir, dbname)
-        self.__create_tar_files(outdir, dbname)
+        self.__create_tar_file(outdir, dbname)
         self.__cleanup_pickles()
 
     def get_fasta(self):
+        """
+        Convenience method for getting the fasta strings from all Genbank Objects
+        :return: a String
+        """
         full_fasta = ""
         for gb_file in self.__gb_files:
             full_fasta += gb_file.fasta_text()
         return full_fasta
 
     def __read_files(self, base_path, paths):
+        """
+        Read a list of files, either genbank or embl and make them into Genbnak
+        objects
+
+        :param base_path: an absolute path to the directory make_database.py was
+        executed from
+        :param paths: a absolute or relative path to all the database files from
+        the make_database.py directory
+        :return: a list of Genbnak objects
+        """
         files = []
         for path in paths:
             #allow relative paths to b
@@ -120,8 +145,15 @@ class DataBase:
         return files
 
     def __write_files(self, outdir, dbname):
+        """
+        Write the contigs of the genbank objects to pickle files.
+
+        :param outdir: an output directory for the database
+        :param dbname: the name of all files in the output directory
+        """
         #TODO think about handling double contigs. I would think not to relevant
         index_list = []
+
         #create a directory for the pickle files, if the directory is there clean it
         try:
             os.mkdir(TEMP + os.sep + "pickles")
@@ -129,22 +161,33 @@ class DataBase:
             shutil.rmtree(TEMP + os.sep + "pickles")
             os.mkdir(TEMP + os.sep + "pickles")
 
-        count = 0
+        #pickle each contig
         for gb_file in self.__gb_files:
-            for contig in gb_file.contigs:
-                with open("{}{}pickles{}{}.pickle".format(TEMP, os.sep, os.sep, count), "wb") as f:
+            for index, contig in enumerate(gb_file.contigs):
+                with open("{}{}pickles{}{}.pickle".format(TEMP, os.sep, os.sep, index), "wb") as f:
                     pickle.dump(gb_file.contigs[contig], f)
-                count += 1
                 index_list.append(set(gb_file.contigs[contig].proteins.keys()))
+
+        #write pickle index file
         with open("{}{}{}_database_index.pickle".format(outdir, os.sep, dbname), "wb") as f:
             pickle.dump(index_list, f)
 
-    def __create_tar_files(self, outdir, dbname):
+    def __create_tar_file(self, outdir, dbname):
+        """
+        Create gzipped tar file to save all the pickled contigs into.
+
+        :param outdir: an output directory for the database
+        :param dbname: the name of all files in the output directory
+        """
         logging.info("Writing to tar file...")
         with tarfile.open("{}{}{}_contigs.tar.gz".format(outdir, os.sep, dbname), "w:gz") as tar:
             tar.add("{}{}pickles".format(TEMP, os.sep), arcname=os.path.basename(dbname))
 
     def __cleanup_pickles(self):
+        """
+        Remove the individual pickle files for all the contigs from the temporary
+        folder
+        """
         logging.debug("Cleaning up pickle files...")
         shutil.rmtree(TEMP + os.sep + "pickles")
 
@@ -178,6 +221,11 @@ class GenbankFile:
 
 
     def fasta_text(self):
+        """
+        Give a fatsa text that is the combined fasta of all proteins in the
+        database
+        :return:
+        """
         text = ""
         for protein in self.proteins.values():
             text += protein.fasta_text()
@@ -227,6 +275,9 @@ class GenbankFile:
 
 
 class Contig:
+    """
+    Acts as abstraction for a contig present in a genbank file
+    """
     def __init__(self, file_text, protein_range=None, allowed_proteins=None):
         gene_defenitions, dna_sequence = file_text.split("\nORIGIN")
         # Extract DNA sequence and calculate complement of it
@@ -571,7 +622,7 @@ class Protein:
         else:
             self.stop = self.start + self.nt_lenght
 
-        #gene name
+        #gene name, this name should be used when comparing proteins.
         self.name = remove_illegal_characters(name)
         self.annotation = remove_illegal_characters(annotation)
 
@@ -581,6 +632,11 @@ class Protein:
         self.contig_description = contig_description
 
     def summary(self):
+        """
+        Give a short string that is a summary of the protein
+
+        :return: a string
+        """
         lt = self.locus_tag
         if self.locus_tag == "":
             lt = "No locus tag"
