@@ -603,8 +603,13 @@ def db_blast(query_proteins, user_options):
     logging.debug("Started blasting against the provided database...")
     db_blast_process = Process(target=run_commandline_command, args=[complete_command])
     db_blast_process.start()
+    start_time = time.time()
+    last_message_time = start_time
     while db_blast_process.is_alive():
-        continue
+        time_passed = time.time() - last_message_time
+        if time_passed > 5:
+            last_message_time = time.time()
+            logging.info("{:.1f} seconds passed. Blasting still in progress.".format(last_message_time - start_time))
     #when the process exits with an error
     if db_blast_process.exitcode != 0:
         raise MultiGeneBlastException("Blasting against the provided database returns multiple errors.")
