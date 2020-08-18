@@ -159,7 +159,7 @@ def main():
     #cleaning up the fasta file
     os.remove(outdir + os.sep + dbname + "_dbbuild.fasta")
     logging.info("Step 7/7: Cleaned up left over files.")
-    logging.info("Database was succesfully created.")
+    logging.info("Database was succesfully created at {}.".format(outdir))
 
 
 if __name__ == "__main__":

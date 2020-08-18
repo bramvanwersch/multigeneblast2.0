@@ -363,7 +363,7 @@ class Contig:
                 self.accession = line.replace("ACCESSION   ","")
             if line.lower().startswith("definition"):
                 self.definition += line.replace("DEFINITION  ", "").strip()
-                for def_line in header_lines[index + 2:]:
+                for def_line in header_lines[index + 1:]:
                     #end of definition line
                     if not def_line.startswith("    "):
                         break

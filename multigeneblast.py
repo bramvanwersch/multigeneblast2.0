@@ -23,7 +23,7 @@ import pickle as pickle
 import shutil
 
 #own imports
-from databases import GenbankFile
+from databases import GenbankFile, embl_to_genbank
 from visualisation import ClusterCollectionSvg, create_xhtml_file
 from utilities import MultiGeneBlastException, setup_logger, run_commandline_command
 from constants import *
@@ -1199,6 +1199,7 @@ def score_clusters(clusters, query_proteins, user_options):
                 blast_result = hit_positions_dict[query_protein]
                 hit_positions.append((index_query_proteins[blast_result.query],
                                      cluster.index(blast_result.subject)))
+            hit_positions.sort()
             synteny_score = score_synteny(hit_positions)
 
         #assign the score
@@ -1495,7 +1496,6 @@ def main():
     #Step 7: Locate blast hits in genome and find clusters
     clusters = find_gene_clusters(blast_dict, user_options, database)
     logging.info("Step 7/11: Finished finding clusters.")
-    #print([len(c.proteins) for c in clusters])
 
     #Step 8: Score Blast output on all loci
     score_clusters(clusters, query_proteins, user_options)
@@ -1525,7 +1525,7 @@ def main():
 
     #Move all files to specified output folder
     move_outputfiles(user_options.outdir, len(page_sizes))
-    logging.info("MultiGeneBlast succesfully finished.")
+    logging.info("MultiGeneBlast succesfully finished. Output can be found at {}.".format(user_options.outdir))
 
 
 if __name__ == '__main__':

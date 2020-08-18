@@ -502,7 +502,8 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
                 html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}" target="_blank">{}</a>\n'.format(protein.locus_tag, protein.locus_tag))
             html_outfile.write("<br/>Location: {}-{}\n".format(protein.start, protein.stop))
             if protein_name in cluster.blast_hit_proteins:
-                for blast_result in cluster.blast_hit_proteins[protein_name]:
+                blast_list = sorted(list(cluster.blast_hit_proteins[protein_name]), key=lambda x: (x.evalue, -x.bit_score))
+                for blast_result in blast_list:
                     html_outfile.write("<br/><br/><b>BlastP hit with {}</b>\n<br/>Percentage identity: {} %\n".format(blast_result.query, blast_result.percent_identity))
                     html_outfile.write("<br/>BlastP bit score: {}\n<br/>Sequence coverage: {:.1f} %\n".format(blast_result.bit_score, blast_result.percent_coverage))
                     html_outfile.write("<br/>E-value: {}\n<br/>".format(blast_result.evalue))
@@ -600,7 +601,8 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
                 html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}" target="_blank">{}</a>\n'.format(protein.locus_tag, protein.locus_tag))
             html_outfile.write("<br/>Location: {}-{}\n".format(protein.start, protein.stop))
             if protein_name in cluster.blast_hit_proteins:
-                for blast_result in cluster.blast_hit_proteins[protein_name]:
+                blast_list = sorted(list(cluster.blast_hit_proteins[protein_name]), key=lambda x: (x.evalue, -x.bit_score))
+                for blast_result in blast_list:
                     html_outfile.write("<br/><br/><b>BlastP hit with {}</b>\n<br/>Percentage identity: {} %\n".format(blast_result.query, blast_result.percent_identity))
                     html_outfile.write("<br/>BlastP bit score: {}\n<br/>Sequence coverage: {:.1f} %\n".format(blast_result.bit_score,blast_result.percent_coverage))
                     html_outfile.write("<br/>E-value: {}\n<br/>".format(blast_result.evalue))
