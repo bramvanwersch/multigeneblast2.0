@@ -11,7 +11,7 @@ import datetime
 ILLEGAL_CHARACTERS = ["'",'"','=',';',':','[',']','>','<','|','\\',"/",'*','-','.',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
 
 
-def setup_logger(outdir, starttime, level=logging.DEBUG):
+def setup_logger(outdir, starttime, level="basic"):
     """
     Function for setting up a logger that will write output to file as well as
     to sdout.
@@ -20,8 +20,16 @@ def setup_logger(outdir, starttime, level=logging.DEBUG):
     log file should end up.
     :param starttime: the time the program was started. The logger is created
     slightly later.
-    :param level: the logging level, default is DEBUG
+    :param level: the logging level, default is basic, meaning all logging.info
+    messages
     """
+
+    if level == "basic":
+        level = logging.INFO
+    elif level == "all":
+        level = logging.DEBUG
+    else:
+        level = logging.WARNING
 
     #if the directory exists simply ignore it, that can be expected
     dir_exists = False
@@ -35,13 +43,14 @@ def setup_logger(outdir, starttime, level=logging.DEBUG):
     if os.path.exists(log_file_loc):
         open(log_file_loc, "w").close()
 
-    #TODO think about making the level a user definable parameter
-    logging.basicConfig(filename=log_file_loc, level=level, format='%(levelname)s: %(asctime)s - %(message)s')
+    logging.basicConfig(filename=log_file_loc, level=logging.DEBUG,
+                        format='%(levelname)s: %(asctime)s - %(message)s')
 
-    #configure a handler that formats the logged events properly and prints the events to file as well as stdout
+    # configure a handler that formats the logged events properly and prints the events to file as well as stdout
     handler = logging.StreamHandler(sys.stdout)
     formatter = MyFormatter('%(levelname)s %(currentTime)s (%(passedTime)s sec) - %(message)s', starttime=starttime)
     handler.setFormatter(formatter)
+    handler.setLevel(level)
     logging.getLogger().addHandler(handler)
 
     logging.debug('Logger created')

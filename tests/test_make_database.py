@@ -6,7 +6,7 @@ import shutil
 from constants import DATABASE_EXTENSIONS
 
 def test_database(command):
-    os.system(command)
+    print("Command exit code: {}".format(os.system(command)))
 
     #make sure that even when chaning directories the directory can be found
     my_path = os.path.abspath(os.path.dirname(__file__))
@@ -24,19 +24,19 @@ def test_database(command):
 
 if __name__ == "__main__":
     #basic command using gbk
-    command1 = "..\\make_database.py -o tests\\test_data_base -n test -i tests\\GCA_000204155.1_ASM20415v1_genomic.gbk"
+    command1 = "..\\make_database.py -o tests\\test_data_base -n test -i tests\\GCA_000204155.1_ASM20415v1_genomic.gbk -inf all"
     test_database(command1)
     print("Finished running gbk test...")
     print()
 
     #command for embl
-    command2 = "..\\make_database.py -o tests\\test_data_base -n test -i tests\\GCA_000204155.1_ASM20415v1_genomic.embl"
+    command2 = "..\\make_database.py -o tests\\test_data_base -n test -i tests\\GCA_000204155.1_ASM20415v1_genomic.embl -inf all"
     test_database(command2)
     print("Finished running embl test...")
     print()
 
     #command for combined
-    command3 = "..\\make_database.py -o tests\\test_data_base -n test -i tests\\GCA_000204155.1_ASM20415v1_genomic.gbk tests\\GCA_000204155.1_ASM20415v1_genomic.embl"
+    command3 = "..\\make_database.py -o tests\\test_data_base -n test -i tests\\GCA_000204155.1_ASM20415v1_genomic.gbk tests\\GCA_000204155.1_ASM20415v1_genomic.embl -inf all"
     test_database(command3)
     print("Finished running combined test...")
     print()

@@ -126,6 +126,7 @@ class Options:
 
         #TODO move this value to a more logical place
         self.screenwidth = 1024
+        self.log_level = arguments.inf
         self.gui = False
 
     def __check_architecture_mode(self):
@@ -217,6 +218,11 @@ def get_arguments():
                                           " (with 50 hits each) to be generated"
                                           " (default: 5)", type=int, default=5,
                         choices=range(1,41), metavar="[1 - 40]")
+    parser.add_argument("-inf", "-information", help="What level of information"
+                                                     "should be printed while"
+                                                     "running the program "
+                                                     "(default: basic).",
+                        choices=("none", "basic", "all"), default="basic")
 
     name_space = parser.parse_args()
 
@@ -1304,6 +1310,7 @@ def write_svg_files(clusters, user_options, query_cluster, blast_dict, page_nr):
     logging.debug("Writing visualization SVGs and XHTML...")
 
     gene_color_dict = calculate_colorgroups(blast_dict, query_cluster)
+
     svg_images = {}
     for index, cluster in enumerate(clusters):
         svg_clusters = [cluster]
@@ -1463,7 +1470,7 @@ def main():
 
     #configure a logger to track what is happening over multiple files, make sure to do this after the
     #option parsing to save the log at the appropriate place(outdir)
-    setup_logger(user_options.outdir, starttime)
+    setup_logger(user_options.outdir, starttime, user_options.log_level)
     logging.info("Step 1/11: Input has been parsed")
 
     #Step 2: Read GBK / EMBL file, select genes from requested region and output FASTA file
@@ -1488,7 +1495,7 @@ def main():
 
     #Step 7: Locate blast hits in genome and find clusters
     clusters = find_gene_clusters(blast_dict, user_options, database)
-    logging.info("Step 7/11: Finished finding clusters.")
+    logging.info("Step 7/11: Finished finding clusters. {} clusters found in total".format(len(clusters)))
 
     #Step 8: Score Blast output on all loci
     score_clusters(clusters, query_proteins, user_options)
@@ -1501,6 +1508,7 @@ def main():
     logging.info("Creating visual output...")
     page_sizes = get_page_sizes(len(clusters), user_options.pages)
     for page_indx, page_size in enumerate(page_sizes):
+        logging.debug("Creating visual information for cluster {} to {}".format(page_indx * HITS_PER_PAGE + 1,  min((page_indx + 1) * HITS_PER_PAGE, len(clusters))))
         page_clusters = clusters[page_indx * HITS_PER_PAGE: min((page_indx + 1) * HITS_PER_PAGE, len(clusters))]
 
         svg_images = write_svg_files(page_clusters, user_options, query_cluster, blast_dict, page_indx + 1)

@@ -34,8 +34,13 @@ def get_arguments():
     parser.add_argument("-o", "-out", help="Optional output folder for the "
                                            "database files.", type=check_out_folder,
                         default=CURRENTDIR + os.sep + "database")
+    parser.add_argument("-inf", "-information", help="What level of information"
+                                                     "should be printed while"
+                                                     "running the program "
+                                                     "(default: basic).",
+                        choices=("none", "basic", "all"), default="basic")
     name_space = parser.parse_args()
-    return name_space.n, name_space.o, name_space.i
+    return name_space.n, name_space.o, name_space.i, name_space.inf
 
 def check_in_file(in_file):
     """
@@ -122,10 +127,10 @@ def main():
 
     starttime = time.time()
     #parse options
-    dbname, outdir, inputfiles = get_arguments()
+    dbname, outdir, inputfiles, log_level = get_arguments()
 
     #setup a logger
-    setup_logger(outdir, starttime)
+    setup_logger(outdir, starttime, level=log_level)
     logging.info("Step 1/6: Parsed options.")
 
     #make sure to clear all files in the destination folder that have the same
