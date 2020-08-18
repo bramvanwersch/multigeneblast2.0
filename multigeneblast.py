@@ -23,9 +23,9 @@ import pickle as pickle
 import shutil
 
 #own imports
-from databases import GenbankFile, embl_to_genbank
+from databases import GenbankFile, embl_to_genbank, Protein
 from visualisation import ClusterCollectionSvg, create_xhtml_file
-from utilities import MultiGeneBlastException, setup_logger, run_commandline_command
+from utilities import MultiGeneBlastException, setup_logger, run_commandline_command, remove_illegal_characters
 from constants import *
 
 #constant specifically required for mbg
@@ -33,13 +33,11 @@ MGBPATH = get_mgb_path()
 
 def write_fasta(protein_list, file):
     """
-    Write a fasta file using a list of Protein objects to the Temp directory of
-    the operating system
+    Write a fasta file using a list of Protein objects to the current directory
 
     :param protein_list: a list of Protein objects
     :param file: the output file
     """
-    #the working directory is set to a temporary directory
     try:
        with open(file,"w") as out_file:
             for prot in protein_list:
@@ -427,8 +425,8 @@ def query_proteins_from_fasta(fasta_file):
     query_proteins = {}
     for entry_name in fasta_entries:
         sequence = fasta_entries[entry_name]
-        entry_protein = Protein(sequence, total_lenght, entry_name, "+", start_header="input|c1")
-        query_proteins[protein.name] = entry_protein
+        entry_protein = Protein(sequence, total_lenght, entry_name, "+")
+        query_proteins[entry_protein.name] = entry_protein
 
         #TODO figure out why the +100. I assume for drawing
         total_lenght += entry_protein.nt_lenght + 100
@@ -452,7 +450,7 @@ def internal_blast(user_options, query_proteins):
     #Make Blast db for using the sequences saved in query.fasta in the previous step
     #TODO when running this again after a crash with a different database, a new database
     # is not created. This is problematic because it can lead to inconsistent nameing
-    make_blast_db_command = "{}\\exec_new\\makeblastdb.exe -in query.fasta -out query_db -dbtype prot".format(CURRENTDIR)
+    make_blast_db_command = "{}\\exec_new\\makeblastdb.exe -in query.fasta -out query_db -dbtype prot".format(MGBPATH)
     logging.debug("Started making internal blast database...")
     try:
         run_commandline_command(make_blast_db_command, max_retries=5)
@@ -463,7 +461,7 @@ def internal_blast(user_options, query_proteins):
     #Run and parse BLAST search
     blast_search_command = "{}\\exec_new\\blastp.exe  -db query_db -query query.fasta -outfmt 6" \
                            " -max_target_seqs 1000 -evalue 1e-05 -out internal_input.out" \
-                           " -num_threads {}".format(CURRENTDIR, user_options.cores)
+                           " -num_threads {}".format(MGBPATH, user_options.cores)
 
     logging.debug("Running internal blastp...")
     try:
@@ -593,9 +591,9 @@ def db_blast(query_proteins, user_options):
     """
     logging.info("Running NCBI BLAST+ searches on the provided database {}..".format(user_options.db))
     if user_options.dbtype == "prot":
-        command_start = "{}\\exec_new\\blastp.exe".format(CURRENTDIR)
+        command_start = "{}\\exec_new\\blastp.exe".format(MGBPATH)
     else:
-        command_start = "{}\\exec_new\\tblastn.exe".format(CURRENTDIR)
+        command_start = "{}\\exec_new\\tblastn.exe".format(MGBPATH)
 
     complete_command = "{} -db {} -query {}\\query.fasta -outfmt 6 -max_target_seqs" \
                        " {} -evalue 1e-05 -out {}\\input.out -num_threads {}"\
@@ -921,6 +919,7 @@ def find_blast_clusters(hits_per_contig, query_per_blast_hit, extra_distance):
             index += 1
         #make sure to add the final cluster
         c = Cluster(start - extra_distance, scaffold_proteins[index].stop + extra_distance, scaffold_proteins[index].contig_id, scaffold_proteins[index].contig_description)
+        blast_hits.append(scaffold_proteins[index])
         for hit in blast_hits:
             for result in query_per_blast_hit[hit.name]:
                 c.add_protein(hit, result)
@@ -1246,7 +1245,7 @@ def write_txt_output(query_proteins, clusters, blast_output, user_options):
     - '>' signifies the start of a table followed by the descriptor of what is in
     the table. The first line of the table should always be the header.
     - '<' indicates the end of a table
-    - '-' indicates a piece of information, taht can be gerarded as general
+    - '-' indicates a piece of information, that can be regarded as general
     facts of a certain header
     """
     logging.info("Writing .mgb output file into {}...".format(os.path.join(user_options.outdir, "clusterblast_output.mgb")))
@@ -1406,23 +1405,11 @@ def move_outputfiles(outdir, pages):
             shutil.move("displaypage{}.xhtml".format(page_nr), outdir + os.sep + "visual" + os.sep + "displaypage{}.xhtml".format(page_nr))
         except:
             pass
-    filestomove = ["fasta"]
-    for f in filestomove:
-        try:
-            os.remove(outdir + os.sep + f)
-        except:
-            try:
-                shutil.rmtree(outdir + os.sep + f)
-            except:
-                pass
-        try:
-            shutil.move(f, outdir + os.sep + f)
-        except:
-            pass
 
     #copy visual files and folders for the xhtml page
     filestocopy = ["style.css", "jquery.svg.js", "jquery-1.4.2.min.js", "jquery.svgdom.js"]
     for f in filestocopy:
+        #make sure to remove original files
         try:
             os.remove(outdir + os.sep + "visual" + os.sep + f)
         except:
@@ -1431,6 +1418,7 @@ def move_outputfiles(outdir, pages):
 
     folderstocopy = ["images"]
     for f in folderstocopy:
+        #make sure to remove original files
         try:
             shutil.rmtree(outdir + os.sep + "visual" + os.sep + f)
         except:
@@ -1462,14 +1450,14 @@ def main():
     #if the GUI is active or not.
 
     #set the current directory to the temporary directory
-    os.chdir(TEMP)
+    setup_temp_folder()
     starttime = time.time()
 
     #Step 1: parse options into an Option Object
     user_options = get_arguments()
 
     #configure a logger to track what is happening over multiple files, make sure to do this after the
-    #option parsing to save the log at the appropriate place
+    #option parsing to save the log at the appropriate place(outdir)
     setup_logger(user_options.outdir, starttime)
     logging.info("Step 1/11: Input has been parsed")
 
@@ -1503,7 +1491,7 @@ def main():
 
     #step 9: write the results to a text file
     write_txt_output(query_proteins, clusters, blast_output, user_options)
-    logging.info("Step 9/11: Results have been written to a text file.")
+    logging.info("Step 9/11: Results have been written to the mgb file.")
 
     logging.info("Creating visual output...")
     page_sizes = get_page_sizes(len(clusters), user_options.pages)
@@ -1526,6 +1514,23 @@ def main():
     #Move all files to specified output folder
     move_outputfiles(user_options.outdir, len(page_sizes))
     logging.info("MultiGeneBlast succesfully finished. Output can be found at {}.".format(user_options.outdir))
+
+
+def setup_temp_folder():
+    """
+    Setup a the working directory for MultiGeneBlast. This directory is emptied
+    when starting MultiGeneblast
+    """
+    mgb_temp_folder = TEMP + os.sep + "mgb_temp"
+    try:
+        shutil.rmtree(mgb_temp_folder)
+    except:
+        pass
+    try:
+        os.mkdir(mgb_temp_folder)
+    except:
+        pass
+    os.chdir(mgb_temp_folder)
 
 
 if __name__ == '__main__':

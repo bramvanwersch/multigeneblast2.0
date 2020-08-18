@@ -40,7 +40,7 @@ def setup_logger(outdir, starttime, level=logging.DEBUG):
 
     #configure a handler that formats the logged events properly and prints the events to file as well as stdout
     handler = logging.StreamHandler(sys.stdout)
-    formatter = MyFormatter('%(currentTime)s (%(passedTime)s sec) - %(message)s', starttime=starttime)
+    formatter = MyFormatter('%(levelname)s %(currentTime)s (%(passedTime)s sec) - %(message)s', starttime=starttime)
     handler.setFormatter(formatter)
     logging.getLogger().addHandler(handler)
 
