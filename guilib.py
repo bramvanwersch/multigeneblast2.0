@@ -21,6 +21,8 @@ from dblib.parse_gbk import parse_gbk_embl, nucparse_gbk_embl_fasta
 from dblib.utils import fasta_names, make_blast_db, clean_up, get_accession
 from dblib.generate_genecords_tar import generate_genecords_tar
 from dblib.generate_proteininfo_tar import generate_proteininfo_tar
+
+from utilities import ILLEGAL_CHARACTERS
 # import makegbdb
 # import makegbndb
 
@@ -531,63 +533,6 @@ class GenBankFileDownload(Frame):
     def _cancel(self, event=None):
         self.modalPane.destroy()
 
-class OutputFolderSelectionFrame(Frame):
-  
-    def __init__(self, master, positions, initialDir):
-        Frame.__init__(self, master)   
-        self.master = master
-        self.positions = positions
-        self.initialDir = initialDir
-        self.initUI()
-      
-    def select(self):
-        selected = tkinter.filedialog.askdirectory(initialdir=self.initialDir, mustexist=False)
-        if selected != None and selected != "":
-          if sys.platform == ('linux2') and selected[0] != os.sep:
-              showerror("Error", "Please supply the full path of the folder.")
-              return
-          if sys.platform == ('win32') or sys.platform == ('linux2'):
-            while os.path.exists(selected):
-              showerror("Error", "Please change the directory name to select a new directory instead of an existing one.")
-              selected = tkinter.filedialog.askdirectory(initialdir=self.initialDir, mustexist=False)
-              try:
-                os.mkdir(selected)
-                shutil.rmtree(selected)
-              except:
-                showerror("Error", "No permission to write to this folder. Please choose a directory in which you have writing permissions.")
-                selected = tkinter.filedialog.askdirectory(initialdir=self.initialDir, mustexist=False)
-          else:
-            while len(os.listdir(selected)) > 0:
-              showerror("Error", "Please change the directory name to select a new directory instead of an existing one.")
-              selected = tkinter.filedialog.askdirectory(initialdir=self.initialDir, mustexist=False)
-          self.folder_entry.config(state=NORMAL)
-          self.selected.set(selected)
-          self.folder_entry.config(state=DISABLED)
-
-    def initUI(self):
-        self.grid(row=self.positions[0],column=self.positions[1], sticky=S)
-        self.selected = StringVar()
-        self.selected.set("<Select output folder>")
-        self.folder_entry = Entry(self, textvariable=self.selected, width=31, state=DISABLED)
-        self.folder_entry.grid(row=0,column=0)
-        self.folder_entry.bind("<FocusOut>", self.OnValidate)
-        self.folder_entry.bind("<Return>", self.OnValidate)
-        selectionBox = Button(self, text="Select", command=self.select)
-        selectionBox.grid(row=0,column=1)
-        
-    def OnValidate(self, val):
-        if self.selected.get() != None and self.selected.get() != "<Select output folder>":
-          selectedgenes = self.selected.get()
-          self.folder_entry.config(state=NORMAL)
-          self.selected.set(selectedgenes)
-          self.folder_entry.config(state=DISABLED)
-        else:
-          self.folder_entry.config(state=NORMAL)
-          self.selected.set("<Select output folder>")
-          self.folder_entry.config(state=DISABLED)
-
-    def getfolder(self):
-        return self.selected.get()
 
 class GeneSelectionFrame(Frame):
   
@@ -619,8 +564,7 @@ class GeneSelectionFrame(Frame):
         selectionBox.grid(row=0,column=1)
         
     def OnValidate(self, val):
-        forbiddencharacters = ["'",'"','=',':','[',']','>','<','|','\\',"/",'*',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
-        for char in forbiddencharacters:
+        for char in ILLEGAL_CHARACTERS:
           if self.selected.get() != "<Select genes>":
             if char in self.selected.get():
               showerror("Error", "Forbidden character found in specified locus tag: " + char)

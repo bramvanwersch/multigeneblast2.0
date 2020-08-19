@@ -28,9 +28,8 @@ def get_mgb_path():
         except:
             pass
     try:
-        if  mgb_path == "" and os.sep in sys.argv[0] and "read_input_gui.py" in os.listdir(sys.argv[0].rpartition(os.sep)[0]) and "guilib.py" in os.listdir(sys.argv[0].rpartition(os.sep)[0]):
+        if  mgb_path == "" and os.sep in sys.argv[0] and "guilib.py" in os.listdir(sys.argv[0].rpartition(os.sep)[0]):
             mgb_path = sys.argv[0].rpartition(os.sep)[0]
-            os.chdir(mgb_path)
     except:
         pass
     if mgb_path == "":

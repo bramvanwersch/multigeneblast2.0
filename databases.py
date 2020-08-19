@@ -277,7 +277,6 @@ class GenbankFile:
         return contigs
 
 
-
 class Contig:
     """
     Acts as abstraction for a contig present in a genbank file

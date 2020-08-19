@@ -8,6 +8,7 @@
 import sys
 import os
 from multiprocessing import freeze_support
+import subprocess
 
 #Find path to mgb files if run from another directory
 pathfolders = os.environ['PATH'].split(os.pathsep)
@@ -25,12 +26,16 @@ from tkinter.messagebox import askyesno, showerror, showinfo
 from tkinter.ttk import Frame, Label, Scale, Style
 import webbrowser
 from guilib import *
-from multigeneblast import *
+from multigeneblast import main
 import time
 import urllib.request, urllib.error, urllib.parse
 import tarfile
 import traceback
+
+from databases import GenbankFile, embl_to_genbank
 from constants import *
+
+MGBPATH = get_mgb_path()
 
 
 def read_input_file_gui(path):
@@ -46,7 +51,7 @@ def read_input_file_gui(path):
             gbf = GenbankFile(path=path)
             genes = list(gbf.proteins.keys())
             dna_seq_lenght = gbf.lenght
-        except MultiGeneBlastException as e:
+        except Exception as e:
             showerror("Reading file error", str(e))
 
     elif ext.lower() in EMBL_EXTENSIONS:
@@ -55,7 +60,7 @@ def read_input_file_gui(path):
             gbf = GenbankFile(file_text=gb_file_text)
             genes = list(gbf.proteins.keys())
             dna_seq_lenght = gbf.lenght
-        except MultiGeneBlastException as e:
+        except Exception as e:
             showerror("Reading file error", str(e))
     return genes, dna_seq_lenght
 
@@ -517,8 +522,13 @@ class MainMultiGeneBlastGui(Frame):
 
         self.__database_file_label = StringVar()
         self.database_file_path = ""
+
         self.__input_file_label = StringVar()
         self.input_file_path = ""
+
+        self.__outdir_label = StringVar()
+        self.outdir_path = ""
+
         self.searchtype = StringVar()
 
         #innitiate the widgets of the main window
@@ -577,7 +587,7 @@ class MainMultiGeneBlastGui(Frame):
         if "genbank_mf.pal" in os.listdir("."):
             self.__database_file_label.set((os.getcwd() + os.sep + "genbank_mf").replace("\\", "/"))
         else:
-            self.__database_file_label.set("<Nodatabase selected>")
+            self.__database_file_label.set("<No database selected>")
         database_label = Label(self.main_window_frame, text = "Current database:")
         database_label.grid(row=1, column=0)
         database_text = Label(self.main_window_frame, textvariable = self.__database_file_label)
@@ -596,50 +606,53 @@ class MainMultiGeneBlastGui(Frame):
         infile_button = Button(self.main_window_frame, text = "Open input file", command=self.file_open)
         infile_button.grid(row=2,column=2)
 
+        # Output folder name
+        self.__outdir_label.set("<No output directory selected>")
+        text5 = Label(self.main_window_frame, text="Output folder name:")
+        text5.grid(row=3, column=0, sticky=N)
+        outdir_label = Label(self.main_window_frame, textvariable=self.__outdir_label)
+        outdir_label.grid(row=3, column=1, sticky=N)
+        outdir_button = Button(self.main_window_frame, text="Select the output folder", command=self.select_out_folder)
+        outdir_button.grid(row=3, column=2, sticky=N)
+        # self.outputfolder = OutputFolderSelectionFrame(self.main_window_frame, [9, 1], USERDIR)
+
         self.searchtype.set("homology")
         self.geneslist = []
         self.dnaseqlength = 0
 
-
         # Search type radio buttons
         space1 = Label(self.main_window_frame, text="\n")
-        space1.grid(row=3, column=0, columnspan=2)
+        space1.grid(row=4, column=0, columnspan=2)
         homradio = Radiobutton(self.main_window_frame, text="Homology search", variable=self.searchtype,
                                command=self.setup_search_type_widgets, value="homology")
-        homradio.grid(row=4, column=0)
+        homradio.grid(row=5, column=0)
         archradio = Radiobutton(self.main_window_frame, text="Architecture search", variable=self.searchtype,
                                 command=self.setup_search_type_widgets, value="architecture")
-        archradio.grid(row=4, column=1)
+        archradio.grid(row=5, column=1)
         homradio.select()
 
         space2 = Label(self.main_window_frame, text="\n")
-        space2.grid(row=5, column=0, columnspan=2)
+        space2.grid(row=6, column=0, columnspan=2)
 
         # Start nt selection
-        self.text2 = Label(self.main_window_frame,
-                           text="Nucleotide start position of fragment to search:")
-        self.text2.grid(row=6, column=0, sticky=N)
-        self.cstart = ScaleBar(self.main_window_frame, self, [6, 1], 0, self.dnaseqlength, 0,
+        self.text2 = Label(self.main_window_frame, text="Nucleotide start position of fragment to search:")
+        self.text2.grid(row=7, column=0, sticky=N)
+        self.cstart = ScaleBar(self.main_window_frame, self, [7, 1], 0, self.dnaseqlength, 0,
                                resetgenes="y")
 
         # End nt selection
         self.text3 = Label(self.main_window_frame,
                            text="Nucleotide end position of fragment to search:")
-        self.text3.grid(row=7, column=0)
-        self.cend = ScaleBar(self.main_window_frame, self, [7, 1], 0, self.dnaseqlength,
+        self.text3.grid(row=8, column=0)
+        self.cend = ScaleBar(self.main_window_frame, self, [8, 1], 0, self.dnaseqlength,
                              self.dnaseqlength, resetgenes="y")
 
         # Genes selection
         self.text4 = Label(self.main_window_frame,
                            text="\nOr genes to search (locus tags / accession numbers):")
-        self.text4.grid(row=8, column=0, sticky=N)
-        self.selectedgenes = GeneSelectionFrame(self.main_window_frame, self, [8, 1],
+        self.text4.grid(row=9, column=0, sticky=N)
+        self.selectedgenes = GeneSelectionFrame(self.main_window_frame, self, [9, 1],
                                                 self.geneslist)
-
-        # Output folder name
-        text5 = Label(self.main_window_frame, text="\nOutput folder name:")
-        text5.grid(row=9, column=0, sticky=N)
-        self.outputfolder = OutputFolderSelectionFrame(self.main_window_frame, [9, 1], USERDIR)
 
         # Number of cores to use
         text6 = Label(self.main_window_frame, text="\nNumber of CPU cores to be used:")
@@ -692,25 +705,24 @@ class MainMultiGeneBlastGui(Frame):
         space3 = Label(self.main_window_frame, text="   ")
         space3.grid(row=18, column=0, columnspan=2)
 
-
         #Run button to start analysis
-        button = Button(self.main_window_frame, text="Run MultiGeneBlast",) #command=lambda : runmgb(frame, __input_file_label.get(), str(SearchPrefs.cstart.getval()), str(SearchPrefs.cend.getval()), SearchPrefs.selectedgenes.getval(), SearchPrefs.outputfolder.getfolder(), __database_file_label.get(), SearchPrefs.cores.getval(), SearchPrefs.seqcov.getval(), SearchPrefs.pid.getval(), SearchPrefs.distancekb.getval(), SearchPrefs.pages.getval(), SearchPrefs.muscle.getval(), SearchPrefs.getsearchtype(), SearchPrefs.hitspergene.getval(), SearchPrefs.syntenyweight.getval()))
+        button = Button(self.main_window_frame, text="Run MultiGeneBlast", command=self.run_multigeneblast)
         button.grid(row=20,column=0)
 
     def setup_search_type_widgets(self):
         if self.searchtype.get() == "homology":
             self.__input_file_label.set("<No file selected>")
             if len(list(self.text2.grid_info().keys())) == 0:
-                self.text2.grid(row=6, column=0)
-                self.text3.grid(row=7, column=0)
-                self.text4.grid(row=8, column=0)
-                self.cstart = ScaleBar(self.main_window_frame, self, [6, 1], 0,
+                self.text2.grid(row=7, column=0)
+                self.text3.grid(row=8, column=0)
+                self.text4.grid(row=9, column=0)
+                self.cstart = ScaleBar(self.main_window_frame, self, [7, 1], 0,
                                        self.dnaseqlength, 0, resetgenes="y")
-                self.cend = ScaleBar(self.main_window_frame, self, [7, 1], 0,
+                self.cend = ScaleBar(self.main_window_frame, self, [8, 1], 0,
                                      self.dnaseqlength, self.dnaseqlength,
                                      resetgenes="y")
                 self.selectedgenes = GeneSelectionFrame(self.main_window_frame, self,
-                                                        [8, 1], self.geneslist)
+                                                        [9, 1], self.geneslist)
         elif self.searchtype.get() == "architecture":
             self.__input_file_label.set("<No file selected>")
             if len(list(self.text2.grid_info().keys())) > 0:
@@ -753,7 +765,6 @@ class MainMultiGeneBlastGui(Frame):
         else:
             location = tkinter.filedialog.askopenfilename(filetypes=(("FASTA files", ('*.fasta', '*.fas', '*.fa')),
                                                                      ("All file types", ('*.*'))))
-
             # when canceling
             if location == "":
                 return
@@ -765,7 +776,7 @@ class MainMultiGeneBlastGui(Frame):
         if len(location) > 50:
             display_location = "{}...".format(location[:47])
         self.__input_file_label.set(display_location)
-        self.input_file_path = location
+        self.input_file_path = location.replace("/", os.sep)
 
     def db_open(self):
         location = tkinter.filedialog.askopenfilename(filetypes=(("MGB database files",('*.pal','*.nal')),("MGB database",())))
@@ -788,15 +799,109 @@ class MainMultiGeneBlastGui(Frame):
         if len(location) > 50:
             display_location = "{}...".format(location[:47])
         self.__database_file_label.set(display_location)
-        self.database_file_path = location
+        self.database_file_path = location.replace("/", os.sep)
+
+    def select_out_folder(self):
+        selected = tkinter.filedialog.askdirectory(mustexist=False)
+        if selected == "":
+            return
+        dir_files = os.listdir(selected)
+        #if files in the directory make a directory in the directory
+        if len(dir_files) > 0:
+            #generate a unique name
+            count = 1
+            name = "MultiGeneBlast_out{}".format(count)
+            while name in dir_files:
+                count += 1
+                name = "MultiGeneBlast_out{}".format(count)
+            try:
+                os.mkdir(selected + os.sep + name)
+            except:
+                showerror("Error", "No permission to write to this folder. "
+                    "Please choose a directory in which you have writing permissions.")
+                self.select_out_folder()
+            selected = selected + "/" + name
+        #if not files are present test if you can write in the folder
+        else:
+            #easier to ask forgiveniss then permission
+            try:
+                with open(selected + os.sep + "test.txt", "w") as f:
+                    f.write("test")
+                os.remove(selected + os.sep + "test.txt")
+            except PermissionError:
+                showerror("Error", "No permission to write to this folder. "
+                    "Please choose a directory in which you have writing permissions.")
+                self.select_out_folder()
+        display_selected = selected
+        if len(selected) > 50:
+            display_selected = "{}...".format(selected[:47])
+        self.__outdir_label.set(display_selected)
+        self.outdir_path = selected.replace("/", os.sep)
 
 
+    def run_multigeneblast(self):
+        #first check if in database and out are defined
+        if self.input_file_path == "" or self.database_file_path == "" or  self.outdir_path == "":
+            showerror("Input incomplete Error", "Please fill in the input query file, the database file and the output directory")
+            return
+
+        #if there are genes selected use genes, otherwise use locations
+        filter_options = ""
+        if self.searchtype.get() == "homology":
+            genes = self.selectedgenes.getval().split(";")
+            if len(genes) > 1:
+                for gene in genes:
+                    if gene not in self.geneslist:
+                        showerror("Input Error", "Invalid gene name {} in the provided list of genes".format(gene))
+                        return
+                filter_options = "-g {} ".format(" ".join(genes))
+            else:
+                start = self.cstart.getval()
+                end = self.cend.getval()
+                if end <= start:
+                    showerror("Input Error", "Start location has to be smaller then end location")
+                    return
+                filter_options = "-f {} -t {} ".format(start, end)
+
+
+        base_command = "{}{}multigeneblast.py ".format(MGBPATH, os.sep)
+
+        #change some values to adhere to the correct format of the command line tool
+        if self.muscle.getval() == 0:
+            muscle_val = "n"
+        else:
+            muscle_val = "y"
+        nr_pages = self.pages.getval() / HITS_PER_PAGE
+        if self.pages.getval() % HITS_PER_PAGE == 0:
+            nr_pages = int(nr_pages)
+        else:
+            nr_pages = int(nr_pages) + 1
+
+        general_options = "-in {} -db {} -out {} -c {} -hpg {} -msc {} -dkb {} -mpi {} -m {} -sw {} -op {}".format(self.input_file_path,
+            self.database_file_path, self.outdir_path, self.cores.getval(), self.hitspergene.getval(), self.seqcov.getval(),
+            self.distancekb.getval(), self.pid.getval(), muscle_val, self.syntenyweight.getval(), nr_pages)
+        full_command = base_command + filter_options + general_options
+        self.run_multigeneblast_command(full_command)
+
+    def run_multigeneblast_command(self, command):
+        #create a place to push messages to
+        outbox = MessageBox(frame=self, title="Running MultiGeneBlast...")
+        self.update()
+        try:
+            popen = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
+        except:
+            showerror("Running Error", "While running MultiGeneBlast something "
+                    "went wrong. Check the log file to see what happened.")
+        lines_iterator = iter(popen.stdout.readline, b"")
+        while popen.poll() is None:
+            for line in lines_iterator:
+                outbox.text_insert(line)
+                self.update()
 
 def maingui():
 
-    # os.environ['PYTHON'] = os.path.dirname(os.path.abspath(__file__)) + os.sep + "python"
-    # os.environ['EXEC'] = os.path.dirname(os.path.abspath(__file__)) + os.sep + "exec"
-    # os.environ['PATH'] = os.environ['EXEC'] + os.pathsep + os.environ['PYTHON'] + os.pathsep + os.environ['PATH']
+    #to ensure that the MGB directory can be located
+    # os.environ['PATH'] = os.getcwd() + os.pathsep + os.environ['PATH']
 
     root = Tk()
     if sys.platform == ('win32'):
