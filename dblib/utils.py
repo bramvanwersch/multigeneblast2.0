@@ -104,14 +104,14 @@ def makeblastdb(dbname, infile, dbtype):
   output = output.stdout.read()
   if "Error" in str(output):
     if "it is empty" in output:
-      print("Error making BLAST database; no suitable sequences found in input.")
-      log("Error making BLAST database; no suitable sequences found in input.", exit=True)
+      print("Error making BLAST __database_file_label; no suitable sequences found in input.")
+      log("Error making BLAST __database_file_label; no suitable sequences found in input.", exit=True)
     else:
-      print("Error making BLAST database.")
-      log("Error making BLAST database.", exit=True)
+      print("Error making BLAST __database_file_label.")
+      log("Error making BLAST __database_file_label.", exit=True)
 
 def make_blast_db(dbname, infile, frame=None, GUI="n", dbtype="prot"):
-  #print "Constructing Blast+ database"
+  #print "Constructing Blast+ __database_file_label"
   makeblastdbprocess = Process(target=makeblastdb, args=[dbname, infile, dbtype])
   makeblastdbprocess.start()
   while True:
@@ -170,7 +170,7 @@ def clean_up(dbname, frame=None, outbox=None, GUI="n", exit=False, dbtype="prot"
       palfile.close()
     except:
       if GUI == "y":
-        outbox.text_insert("Failure in generating NAL/PAL file for database\n")
+        outbox.text_insert("Failure in generating NAL/PAL file for __database_file_label\n")
   if GUI == "y":
     frame.update()
   if "proteininfo" in os.listdir("."):

@@ -91,16 +91,16 @@ class DataBase:
     that can be used by MultiGeneBlast
     """
     def __init__(self, base_path, paths):
-        logging.info("Started creating database...")
+        logging.info("Started creating __database_file_label...")
         #care this is a generator object not a list
         self.__gb_files = self.__read_files(base_path, paths)
 
     def create(self, outdir, dbname):
         """
-        Create the files for the database using the self.__gb_files genbank
+        Create the files for the __database_file_label using the self.__gb_files genbank
         objects
 
-        :param outdir: an output directory for the database
+        :param outdir: an output directory for the __database_file_label
         :param dbname: the name of all files in the output directory
         """
         self.__write_files(outdir, dbname)
@@ -124,7 +124,7 @@ class DataBase:
 
         :param base_path: an absolute path to the directory make_database.py was
         executed from
-        :param paths: a absolute or relative path to all the database files from
+        :param paths: a absolute or relative path to all the __database_file_label files from
         the make_database.py directory
         :return: a list of Genbnak objects
         """
@@ -148,7 +148,7 @@ class DataBase:
         """
         Write the contigs of the genbank objects to pickle files.
 
-        :param outdir: an output directory for the database
+        :param outdir: an output directory for the __database_file_label
         :param dbname: the name of all files in the output directory
         """
         #TODO think about handling double contigs. I would think not to relevant
@@ -179,7 +179,7 @@ class DataBase:
         """
         Create gzipped tar file to save all the pickled contigs into.
 
-        :param outdir: an output directory for the database
+        :param outdir: an output directory for the __database_file_label
         :param dbname: the name of all files in the output directory
         """
         logging.info("Writing to tar file...")
@@ -221,12 +221,13 @@ class GenbankFile:
             raise MultiGeneBlastException("One of the three options; path, file_text,"
                                           " or contigs need to be selected")
         self.proteins = self.__list_proteins() #an OrderedDict.
+        self.lenght = sum(con.lenght for con in self.contigs.values())
 
 
     def fasta_text(self):
         """
         Give a fatsa text that is the combined fasta of all proteins in the
-        database
+        __database_file_label
         :return:
         """
         text = ""
@@ -286,6 +287,8 @@ class Contig:
         # Extract DNA sequence and calculate complement of it
         dna_sequence = clean_dna_sequence(dna_sequence)
         c_dna_sequence = complement(dna_sequence)
+
+        self.lenght = len(dna_sequence)
 
         # Extract gene information
         gene_information = gene_defenitions.split("     CDS             ")

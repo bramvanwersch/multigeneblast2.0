@@ -18,7 +18,7 @@ def test_database(command):
     for file in expected_files:
         assert file in db_folder_list
 
-    #make sure to remove the database
+    #make sure to remove the __database_file_label
     shutil.rmtree(db_folder)
 
 

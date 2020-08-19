@@ -5,7 +5,7 @@
 ## License: GNU General Public License v3 or later
 ## A copy of GNU GPL v3 should have been included in this software package in LICENSE.txt.
 
-#Main script that allows downloading and reformatting of (parts of the) GenBank database for MultiGeneBlast
+#Main script that allows downloading and reformatting of (parts of the) GenBank __database_file_label for MultiGeneBlast
 
 import sys
 import os
@@ -51,7 +51,7 @@ def main():
     args = args[2:]
     #Checks to prevent overwriting
     if dbname + ".nal" in os.listdir(".") or dbname + ".pal" in os.listdir("."):
-      print("Error: a database with this name already exists")
+      print("Error: a __database_file_label with this name already exists")
       sys.exit()
     if "genbank" in os.listdir("."):
       print("A folder named 'genbank' (which is used by MultiGeneBlast to store downloaded GenBank files) is already present in this folder.\n Overwrite? <y/n>")
@@ -89,11 +89,11 @@ def main():
   #Write txt file of names from combined FASTA file
   fasta_names(dbname + "_all.fasta", dbname + "_all.txt")
 
-  #Create Blast database and TAR archives
+  #Create Blast __database_file_label and TAR archives
   try:
     if "\n" not in open(dbname + "_all.fasta","r").read(10000):
-      print("Error making BLAST database; no suitable sequences found in input.")
-      log("Error making BLAST database; no suitable sequences found in input.", exit=True)
+      print("Error making BLAST __database_file_label; no suitable sequences found in input.")
+      log("Error making BLAST __database_file_label; no suitable sequences found in input.", exit=True)
   except:
     pass
   make_blast_db(dbname, dbname + "_all.fasta", dbtype="nucl")
@@ -151,10 +151,10 @@ def gui_runmgbndb(args, dbname):
     #Write txt file of names from combined FASTA file
     fasta_names(dbname + "_all.fasta", dbname + "_all.txt")
 
-    #Create Blast database and TAR archives
+    #Create Blast __database_file_label and TAR archives
     if "\n" not in open(dbname + "_all.fasta","r").read(10000):
-      print("Error making BLAST database; no suitable sequences found in input.")
-      log("Error making BLAST database; no suitable sequences found in input.", exit=True)
+      print("Error making BLAST __database_file_label; no suitable sequences found in input.")
+      log("Error making BLAST __database_file_label; no suitable sequences found in input.", exit=True)
     make_blast_db(dbname, dbname + "_all.fasta", dbtype="nucl")
 
     #Clean up

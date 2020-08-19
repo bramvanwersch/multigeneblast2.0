@@ -21,7 +21,8 @@ def get_mgb_path():
     mgb_path = ""
     for folder in pathfolders:
         try:
-            if "read_input_gui.py" in os.listdir(folder) and "guilib.py" in os.listdir(folder) and "empty.xhtml" in os.listdir(folder) and "multigeneblast.py" in os.listdir(folder) and "mgb_gui.py" in os.listdir(folder):
+            # print(os.listdir(folder))
+            if "guilib.py" in os.listdir(folder) and "multigeneblast.py" in os.listdir(folder) and "mgb_gui.py" in os.listdir(folder):
                 mgb_path = folder
                 break
         except:

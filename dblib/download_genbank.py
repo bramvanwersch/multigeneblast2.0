@@ -5,7 +5,7 @@
 ## License: GNU General Public License v3 or later
 ## A copy of GNU GPL v3 should have been included in this software package in LICENSE.txt.
 
-#Script that retrieves GenBank database from NCBI
+#Script that retrieves GenBank __database_file_label from NCBI
 from ftplib import FTP
 import os
 import sys
@@ -52,7 +52,7 @@ def parse_options(dbname, args):
     print("""
     InputError: No arguments provided.
 
-    Please supply a database name and one or more GBK types as arguments:
+    Please supply a __database_file_label name and one or more GBK types as arguments:
     BCT   bacterial sequences
     PLN   plant/fungal/algal sequences
     PHG   bacteriophage sequences
@@ -62,9 +62,9 @@ def parse_options(dbname, args):
     WGS   whole-genome shotgun sequences
     CON   assembly data
 
-    Example: python download_genbank.py <database name> BCT PAT WGS\n
+    Example: python download_genbank.py <__database_file_label name> BCT PAT WGS\n
     """)
-    default = input("Use default GBK types BCT, CON, WGS and default database name 'genbank_mf'? (y/n)")
+    default = input("Use default GBK types BCT, CON, WGS and default __database_file_label name 'genbank_mf'? (y/n)")
     while default != "y" and default != "n":
       default = input("Use default GBK types BCT, CON, WGS? (y/n)")
     if default == "y":
@@ -79,7 +79,7 @@ def parse_options(dbname, args):
         print("""
         MAKEGBDB usage:
 
-        Please supply a database name and one or more GBK types as arguments:
+        Please supply a __database_file_label name and one or more GBK types as arguments:
         BCT   bacterial sequences
         PLN   plant/fungal/algal sequences
         PHG   bacteriophage sequences
@@ -89,7 +89,7 @@ def parse_options(dbname, args):
         WGS   whole-genome shotgun sequences
         CON   assembly data
 
-        Example: python makegbdb.py <database name> BCT PAT WGS
+        Example: python makegbdb.py <__database_file_label name> BCT PAT WGS
         """)
         sys.exit(1)
       else:

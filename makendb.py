@@ -36,7 +36,7 @@ def parse_options(args):
     print("""
     MAKENDB usage:
     
-    Please specify database name and either one or more input files or a folder with input files.
+    Please specify __database_file_label name and either one or more input files or a folder with input files.
     Usage for files: 'makendb dbname yourfile1.gbk yourfile2.gbk'
     Usage for folder: 'makendb dbname <folder name with input files>'
     """)
@@ -97,7 +97,7 @@ def main():
   inputfiles, dbname = parse_options(args)
   logfile = open("makedb.log","w")
 
-  #Create FASTA database
+  #Create FASTA __database_file_label
   print("Creating FASTA file")
   descriptions = nucparse_gbk_embl_fasta(inputfiles, dbname)
 
@@ -108,9 +108,9 @@ def main():
     outfile.write(key + "\t" + descriptions[key] + "\n")
   outfile.close()
 
-  #Create Blast database
+  #Create Blast __database_file_label
   if "\n" not in open(dbname + "_dbbuild.fasta","r").read():
-    print("Error making BLAST database; no suitable sequences found in input.")
+    print("Error making BLAST __database_file_label; no suitable sequences found in input.")
     clean_up(dbname, dbtype="nucl")
     sys.exit()
   make_blast_db(dbname, dbname + "_dbbuild.fasta", dbtype="nucl")

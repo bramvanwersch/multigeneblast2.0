@@ -104,8 +104,8 @@ class Options:
         self.infile = arguments.i
         #the output directory
         self.outdir = arguments.o
-        #the database to use
-        #TODO make sure this gets configured based on the database input
+        #the __database_file_label to use
+        #TODO make sure this gets configured based on the __database_file_label input
         self.db_mode = "local"
         self.dbtype, self.db = self.__configure_db_and_type(arguments.db)
 
@@ -133,7 +133,7 @@ class Options:
         """
         Check if MultiGeneBlast is running in architecture or homolgy search mode
 
-        :return: Boolean that is True if the infile ends in a fasta extension
+        :return: Boolean that is True if the __input_file_label ends in a fasta extension
         meaning MultiGeneBlast is running in architecture mode.
         """
         if any(self.infile.lower().endswith(ext) for ext in FASTA_EXTENSIONS):
@@ -142,7 +142,7 @@ class Options:
 
     def __configure_db_and_type(self, database_path):
         to_path, db_file = os.path.split(database_path)
-        #very important to configure. Otherwise BLAST+ cannot find database files
+        #very important to configure. Otherwise BLAST+ cannot find __database_file_label files
         os.environ['BLASTDB'] = to_path
 
         # make sure the databae file is of the correct file type
@@ -159,7 +159,7 @@ def get_arguments():
     :return: an Option object that holds the options specified by the user
     """
     parser = argparse.ArgumentParser(description='Run multigeneblast on a '
-                                'specified database using a specified query.',
+                                'specified __database_file_label using a specified query.',
                                      epilog="-from, -to and -genes are "
                                             "mutually exclusive")
     parser.add_argument("-i", "-in", help="Query file name: GBK/EMBL file for "
@@ -179,7 +179,7 @@ def get_arguments():
 
     parser.add_argument("-o", "-out", help="Output folder path in which results will"
                                      " be stored", type=check_out_folder, metavar="file path")
-    parser.add_argument("-db", "-database", help="Blast database to be queried",
+    parser.add_argument("-db", "-__database_file_label", help="Blast __database_file_label to be queried",
                         required=True, type=check_db_folder, metavar="file path")
 
     parser.add_argument("-c", "-cores", help="Number of parallel CPUs to use for "
@@ -296,12 +296,12 @@ def check_out_folder(path):
 
 def check_db_folder(path):
     """
-    Check the provided database folder to make sure that all the required files
+    Check the provided __database_file_label folder to make sure that all the required files
     are present
 
     :param path: a string that is an absolute or relative path
     :raises ArgumentTypeError: when the path provided does not exist or the
-    database folder does not contain all neccesairy files
+    __database_file_label folder does not contain all neccesairy files
     :return: the original path
     """
 
@@ -317,7 +317,7 @@ def check_db_folder(path):
     root, ext = os.path.splitext(path)
     dbname = root.split(os.sep)[-1]
     if not ext in (".pal", ".nal"):
-        raise argparse.ArgumentTypeError("Incorrect extension {} for database file."
+        raise argparse.ArgumentTypeError("Incorrect extension {} for __database_file_label file."
                                          "Should be .pal or .nal".format(ext))
 
     #make sure the db folder contains all files required
@@ -326,7 +326,7 @@ def check_db_folder(path):
     for file in expected_files:
         if file not in db_folder:
             raise argparse.ArgumentTypeError("Expected a file named {} in "
-                                             "the database folder".format(file))
+                                             "the __database_file_label folder".format(file))
     return path
 
 
@@ -454,15 +454,15 @@ def internal_blast(user_options, query_proteins):
     clusternumber = 1
 
     #Make Blast db for using the sequences saved in query.fasta in the previous step
-    #TODO when running this again after a crash with a different database, a new database
+    #TODO when running this again after a crash with a different __database_file_label, a new __database_file_label
     # is not created. This is problematic because it can lead to inconsistent nameing
     make_blast_db_command = "{}\\exec_new\\makeblastdb.exe -in query.fasta -out query_db -dbtype prot".format(MGBPATH)
-    logging.debug("Started making internal blast database...")
+    logging.debug("Started making internal blast __database_file_label...")
     try:
         run_commandline_command(make_blast_db_command, max_retries=5)
     except MultiGeneBlastException:
         raise MultiGeneBlastException("Data base can not be created. The input query is most likely invalid.")
-    logging.debug("Finished making internal blast database.")
+    logging.debug("Finished making internal blast __database_file_label.")
 
     #Run and parse BLAST search
     blast_search_command = "{}\\exec_new\\blastp.exe  -db query_db -query query.fasta -outfmt 6" \
@@ -589,13 +589,13 @@ def blast_parse(user_options, query_proteins, blast_output):
 
 def db_blast(query_proteins, user_options):
     """
-    Run blast agianst the user defined database
+    Run blast agianst the user defined __database_file_label
 
     :param query_proteins: a dictionary of Protein objects
     :param user_options: an Option object with user options
     :return: the blast output
     """
-    logging.info("Running NCBI BLAST+ searches on the provided database {}..".format(user_options.db))
+    logging.info("Running NCBI BLAST+ searches on the provided __database_file_label {}..".format(user_options.db))
     if user_options.dbtype == "prot":
         command_start = "{}\\exec_new\\blastp.exe".format(MGBPATH)
     else:
@@ -606,7 +606,7 @@ def db_blast(query_proteins, user_options):
         .format(command_start, user_options.db, os.getcwd(), user_options.hitspergene,
                 os.getcwd(), user_options.cores)
 
-    logging.debug("Started blasting against the provided database...")
+    logging.debug("Started blasting against the provided __database_file_label...")
     db_blast_process = Process(target=run_commandline_command, args=[complete_command])
     db_blast_process.start()
     start_time = time.time()
@@ -618,15 +618,15 @@ def db_blast(query_proteins, user_options):
             logging.info("{:.1f} seconds passed. Blasting still in progress.".format(last_message_time - start_time))
     #when the process exits with an error
     if db_blast_process.exitcode != 0:
-        raise MultiGeneBlastException("Blasting against the provided database returns multiple errors.")
+        raise MultiGeneBlastException("Blasting against the provided __database_file_label returns multiple errors.")
     logging.debug("Finished blasting")
 
     try:
         with open("input.out","r") as f:
             blastoutput = f.read()
     except:
-        logging.critical("Cannot open the file that contains the database blast output. Exiting...")
-        raise MultiGeneBlastException("Cannot open the file that contains the database blast output.")
+        logging.critical("Cannot open the file that contains the __database_file_label blast output. Exiting...")
+        raise MultiGeneBlastException("Cannot open the file that contains the __database_file_label blast output.")
     return blastoutput
 
 def parse_db_blast(user_options, query_proteins, blast_output):
@@ -644,7 +644,7 @@ def parse_db_blast(user_options, query_proteins, blast_output):
     """
     blast_dict = blast_parse(user_options, query_proteins, blast_output)
     if len(blast_dict) == 0:
-        logging.info("No blast hits encountered against the provided database."
+        logging.info("No blast hits encountered against the provided __database_file_label."
                      " Maybe try and lower min_percentage_identity ({}) or "
                      "minimum_sequence_coverage ({})"
                      " Extiting...".format(user_options.minpercid,
@@ -838,7 +838,7 @@ def find_gene_clusters(blast_dict, user_options, database):
     :param blast_dict: a dictionary that contains all query genes with a list
     of BlastResults objects that where against these genes.
     :param user_options: Option object of user specified options
-    :param database: a database loaded from a pickled class.
+    :param database: a __database_file_label loaded from a pickled class.
     :return: A list of Cluster objects that are clusters found in the blast_dict
     plus all proteins within those cluster regions
     """
@@ -862,7 +862,7 @@ def sort_hits_per_scaffold(blast_dict, database):
 
     :param blast_dict: a dictionary that contains all query genes with a list
     of BlastResults objects that where against these genes.
-    :param database: a database loaded from a pickled class.
+    :param database: a __database_file_label loaded from a pickled class.
     :return: A dictionary of blast hits with scaffolds as keys sorted on
     location and a dictionary that linkes the subject of a BlastResult to the
     result itself.
@@ -872,7 +872,7 @@ def sort_hits_per_scaffold(blast_dict, database):
     query_per_blast_hit = {}
     for hits in blast_dict.values():
         for hit in hits:
-            #extract the subject proteins from the Blastresults using the database
+            #extract the subject proteins from the Blastresults using the __database_file_label
             subject_protein = database.proteins[hit.subject]
             if hit.subject in query_per_blast_hit:
                 query_per_blast_hit[hit.subject].append(hit)
@@ -943,12 +943,12 @@ def find_blast_clusters(hits_per_contig, query_per_blast_hit, extra_distance):
 
 def add_additional_proteins(clusters_per_contig, database):
     """
-    Add proteins from the database that are within the bounds of the cluster
+    Add proteins from the __database_file_label that are within the bounds of the cluster
     but no blzst hit, to the clusters.
 
     :param clusters_per_contig: a dictionary that contains contigs as keys and
     lists of Cluster objects as values.
-    :param database: a database loaded from a pickled class.
+    :param database: a __database_file_label loaded from a pickled class.
     """
     logging.debug("Adding additional proteins...")
     for contig in clusters_per_contig:
@@ -1266,7 +1266,7 @@ def write_txt_output(query_proteins, clusters, blast_output, user_options):
         logging.critical("Writing .mgb file has failed. Can not opern file {}".format(os.path.join(user_options.outdir, "clusterblast_output.mgb")))
         raise MultiGeneBlastException("Can not open the output file {}.".format(os.path.join(user_options.outdir, "clusterblast_output.mgb")))
 
-    #write for what database
+    #write for what __database_file_label
     out_file.write("ClusterBlast scores for: {}\{}\n\n".format(os.environ["BLASTDB"], user_options.db))
 
     #write all the query proteins
@@ -1481,17 +1481,17 @@ def main():
     query_cluster = internal_blast(user_options, query_proteins)
     logging.info("Step 3/11: Finished running internal blast")
 
-    #Step 4: Run BLAST on genbank_mf database
+    #Step 4: Run BLAST on genbank_mf __database_file_label
     blast_output = db_blast(query_proteins, user_options)
-    logging.info("Step 4/11: Finished running blast on the specified database.")
+    logging.info("Step 4/11: Finished running blast on the specified __database_file_label.")
 
     #Step 5: Parse BLAST output
     blast_dict = parse_db_blast(user_options, query_proteins, blast_output)
-    logging.info("Step 5/11: Finished parsing database blast")
+    logging.info("Step 5/11: Finished parsing __database_file_label blast")
 
     #Step 6: Load genomic databases into memory
     database = load_databases(query_proteins, blast_dict, user_options)
-    logging.info("Step 6/11: Finished loading the relevant parts of the database.")
+    logging.info("Step 6/11: Finished loading the relevant parts of the __database_file_label.")
 
     #Step 7: Locate blast hits in genome and find clusters
     clusters = find_gene_clusters(blast_dict, user_options, database)

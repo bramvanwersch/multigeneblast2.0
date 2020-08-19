@@ -204,7 +204,7 @@ def parsegenes(genes):
       genename = locustag
     #print genename
     #Find sequence for each gene
-    a = 0                                             ###Not all gbks contain protein sequences as translations, therefore sequences from gene clusters are now extracted from the database at a later stage if sequence is not in gbk
+    a = 0                                             ###Not all gbks contain protein sequences as translations, therefore sequences from gene clusters are now extracted from the __database_file_label at a later stage if sequence is not in gbk
     b = 0
     sequence = ""
     while b < 2:
