@@ -805,7 +805,11 @@ class MainMultiGeneBlastGui(Frame):
         selected = tkinter.filedialog.askdirectory(mustexist=False)
         if selected == "":
             return
-        dir_files = os.listdir(selected)
+        try:
+            dir_files = os.listdir(selected)
+        except FileNotFoundError:
+            showerror("Error", "Folder does not exist. Select a different one")
+            self.select_out_folder()
         #if files in the directory make a directory in the directory
         if len(dir_files) > 0:
             #generate a unique name
@@ -863,7 +867,6 @@ class MainMultiGeneBlastGui(Frame):
                     return
                 filter_options = "-f {} -t {} ".format(start, end)
 
-
         base_command = "{}{}multigeneblast.py ".format(MGBPATH, os.sep)
 
         #change some values to adhere to the correct format of the command line tool
@@ -897,6 +900,35 @@ class MainMultiGeneBlastGui(Frame):
             for line in lines_iterator:
                 outbox.text_insert(line)
                 self.update()
+        self.open_final_webpage()
+        outbox.text_insert('\nVisual output can be accessed by opening: "file://' + self.outdir_path + os.sep + 'visual' + os.sep + 'displaypage1.xhtml" with a web browser\n')
+        self.update()
+
+    def open_final_webpage(self):
+        display_page_1 = self.outdir_path + os.sep + 'visual' + os.sep + 'displaypage1.xhtml'
+        if sys.platform == ('win32'):
+            os.startfile(display_page_1)
+        else:
+            try:
+                firefox = webbrowser.get('firefox')
+                firefox.open_new_tab("file://" + display_page_1)
+            except:
+                pass
+            try:
+                safari = webbrowser.get('safari')
+                safari.open_new_tab("file://" + display_page_1)
+            except:
+                pass
+            try:
+                chrome = webbrowser.get('/usr/bin/google-chrome %s')
+                chrome.open_new_tab("file://" + display_page_1)
+            except:
+                pass
+            try:
+                webbrowser.open_new_tab("file://" + display_page_1)
+            except:
+                pass
+
 
 def maingui():
 
