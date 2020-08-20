@@ -23,17 +23,17 @@ def get_arguments():
 
     :return: a list of three values that are the user defined options
     """
-    parser = argparse.ArgumentParser(description='Create a __database_file_label for offline '
+    parser = argparse.ArgumentParser(description='Create a database for offline '
                                                  'search in MultiGeneBlast.')
     parser.add_argument("-i", "-in", help="GBK/EMBL files for creating the "
-                                          "__database_file_label", nargs='+'
+                                          "database", nargs='+'
                         , metavar="space-separted file paths", required=True,
                         type=check_in_file)
-    parser.add_argument("-n", "-name", help="The name for the __database_file_label files.",
+    parser.add_argument("-n", "-name", help="The name for the database files.",
                         required=True, type=remove_illegal_characters)
     parser.add_argument("-o", "-out", help="Optional output folder for the "
-                                           "__database_file_label files.", type=check_out_folder,
-                        default=CURRENTDIR + os.sep + "__database_file_label")
+                                           "database files.", type=check_out_folder,
+                        default=CURRENTDIR + os.sep + "database")
     parser.add_argument("-inf", "-information", help="What level of information"
                                                      "should be printed while"
                                                      "running the program "
@@ -89,8 +89,8 @@ def clean_outdir(dbname, outdir, dbtype="prot"):
     Clean the output directory if files that have the same name as files that
     are going to be added
 
-    :param dbname: the name of the __database_file_label
-    :param outdir: the directory where the __database_file_label files need to go
+    :param dbname: the name of the database
+    :param outdir: the directory where the database files need to go
     """
     files = os.listdir(outdir)
 
@@ -109,11 +109,11 @@ def clean_outdir(dbname, outdir, dbtype="prot"):
 
 def write_nal_pal_file(dbname, outdir, dbtype = "prot"):
     """
-    Write a __database_file_label alias file so Blast+ programs can acces it.
+    Write a database alias file so Blast+ programs can acces it.
 
-    :param dbname: a string as name of the __database_file_label
+    :param dbname: a string as name of the database
     :param outdir: a string as path to the output directory
-    :param dbtype: the type of the __database_file_label, 'prot' or 'nucl'
+    :param dbtype: the type of the database, 'prot' or 'nucl'
     """
     logging.info("Writing nal/pal file...")
     ext = ".pal"
@@ -131,33 +131,33 @@ def main():
 
     #setup a logger
     setup_logger(outdir, starttime, level=log_level)
-    logging.info("Step 1/6: Parsed options.")
+    logging.info("Step 1/7: Parsed options.")
 
     #make sure to clear all files in the destination folder that have the same
     #name as files that are going to be added
     clean_outdir(dbname, outdir)
     logging.info("Step 2/7: Cleaned the output directory of potential duplicate files.")
 
-    #create a __database_file_label object
+    #create a database object
     base_path = os.path.abspath(os.path.dirname(__file__))
     db = DataBase(base_path, inputfiles)
     db.create(outdir, dbname)
-    logging.info("Step 3/7: Created the MultiGeneBlast __database_file_label")
+    logging.info("Step 3/7: Created the MultiGeneBlast database")
 
-    #write the __database_file_label to fasta for makeblastdb
-    logging.info("Writing MultiGeneBlast __database_file_label to fasta...")
+    #write the database to fasta for makeblastdb
+    logging.info("Writing MultiGeneBlast database to fasta...")
     with open(outdir + os.sep + dbname + "_dbbuild.fasta", "w") as f:
         f.write(db.get_fasta())
-    logging.info("Step 4/7: Written MultiGeneBlast __database_file_label to fasta format.")
+    logging.info("Step 4/7: Written MultiGeneBlast database to fasta format.")
 
-    #Create Blast __database_file_label, set the outdir as the current directory to amke sure that the files end up in the right place
-    logging.info("Creating Blast+ __database_file_label...")
+    #Create Blast database, set the outdir as the current directory to amke sure that the files end up in the right place
+    logging.info("Creating Blast+ database...")
     os.chdir(outdir)
     command = "{}\\exec_new\\makeblastdb.exe -dbtype prot -out {} -in {}{}{}_dbbuild.fasta".format(base_path, dbname, outdir, os.sep, dbname)
     run_commandline_command(command, max_retries=0)
-    logging.info("Step 5/7: Blast+ __database_file_label created.")
+    logging.info("Step 5/7: Blast+ database created.")
 
-    #write nal/pal file as main entry for the __database_file_label
+    #write nal/pal file as main entry for the database
     write_nal_pal_file(dbname, outdir)
     logging.info("Step 6/7: Created nal/pal file.")
 

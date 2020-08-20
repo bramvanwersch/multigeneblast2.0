@@ -7,7 +7,7 @@ import os, sys
 HITS_PER_PAGE = 50
 FASTA_EXTENSIONS = (".fasta",".fas",".fa",".fna")
 EMBL_EXTENSIONS = (".embl",".emb")
-GENBANK_EXTENSIONS = (".gbk",".gb",".genbank")
+GENBANK_EXTENSIONS = (".gbk",".gb",".genbank", ".gbff")
 SVG_CORE_EXTENSION = 5000
 DATABASE_EXTENSIONS = ["_database_index.pickle","_contigs.tar.gz",".psq",".psi",".psd",".pin",".phr"]
 

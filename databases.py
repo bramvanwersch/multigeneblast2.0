@@ -91,16 +91,19 @@ class DataBase:
     that can be used by MultiGeneBlast
     """
     def __init__(self, base_path, paths):
-        logging.info("Started creating __database_file_label...")
+        logging.info("Started creating database...")
         #care this is a generator object not a list
         self.__gb_files = self.__read_files(base_path, paths)
+        if len(self.__gb_files) == 0:
+            logging.critical("Failed to load any of the provided database files.")
+            raise MultiGeneBlastException("Failed to load any of the provided database files.")
 
     def create(self, outdir, dbname):
         """
-        Create the files for the __database_file_label using the self.__gb_files genbank
+        Create the files for the database using the self.__gb_files genbank
         objects
 
-        :param outdir: an output directory for the __database_file_label
+        :param outdir: an output directory for the database
         :param dbname: the name of all files in the output directory
         """
         self.__write_files(outdir, dbname)
@@ -124,7 +127,7 @@ class DataBase:
 
         :param base_path: an absolute path to the directory make_database.py was
         executed from
-        :param paths: a absolute or relative path to all the __database_file_label files from
+        :param paths: a absolute or relative path to all the database files from
         the make_database.py directory
         :return: a list of Genbnak objects
         """
@@ -133,22 +136,34 @@ class DataBase:
             #allow relative paths to b
             path = os.path.join(base_path, path)
             root, ext = os.path.splitext(path)
+            file = None
             if ext in GENBANK_EXTENSIONS:
-                file = GenbankFile(path)
+                try:
+                    file = GenbankFile(path=path)
+                except Exception  as error:
+                    print(error)
+                    logging.debug(error)
+                    logging.warning("Failed to process the file {}. Skipping...".format(path))
             elif ext in EMBL_EXTENSIONS:
                 file_text = embl_to_genbank(path)
-                file = GenbankFile(path, file_text=file_text)
+                try:
+                    file = GenbankFile(path=path, file_text=file_text)
+                except Exception as error:
+                    print(error)
+                    logging.debug(error)
+                    logging.warning("Failed to process the file {}. Skipping...".format(path))
             else:
                 logging.warning("Invalid extension {}. Skipping file {}.".format(ext, path))
                 continue
-            files.append(file)
+            if file:
+                files.append(file)
         return files
 
     def __write_files(self, outdir, dbname):
         """
         Write the contigs of the genbank objects to pickle files.
 
-        :param outdir: an output directory for the __database_file_label
+        :param outdir: an output directory for the database
         :param dbname: the name of all files in the output directory
         """
         #TODO think about handling double contigs. I would think not to relevant
@@ -179,7 +194,7 @@ class DataBase:
         """
         Create gzipped tar file to save all the pickled contigs into.
 
-        :param outdir: an output directory for the __database_file_label
+        :param outdir: an output directory for the database
         :param dbname: the name of all files in the output directory
         """
         logging.info("Writing to tar file...")
@@ -227,7 +242,7 @@ class GenbankFile:
     def fasta_text(self):
         """
         Give a fatsa text that is the combined fasta of all proteins in the
-        __database_file_label
+        database
         :return:
         """
         text = ""
@@ -339,7 +354,10 @@ class Contig:
         # ignore the firs hit which is the start of the genbnk file
         for index, gene in enumerate(entries):
             g = GenbankEntry(gene, index + 1, dna_seq, c_dna_seq, self.accession, self.definition)
-            if protein_range != None and g.protein.start >= protein_range[0] and g.protein.stop <= protein_range[1]:
+            #skip if no valid protein is found
+            if g.protein == None:
+                continue
+            elif protein_range != None and g.protein.start >= protein_range[0] and g.protein.stop <= protein_range[1]:
                 genbank_entries.append(g)
             elif allowed_proteins != None and g.protein.protein_id in allowed_proteins:
                 genbank_entries.append(g)
@@ -394,7 +412,6 @@ class GenbankEntry:
         :param file_accession: the genbank file accession this entry originated
         from
         """
-        #a list of locations
         self.location = None
         self.contig_id = contig_id
         self.contig_description = contig_description
@@ -520,14 +537,15 @@ class GenbankEntry:
         :return:
         """
         #remove the join tag
+        complement = False
+        if string.startswith("complement"):
+            complement = True
+            string = string[11:-1]
         string = string[5:-1]
         individual_strings = string.split(",")
         locations = []
-        complement = False
         for s in individual_strings:
-            if "complement" in s:
-                complement = True
-            locations.append(self.__convert_location(s[11:-1]))
+            locations.append(self.__convert_location(s))
         return locations, complement
 
     def __convert_location(self, s):
@@ -564,6 +582,9 @@ class GenbankEntry:
         if reverse_complement:
             strand = "-"
         #make sure locations are sorted
+        if None in locations:
+            logging.warning("Can not process {}. No valid start stop found. Skipping...".format(self.gene_name))
+            return
         locations.sort()
 
         #if a sequence is available use that, otherwise extract it
@@ -571,10 +592,7 @@ class GenbankEntry:
             sequence = self.protein_code
         else:
             sequence = ""
-            for loc in self.locations:
-                #in case of invalid location skip to the next one.
-                if loc[0] == None:
-                    continue
+            for loc in locations:
                 start, end = loc
                 if reverse_complement:
                     nc_seq = c_dna_seq[(start - 1) - self.__codon_start - 1 : end]

@@ -103,7 +103,7 @@ def cancel_extraction(tar, toplevel):
 
 def makedb_file(frame):
     global APPDATA
-    MakeDatabase(frame, APPDATA)
+    MakeDatabase(frame)
 
 def makedb_ncbi(frame):
     global APPDATA
@@ -172,7 +172,7 @@ class MainMultiGeneBlastGui(Frame):
         dbmenu = Menu(menu)
         menu.add_cascade(label="Database", menu=dbmenu)
         dbmenu.add_command(label="Create database from files",
-                           command=lambda: makedb_file(frame))
+                           command=lambda: makedb_file(self))
         dbmenu.add_command(label="Create database from online GenBank entries",
                            command=lambda: makedb_ncbi(frame))
         dbmenu.add_command(label="Create database from GenBank subdivisions",
@@ -556,6 +556,7 @@ class MainMultiGeneBlastGui(Frame):
         #check exit message
         output, error = popen.communicate()
         if error != b'':
+            outbox.text_insert(str(error))
             outbox.text_insert("MultiGeneBlast experienced a problem. Please click"
                 " the button below to send an error report, so we can solve the underlying problem.\n")
             outbox.change_errormessage(error)

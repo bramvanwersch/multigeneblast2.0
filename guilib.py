@@ -6,6 +6,7 @@
 ## A copy of GNU GPL v3 should have been included in this software package in LICENSE.txt.
 
 import multiprocessing
+import subprocess
 import webbrowser
 import tkinter.filedialog
 from tkinter.messagebox import askyesno, showerror, showwarning, showinfo
@@ -23,6 +24,9 @@ from dblib.generate_genecords_tar import generate_genecords_tar
 from dblib.generate_proteininfo_tar import generate_proteininfo_tar
 
 from utilities import ILLEGAL_CHARACTERS
+from constants import APPDATA, GENBANK_EXTENSIONS, EMBL_EXTENSIONS, get_mgb_path
+
+MGBPATH = get_mgb_path()
 # import makegbdb
 # import makegbndb
 
@@ -651,12 +655,13 @@ class MessageBox(object):
 
 class MakeDatabase(Frame):
   
-    def __init__(self, master, directory):
+    def __init__(self, master):
         self.master = master
         self.files = []
         self.dbname = StringVar()
-        self.directory = directory
-        self.dbname.set("<Enter a name for your __database_file_label>")
+        self.dbname.set("<Enter a name for your database>")
+        self.__outdir_label = StringVar()
+        self.__outdir_path = APPDATA
         self.initUI()
 
     def initUI(self):
@@ -665,10 +670,10 @@ class MakeDatabase(Frame):
         self.modalPane.transient(self.master)
         self.modalPane.grab_set()
 
-        self.modalPane.bind("<Return>", self._makedb)
+        self.modalPane.bind("<Return>", self.make_database)
         self.modalPane.bind("<Escape>", self._cancel)
 
-        self.modalPane.title("Make MGB __database_file_label from file")
+        self.modalPane.title("Make MGB database from file")
 
         searchFrame = Frame(self.modalPane)
         searchFrame.pack(side=TOP)
@@ -679,9 +684,19 @@ class MakeDatabase(Frame):
         self.dbname_entry.bind("<FocusOut>", self.OnValidate)
         self.dbname_entry.bind("<Return>", self.OnValidate)
 
-        text = Label(searchFrame, text="\nMake raw nucleotide __database_file_label for tblastn-searching:")
-        text.grid(row=1,column=0, pady=5)
-        self.dbtype = CheckBox(searchFrame, [1,1], "")
+        # TODO: see if this feature is wanted and realistic considereing the new database
+        #text = Label(searchFrame, text="\nMake raw nucleotide database for tblastn-searching:")
+        # text.grid(row=1,column=0, pady=5)
+        # self.dbtype = CheckBox(searchFrame, [1,1], "")
+
+        self.__outdir_label.set(self.__outdir_path)
+        outdir_lbl = Label(searchFrame, text="Output folder name:")
+        outdir_lbl.grid(row=1, column=0, sticky=N)
+        outdir_text = Label(searchFrame, textvariable=self.__outdir_label)
+        outdir_text.grid(row=1, column=1, sticky=N)
+        outdir_button = Button(searchFrame, text="Select the output folder", command=self.select_out_directory)
+        outdir_button.grid(row=1, column=2, sticky=N)
+
 
         searchButton = Button(searchFrame, text="Add files", command=self._addfile)
         searchButton.grid(row=2,column=0, pady=3)
@@ -704,58 +719,59 @@ class MakeDatabase(Frame):
 
         buttonFrame = Frame(self.modalPane)
         buttonFrame.pack(side=BOTTOM)
-        chooseButton = Button(buttonFrame, text="Make __database_file_label", command=self._makedb)
+        chooseButton = Button(buttonFrame, text="Make database", command=self.make_database)
         chooseButton.pack(side=LEFT)
         cancelButton = Button(buttonFrame, text="Cancel", command=self._cancel)
         cancelButton.pack(side=RIGHT)
 
+    def select_out_directory(self):
+        selected = tkinter.filedialog.askdirectory(mustexist=False)
+        if selected == "":
+            return
+        try:
+            with open(selected + os.sep + "test.txt", "w") as f:
+                f.write("test")
+            os.remove(selected + os.sep + "test.txt")
+        except PermissionError:
+            showerror("Error", "No permission to write to this folder. "
+                "Please choose a directory in which you have writing permissions.")
+            self.select_out_directory()
+        display_selected = selected
+        if len(selected) > 50:
+            display_selected = "{}...".format(selected[:47])
+        self.__outdir_label.set(display_selected)
+        self.__outdir_path = selected.replace("/", os.sep)
+
     def OnValidate(self, val):
-        forbiddencharacters = ["'",'"','=',':',';','-','[',']','>','<','|','\\',"/",'*',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
-        for char in forbiddencharacters:
-          if self.dbname.get() != "<Enter a name for your __database_file_label>":
-            if char in self.dbname.get():
-              showerror("Error", "Forbidden character found in specified __database_file_label name: " + char)
-              self.dbname.set("<Enter a name for your __database_file_label>")
-              return
+        for char in ILLEGAL_CHARACTERS:
+            if self.dbname.get() != "<Enter a name for your database>":
+                if char in self.dbname.get():
+                    showerror("Input Error", "Database name contains illegal character. {} is not allowed".format(char))
+                    self.dbname.set("<Enter a name for your database>")
+                return
         if self.dbname.get() != None:
-          if self.dbname.get() != "<Enter a name for your __database_file_label>":
-            dbname = self.dbname.get().replace(" ","_")
-            self.dbname.set(dbname)
+            if self.dbname.get() != "<Enter a name for your database>":
+                dbname = self.dbname.get().replace(" ","_")
+                self.dbname.set(dbname)
         else:
-          self.dbname.set("<Enter a name for your __database_file_label>")
+            self.dbname.set("<Enter a name for your database>")
 
     def _addfile(self):
-        if self.dbtype.getval() == 0:
-          filenames = tkinter.filedialog.askopenfilename(multiple=True, filetypes=(("GenBank files",('*.gbk','*.gb','*.genbank')),("EMBL files",('*.embl','*.emb'))), title="Select files", initialdir=self.directory)
-        else:
-          filenames = tkinter.filedialog.askopenfilename(multiple=True, filetypes=(("FASTA files",('*.fasta','*.fa','*.fas')), ("GenBank files",('*.gbk','*.gb','*.genbank')),("EMBL files",('*.embl','*.emb'))), title="Select files", initialdir=self.directory)
-        if sys.platform == ('win32'):
-          if "} {" in filenames:
-            filenames = [str(filename) for filename in filenames[1:-1].split("} {")]
-          else:
-              if len(filenames) > 2 and filenames[2] == ":":
-                filenames = [str(filenames[1:-1])]
-              else:
-                filenames = [str(filenames)]
-        if sys.platform == ('darwin') or sys.platform == ('linux2'):
-            filenames = list(filenames)
+        #returns a tuple of names
+        filenames = tkinter.filedialog.askopenfilename(multiple=True, filetypes=(("GenBank files",('*.gbk','*.gb','*.genbank')),("EMBL files",('*.embl','*.emb'))), title="Select files")
+        # else:
+        #     filenames = tkinter.filedialog.askopenfilename(multiple=True, filetypes=(("FASTA files",('*.fasta','*.fa','*.fas')), ("GenBank files",('*.gbk','*.gb','*.genbank')),("EMBL files",('*.embl','*.emb'))), title="Select files", initialdir=self.directory)
+        filenames = list(filenames)
         for filename in filenames:
-          if filename == "":
-            return
-          root, fext = os.path.splitext(filename)
-          if self.dbtype.getval() == 0:
-            extensions = [".gbk",".gb",".genbank",".embl",".emb"]
-          else:
-            extensions = [".gbk",".gb",".genbank",".embl",".emb",".fasta",".fa",".fas"]
-          if fext.lower() not in extensions:
-            if self.dbtype.getval() == 0:
-              showerror("Error", filename + " not added, as it does not have a GenBank or EMBL file extension.")
-            else:
-              showerror("Error", filename + " not added, as it does not have a FASTA, GenBank or EMBL file extension.")
-            continue
-          if filename not in self.files:
-            self.files.append(filename)
-            self._insert(filename)
+            #when clicking cancel
+            if filename == "":
+                return
+            root, ext = os.path.splitext(filename)
+            if ext.lower() not in GENBANK_EXTENSIONS + EMBL_EXTENSIONS:
+                showerror("Error", filename + " not added, as it does not have a GenBank or EMBL file extension.")
+            if filename not in self.files:
+                self.files.append(filename)
+                self._insert(filename)
 
     def _clear(self):
         self.listBox.delete(0, END)
@@ -769,138 +785,61 @@ class MakeDatabase(Frame):
         del self.files[int(pos[0])]
         self.listBox.delete(pos, pos)
 
-    def _makedb(self, event=None):
-        global APPDATA
-        #Final check for correct __database_file_label name
-        if not validname(self.dbname.get()):
-          showerror("Error", "Please select a valid __database_file_label name.")
-          return
+    def make_database(self):
+        if self.dbname.get() + ".pal" in os.listdir(self.__outdir_path):
+            answer = askyesno('Database name exists',
+                              'A database with this name already exists. Overwrite?')
+            if not answer:
+                return
+        command = self.__make_db_command()
+        if command != None:
+            self.__run_db_command(command)
+
+    def __make_db_command(self):
         if len(self.files) == 0:
-          showerror("Error", "Please select input files for your __database_file_label first.")
-          return
-        #Remove spaces from dbname if this was not done automatically already; check for overwriting
-        self.dbname.set(self.dbname.get().replace(" ","_"))
-        if self.dbname.get() + ".pal" in os.listdir(APPDATA) or self.dbname.get() + ".nal" in os.listdir(APPDATA):
-          answer = askyesno('Database name exists', 'A __database_file_label with this name already exists. Overwrite?')
-          if not answer:
-            return
-        #Open up toplevel that reports progress
-        try:
-          self.makedb_outbox = MessageBox(self.master, self, "Creating Database...")
-        except(TclError):
-          pass
-        
-        #Create __database_file_label
-        currentdir = os.getcwd()
-        os.chdir(self.directory)
-        if self.dbtype.getval() == 0:
-          try:
-            runmakedb(self.master, self.makedb_outbox, self.files, self.dbname.get())
-          except(TclError):
-            pass
-          except:
-            showerror("Failure", "Database creation failed.")
-            os.chdir(currentdir)
-            self.makedb_outbox.add_ok_button()
-            self.modalPane.destroy()
-            return
+            showerror("Invalid input Error", "No files where submitted to create a database.")
+            return None
+        for char in self.dbname.get():
+            if char in ILLEGAL_CHARACTERS:
+                showerror("Input Error", "Database name contains illegal character. {} is not allowed".format(char))
+                return None
+        base_command = "{}{}make_database.py ".format(MGBPATH, os.sep)
+        required_information = "-o {} -n {} -i {} ".format(self.__outdir_path, self.dbname.get(), " ".join(self.files))
+        full_command = base_command + required_information
+        return full_command
+
+    def __run_db_command(self, command):
+        #create a place to push messages to
+        outbox = MessageBox(frame=self.master, title="Creating database...")
+        self.master.update()
+        popen = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        lines_iterator = iter(popen.stdout.readline, b"")
+        while popen.poll() is None:
+            for line in lines_iterator:
+                outbox.text_insert(line)
+                self.master.update()
+        #check exit message
+        output, error = popen.communicate()
+        if error != b'':
+            for line in str(error).split("\r\n"):
+                outbox.text_insert(line + "\n")
+            outbox.text_insert("MultiGeneBlast experienced a problem while creating the database. Please click"
+                " the button below to send an error report, so we can solve the underlying problem.\n")
+            outbox.change_errormessage(error)
+            outbox.add_ok_button()
+            outbox.add_error_button()
+            self.master.update()
         else:
-          try:
-            runmakendb(self.master, self.makedb_outbox, self.files, self.dbname.get())
-          except(TclError):
-            pass
-          except:
-            showerror("Failure", "Database creation failed.")
-            os.chdir(currentdir)
-            self.makedb_outbox.add_ok_button()
-            self.modalPane.destroy()
-            return
-        #Report success
-        try:
-          if self.dbtype.getval() == 0:
-            self.makedb_outbox.text_insert("Database created.\nYou can now use this __database_file_label by selecting '" + self.dbname.get() + ".pal' under 'Select __database_file_label' in the 'File' menu.\n")
-          else:
-            self.makedb_outbox.text_insert("Database created.\nYou can now use this __database_file_label by selecting '" + self.dbname.get() + ".nal' under 'Select __database_file_label' in the 'File' menu.\n")
-          self.makedb_outbox.add_ok_button()
-          self.modalPane.destroy()
-        except(TclError):
-          pass
+
+            outbox.text_insert("Database created.\nYou can now use this database "
+                "by selecting '{}.pal' under 'Select database' in the 'File' menu.\n".format(self.dbname.get()))
+            outbox.add_ok_button()
+            self.master.update()
 
     def _cancel(self, event=None):
         self.modalPane.destroy()
 
-def log(message, frame, makedb_outbox, exit=False, retcode=1):
-    try:
-      makedb_outbox.text_insert(message + "\n")
-    except(TclError):
-      pass
-    frame.update()
-    if exit:
-      sys.exit(retcode)
-
-def runmakedb(frame, makedb_outbox, inputfiles, dbname):
-    if len(inputfiles) < 10:
-      log("Creating __database_file_label. Please be patient, this can take a number of minutes...\n", frame, makedb_outbox)
-    else:
-      log("Creating __database_file_label. Please be patient, this can take a number of hours...\n", frame, makedb_outbox)
-    
-    #Create FASTA __database_file_label
-    log("Creating FASTA file...", frame, makedb_outbox)
-    descriptions = parse_gbk_embl(inputfiles, dbname, frame, makedb_outbox, GUI="y")
-
-    #Create genbank_mf_all.txt file
-    log("Generating " + dbname + "_all.txt file", frame, makedb_outbox)
-    fasta_names(dbname + "_dbbuild.fasta", dbname + "_all.txt")
-
-    #Create genbank_mf_all_descrs.txt file
-    log("Generating " + dbname + "_all_descr.txt file", frame, makedb_outbox)
-    descrfile = open(dbname + "_all_descrs.txt","w")
-    descrkeys = list(descriptions.keys())
-    descrkeys.sort()
-    for key in descrkeys:
-      descrfile.write(key + "\t" + descriptions[key] + "\n")
-    descrfile.close()
-
-    #Create Blast __database_file_label and TAR archives
-    log("Creating BLAST __database_file_label...", frame, makedb_outbox)
-    if "\n" not in open(dbname + "_dbbuild.fasta","r").read():
-      log("Error making BLAST __database_file_label; no suitable sequences found in input.", frame, makedb_outbox, exit=True)
-    make_blast_db(dbname, dbname + "_dbbuild.fasta", frame, GUI="n")
-    log("Creating gene coordinates file...", frame, makedb_outbox)
-    generate_genecords_tar(dbname, frame, makedb_outbox, GUI="y")
-    log("Creating gene sources file...", frame, makedb_outbox)
-    generate_proteininfo_tar(dbname, frame, makedb_outbox, GUI="y")
-
-    #Clean up
-    log("Cleaning up...\n", frame, makedb_outbox)
-    clean_up(dbname, frame, makedb_outbox, GUI="y")
-
-def runmakendb(frame, makedb_outbox, inputfiles, dbname):
-    if len(inputfiles) < 10:
-      log("Creating __database_file_label. Please be patient, this can take a number of minutes...\n", frame, makedb_outbox)
-    else:
-      log("Creating __database_file_label. Please be patient, this can take a number of hours...\n", frame, makedb_outbox)
-
-    #Create FASTA __database_file_label
-    log("Creating FASTA file...", frame, makedb_outbox)
-    descriptions = nucparse_gbk_embl_fasta(inputfiles, dbname, frame, makedb_outbox, GUI="y")
-
-    #Create genbank_mf_all_descr.txt file
-    log("Generating _all.txt file", frame, makedb_outbox)
-    outfile = open(dbname + "_all_descrs.txt","w")
-    for key in list(descriptions.keys()):
-      outfile.write(key + "\t" + descriptions[key] + "\n")
-    outfile.close()
-
-    #Create Blast __database_file_label
-    if "\n" not in open(dbname + "_dbbuild.fasta","r").read():
-      clean_up(dbname, dbtype="nucl")
-      log("Error making BLAST __database_file_label; no suitable sequences found in input.", frame, makedb_outbox, exit=True)
-    make_blast_db(dbname, dbname + "_dbbuild.fasta", frame, GUI="y", dbtype="nucl")
-
-    #Clean up
-    log("Cleaning up...\n", frame, makedb_outbox)
-    clean_up(dbname, frame, makedb_outbox, GUI="y", dbtype="nucl")
 
 class MakeOnlineDatabase(Frame):
   
@@ -916,7 +855,7 @@ class MakeOnlineDatabase(Frame):
         self.accession = StringVar()
         self.accession.set("")
         self.dbname = StringVar()
-        self.dbname.set("<Enter a name for your __database_file_label>")
+        self.dbname.set("<Enter a name for your database>")
         self.descriptions = []
         self.initUI()
 
@@ -994,7 +933,7 @@ class MakeOnlineDatabase(Frame):
 
         checkboxFrame = Frame(self.modalPane)
         checkboxFrame.grid(row=8,column=0)
-        text = Label(checkboxFrame, text="Make raw nucleotide __database_file_label for tblastn-searching:")
+        text = Label(checkboxFrame, text="Make raw nucleotide database for tblastn-searching:")
         text.pack(side=LEFT, pady=10)
         self.dbtype = CheckBox(checkboxFrame, [0,0], "")
         self.dbtype.pack(side=RIGHT)
@@ -1005,7 +944,7 @@ class MakeOnlineDatabase(Frame):
         clearButton = Button(buttonFrame2, text="Clear selection", command=self._clear_selected)
         clearButton.pack(side=LEFT)
 
-        chooseButton = Button(buttonFrame2, text="Download and create __database_file_label", command=self._download_makedb)
+        chooseButton = Button(buttonFrame2, text="Download and create database", command=self._download_makedb)
         chooseButton.pack(side=LEFT)
 
         cancelButton = Button(buttonFrame2, text="Cancel", command=self._cancel)
@@ -1014,17 +953,17 @@ class MakeOnlineDatabase(Frame):
     def OnValidate(self, val):
         forbiddencharacters = ["'",'"','=',':',';','-','[',']','>','<','|','\\',"/",'*',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
         for char in forbiddencharacters:
-          if self.dbname.get() != "<Enter a name for your __database_file_label>":
+          if self.dbname.get() != "<Enter a name for your database>":
             if char in self.dbname.get():
-              showerror("Error", "Forbidden character found in specified __database_file_label name: " + char)
-              self.dbname.set("<Enter a name for your __database_file_label>")
+              showerror("Error", "Forbidden character found in specified database name: " + char)
+              self.dbname.set("<Enter a name for your database>")
               return
         if self.dbname.get() != None:
-          if self.dbname.get() != "<Enter a name for your __database_file_label>":
+          if self.dbname.get() != "<Enter a name for your database>":
             dbname = self.dbname.get().replace(" ","_")
             self.dbname.set(dbname)
         else:
-          self.dbname.set("<Enter a name for your __database_file_label>")
+          self.dbname.set("<Enter a name for your database>")
 
     def _search(self):
         #Redirect if no input given
@@ -1123,15 +1062,15 @@ class MakeOnlineDatabase(Frame):
         if len(self.selected) == 0:
           showerror("Error", "No Entries selected.")
           return
-        #Final check for correct __database_file_label name
+        #Final check for correct database name
         if not validname(self.dbname.get()):
-          showerror("Error", "Please select a valid __database_file_label name.")
+          showerror("Error", "Please select a valid database name.")
           return
         #Remove spaces from dbname if this was not done automatically already
         self.dbname.set(self.dbname.get().replace(" ","_"))
         #Check for overwriting
         if self.dbname.get() + ".pal" in os.listdir(APPDATA) or self.dbname.get() + ".nal" in os.listdir(APPDATA):
-          answer = askyesno('Database name exists', 'A __database_file_label with this name already exists. Overwrite?')
+          answer = askyesno('Database name exists', 'A database with this name already exists. Overwrite?')
           if not answer:
             return
         IDs = ",".join(self.selected)
@@ -1170,7 +1109,7 @@ class MakeOnlineDatabase(Frame):
               return
         #Report download success
         self.modalPane.destroy()
-        showinfo("Download finished", "Download completed successfully.\nProceeding with creating the __database_file_label...\n")
+        showinfo("Download finished", "Download completed successfully.\nProceeding with creating the database...\n")
 
         #Open up toplevel that reports progress
         try:
@@ -1178,7 +1117,7 @@ class MakeOnlineDatabase(Frame):
         except(TclError):
           pass
         
-        #Create __database_file_label
+        #Create database
         if self.dbtype.getval() == 0:
           try:
             runmakedb(self.master, self.makedb2_outbox, [self.dbname.get() + ".gbk"], self.dbname.get())
@@ -1204,9 +1143,9 @@ class MakeOnlineDatabase(Frame):
         #Report success
         try:
           if self.dbtype.getval() == 0:
-            self.makedb2_outbox.text_insert("Database created.\nYou can now use this __database_file_label by selecting '" + self.dbname.get() + ".pal' under 'Select __database_file_label' in the 'File' menu.\n")
+            self.makedb2_outbox.text_insert("Database created.\nYou can now use this database by selecting '" + self.dbname.get() + ".pal' under 'Select database' in the 'File' menu.\n")
           else:
-            self.makedb2_outbox.text_insert("Database created.\nYou can now use this __database_file_label by selecting '" + self.dbname.get() + ".nal' under 'Select __database_file_label' in the 'File' menu.\n")
+            self.makedb2_outbox.text_insert("Database created.\nYou can now use this database by selecting '" + self.dbname.get() + ".nal' under 'Select database' in the 'File' menu.\n")
           self.makedb2_outbox.add_ok_button()
           self.modalPane.destroy()
         except(TclError):
@@ -1225,7 +1164,7 @@ class MakeGenBankDatabase(Frame):
         self.gbdivisions = ["BCT: Bacteria", "PLN: Plants, Fungi and Algae", "PHG: Bacteriophages", "SYN: Synthetic sequences", "PAT: Patent sequences", "ENV: Environmental sequences", "WGS: whole genome shotgun sequencing data", "CON: Unfinished genomes"]
         self.selected = []
         self.dbname = StringVar()
-        self.dbname.set("<Enter a name for your __database_file_label>")
+        self.dbname.set("<Enter a name for your database>")
         self.initUI()
 
     def initUI(self):
@@ -1237,7 +1176,7 @@ class MakeGenBankDatabase(Frame):
         self.modalPane.bind("<Return>", self._makedb)
         self.modalPane.bind("<Escape>", self._cancel)
 
-        self.modalPane.title("Make MGB __database_file_label from GenBank divisions")
+        self.modalPane.title("Make MGB database from GenBank divisions")
 
         searchFrame = Frame(self.modalPane)
         searchFrame.pack(side=TOP)
@@ -1261,14 +1200,14 @@ class MakeGenBankDatabase(Frame):
 
         buttonFrame = Frame(self.modalPane)
         buttonFrame.pack(side=BOTTOM)
-        chooseButton = Button(buttonFrame, text="Make __database_file_label", command=self._makedb)
+        chooseButton = Button(buttonFrame, text="Make database", command=self._makedb)
         chooseButton.pack(side=LEFT)
         cancelButton = Button(buttonFrame, text="Cancel", command=self._cancel)
         cancelButton.pack(side=RIGHT)
 
         checkboxFrame = Frame(self.modalPane)
         checkboxFrame.pack(side=BOTTOM)
-        text = Label(checkboxFrame, text="Make raw nucleotide __database_file_label for tblastn-searching:")
+        text = Label(checkboxFrame, text="Make raw nucleotide database for tblastn-searching:")
         text.pack(side=LEFT, pady=5)
         self.dbtype = CheckBox(checkboxFrame, [0,0], "")
         self.dbtype.pack(side=RIGHT)
@@ -1277,32 +1216,32 @@ class MakeGenBankDatabase(Frame):
     def OnValidate(self, val):
         forbiddencharacters = ["'",'"','=',':',';','-','[',']','>','<','|','\\',"/",'*',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
         for char in forbiddencharacters:
-          if self.dbname.get() != "<Enter a name for your __database_file_label>":
+          if self.dbname.get() != "<Enter a name for your database>":
             if char in self.dbname.get():
-              showerror("Error", "Forbidden character found in specified __database_file_label name: " + char)
-              self.dbname.set("<Enter a name for your __database_file_label>")
+              showerror("Error", "Forbidden character found in specified database name: " + char)
+              self.dbname.set("<Enter a name for your database>")
               return
         if self.dbname.get() != None:
-          if self.dbname.get() != "<Enter a name for your __database_file_label>":
+          if self.dbname.get() != "<Enter a name for your database>":
             dbname = self.dbname.get().replace(" ","_")
             self.dbname.set(dbname)
         else:
-          self.dbname.set("<Enter a name for your __database_file_label>")
+          self.dbname.set("<Enter a name for your database>")
 
     def _makedb(self, event=None):
         global APPDATA
-        #Final check for correct __database_file_label name
+        #Final check for correct database name
         selected = [self.gbdivisions[int(idx)].partition(":")[0] for idx in self.listBox.curselection()]
         if not validname(self.dbname.get()):
-          showerror("Error", "Please select a valid __database_file_label name.")
+          showerror("Error", "Please select a valid database name.")
           return
         if len(selected) == 0:
-          showerror("Error", "Please select input files for your __database_file_label first.")
+          showerror("Error", "Please select input files for your database first.")
           return
         #Remove spaces from dbname if this was not done automatically already; check for overwriting
         self.dbname.set(self.dbname.get().replace(" ","_"))
         if self.dbname.get() + ".pal" in os.listdir(APPDATA) or self.dbname.get() + ".nal" in os.listdir(APPDATA):
-          answer = askyesno('Database name exists', 'A __database_file_label with this name already exists. Overwrite?')
+          answer = askyesno('Database name exists', 'A database with this name already exists. Overwrite?')
           if not answer:
             return
         #Check that user is really ok with doing this
@@ -1329,7 +1268,7 @@ class MakeGenBankDatabase(Frame):
           self.makegbdb_outbox = MessageBox(self.master, self, "Creating Database...")
           self.makegbdb_outbox.text_insert("GenBank divisions to be downloaded: " + ",".join(selected) + "\n")
 
-          #Create __database_file_label
+          #Create database
           if self.dbtype.getval() == 0:
             makegbdb.maingui(selected, self.dbname.get(), self.master, self.makegbdb_outbox)
           else:
@@ -1342,16 +1281,16 @@ class MakeGenBankDatabase(Frame):
           self.modalPane.destroy()
           return
         if not (self.dbname.get() + ".pal" in os.listdir(APPDATA) or self.dbname.get() + ".nal" in os.listdir(APPDATA)):
-          self.makegbdb_outbox.text_insert("Error: __database_file_label creation failed due to unknown error.\n")
+          self.makegbdb_outbox.text_insert("Error: database creation failed due to unknown error.\n")
           os.chdir(currentdir)
           self.makegbdb_outbox.add_ok_button()
           self.modalPane.destroy()
           return
         #Report success
         if self.dbtype.getval() == 0:
-          self.makegbdb_outbox.text_insert("Database created.\nYou can now use this __database_file_label by selecting '" + self.dbname.get() + ".pal' under 'Select __database_file_label' in the 'File' menu.\n")
+          self.makegbdb_outbox.text_insert("Database created.\nYou can now use this database by selecting '" + self.dbname.get() + ".pal' under 'Select database' in the 'File' menu.\n")
         else:
-          self.makegbdb_outbox.text_insert("Database created.\nYou can now use this __database_file_label by selecting '" + self.dbname.get() + ".nal' under 'Select __database_file_label' in the 'File' menu.\n")
+          self.makegbdb_outbox.text_insert("Database created.\nYou can now use this database by selecting '" + self.dbname.get() + ".nal' under 'Select database' in the 'File' menu.\n")
         self.makegbdb_outbox.add_ok_button()
         self.modalPane.destroy()
         os.chdir(currentdir)
