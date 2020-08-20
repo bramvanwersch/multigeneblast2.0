@@ -564,19 +564,13 @@ class GeneSelectionFrame(Frame):
         selectionBox.grid(row=0,column=1)
         
     def OnValidate(self, val):
-        for char in ILLEGAL_CHARACTERS:
-          if self.selected.get() != "<Select genes>":
-            if char in self.selected.get():
-              showerror("Error", "Forbidden character found in specified locus tag: " + char)
-              self.selected.set("<Select genes>")
-              return
-        if self.selected.get() != None and self.selected.get() != "<Select genes>":
-          selectedgenes = self.selected.get()
-          self.SpObj.cstart.setval(0)
-          self.SpObj.cend.setval(0)
-          self.selected.set(selectedgenes)
+        if self.selected.get() != None and self.selected.get() != "<Select genes>" and len(self.selected.get().split(";")) > 1:
+            selectedgenes = self.selected.get()
+            self.SpObj.cstart.setval(0)
+            self.SpObj.cend.setval(0)
+            self.selected.set(selectedgenes)
         else:
-          self.selected.set("<Select genes>")
+            self.selected.set("<Select genes>")
 
     def clear_selection(self):
         self.selected.set("<Select genes>")
