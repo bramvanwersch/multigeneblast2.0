@@ -10,15 +10,6 @@ import os
 from multiprocessing import freeze_support
 import subprocess
 
-#Find path to mgb files if run from another directory
-pathfolders = os.environ['PATH'].split(os.pathsep)
-pathfolders.append(os.getcwd())
-
-if sys.platform == ('win32'):
-    USERDIR = os.environ['USERPROFILE'] + os.sep + 'Documents'
-else:
-    USERDIR = os.environ['HOME']
-
 
 from tkinter import *
 import tkinter.filedialog
@@ -26,11 +17,6 @@ from tkinter.messagebox import askyesno, showerror, showinfo
 from tkinter.ttk import Frame, Label, Scale, Style
 import webbrowser
 from guilib import *
-from multigeneblast import main
-import time
-import urllib.request, urllib.error, urllib.parse
-import tarfile
-import traceback
 
 from databases import GenbankFile, embl_to_genbank
 from constants import *
@@ -93,8 +79,7 @@ def checkfasta(infile):
 
 
 def file_download(frame):
-    global APPDATA
-    GenBankFileDownload(frame, APPDATA)
+    GenBankFileDownload(frame)
 
 def cancel_extraction(tar, toplevel):
     tar.close()
@@ -102,7 +87,6 @@ def cancel_extraction(tar, toplevel):
 
 
 def makedb_file(frame):
-    global APPDATA
     MakeDatabase(frame)
 
 def makedb_ncbi(frame):
@@ -136,7 +120,7 @@ class MainMultiGeneBlastGui(Frame):
         self.input_file_path = ""
 
         self.__outdir_label = StringVar()
-        self.outdir_path = ""
+        self.outdir_path = APPDATA
 
         self.searchtype = StringVar()
 
@@ -164,10 +148,8 @@ class MainMultiGeneBlastGui(Frame):
 
         downloadmenu = Menu(menu)
         menu.add_cascade(label="Download", menu=downloadmenu)
-        downloadmenu.add_command(label="Download GenBank entry",
-                                 command=lambda: file_download(frame))
-        # downloadmenu.add_command(label="Download MGB GenBank database",
-        #                          command=db_download)
+        downloadmenu.add_command(label="Download GenBank entrys",
+                                 command=lambda: file_download(self))
 
         dbmenu = Menu(menu)
         menu.add_cascade(label="Database", menu=dbmenu)
@@ -231,13 +213,13 @@ class MainMultiGeneBlastGui(Frame):
         infile_button.grid(row=2,column=2)
 
         # Output folder selection
-        self.__outdir_label.set("<No output directory selected>")
+        self.__outdir_label.set(APPDATA)
         outdir_lbl = Label(self.main_window_frame, text="Output folder name:")
-        outdir_lbl.grid(row=3, column=0, sticky=N)
+        outdir_lbl.grid(row=3, column=0)
         outdir_text = Label(self.main_window_frame, textvariable=self.__outdir_label)
-        outdir_text.grid(row=3, column=1, sticky=N)
+        outdir_text.grid(row=3, column=1)
         outdir_button = Button(self.main_window_frame, text="Select the output folder", command=self.select_out_directory)
-        outdir_button.grid(row=3, column=2, sticky=N)
+        outdir_button.grid(row=3, column=2)
 
         self.searchtype.set("homology")
 
@@ -531,8 +513,8 @@ class MainMultiGeneBlastGui(Frame):
             nr_pages = int(nr_pages) + 1
 
         general_options = "-in {} -db {} -out {} -c {} -hpg {} -msc {} -dkb {} -mpi {} -m {} -sw {} -op {}".format(self.input_file_path,
-                                                                                                                   self.database_file_path, self.outdir_path, self.cores.getval(), self.hitspergene.getval(), self.seqcov.getval(),
-                                                                                                                   self.distancekb.getval(), self.percid.getval(), muscle_val, self.syntenyweight.getval(), nr_pages)
+                self.database_file_path, self.outdir_path, self.cores.getval(), self.hitspergene.getval(), self.seqcov.getval(),
+                self.distancekb.getval(), self.percid.getval(), muscle_val, self.syntenyweight.getval(), nr_pages)
         full_command = base_command + filter_options + general_options
         return full_command
 

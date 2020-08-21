@@ -329,11 +329,10 @@ class DataBase:
                 try:
                     nrtries += 1
                     time.sleep(1)
-                    req = urllib.request.Request(efetch_url)
-                    response = urllib.request.urlopen(req)
-                    output = response.read()
-                    if len(output) > 5:
-                        url_finished = True
+                    with urllib.request.urlopen(efetch_url) as response:
+                        output = response.read()
+                        if len(output) > 5:
+                            url_finished = True
                 except (IOError, http.client.BadStatusLine, URLError,http.client.HTTPException):
                     logging.debug("Entry fetching from NCBI failed. Waiting for connection...")
                     time.sleep(5)

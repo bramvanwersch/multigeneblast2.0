@@ -8,6 +8,7 @@
 import multiprocessing
 import subprocess
 import webbrowser
+import time
 import tkinter.filedialog
 from tkinter.messagebox import askyesno, showerror, showwarning, showinfo
 from tkinter.ttk import Frame, Label, Scale, Style
@@ -24,7 +25,7 @@ from dblib.generate_genecords_tar import generate_genecords_tar
 from dblib.generate_proteininfo_tar import generate_proteininfo_tar
 
 from utilities import ILLEGAL_CHARACTERS
-from constants import APPDATA, GENBANK_EXTENSIONS, EMBL_EXTENSIONS, get_mgb_path
+from constants import APPDATA, GENBANK_EXTENSIONS, EMBL_EXTENSIONS, get_mgb_path, CHUNK
 
 MGBPATH = get_mgb_path()
 # import makegbdb
@@ -360,9 +361,8 @@ class ListBoxChoice(object):
 
 class GenBankFileDownload(Frame):
   
-    def __init__(self, master, directory):
+    def __init__(self, master):
         self.master = master
-        self.directory = directory
         self.list = []
         self.keyword = StringVar()
         self.keyword.set("")
@@ -398,14 +398,14 @@ class GenBankFileDownload(Frame):
         accessionentry = Entry(searchFrame, textvariable=self.accession, width=25)
         accessionentry.grid(row=2,column=1, pady=3)
         searchButton = Button(searchFrame, text="Search", command=self._search)
-        searchButton.grid(row=3,column=2, pady=3)
+        searchButton.grid(row=3,column=1, pady=3)
 
         listFrame = Frame(self.modalPane)
         listFrame.pack(side=TOP, padx=20, pady=20)
         
         scrollBar = Scrollbar(listFrame)
         scrollBar.pack(side=RIGHT, fill=Y)
-        self.listBox = Listbox(listFrame, selectmode=SINGLE, width=100, height=20)
+        self.listBox = Listbox(listFrame, selectmode="multiple", width=100, height=20)
         self.listBox.pack(side=LEFT, fill=Y)
         scrollBar.config(command=self.listBox.yview)
         self.listBox.config(yscrollcommand=scrollBar.set)
@@ -423,64 +423,64 @@ class GenBankFileDownload(Frame):
         cancelButton.pack(side=RIGHT)
 
     def _search(self):
-        #Redirect if no input given
+
         if self.organism.get() == "" and self.keyword.get() == "" and self.accession.get() == "":
-          showerror("Input error", "Please specify a search term first.")
-          return
+            showerror("Input error", "Please specify a search term first.")
+            return
         #Build URL
         url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nuccore&term="
         if self.organism.get() != "":
-          url += "%22" + self.organism.get().replace(" ","%20") + "%22[porgn]"
+            url += "%22" + self.organism.get().replace(" ","%20") + "%22[porgn]"
         if self.keyword.get() != "":
-          if self.organism.get() != "":
-            url += '%20AND%20' + "%22" + self.keyword.get().replace(" ","%20") + "%22"
-          else:
-            url += "%22" + self.keyword.get().replace(" ","%20") + "%22"
+            if self.organism.get() != "":
+                url += '%20AND%20' + "%22" + self.keyword.get().replace(" ","%20") + "%22"
+            else:
+                url += "%22" + self.keyword.get().replace(" ","%20") + "%22"
         if self.accession.get() != "":
-          url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nuccore&term=" + self.accession.get() + "[accession]"
+            url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nuccore&term=" + self.accession.get() + "[accession]"
         url += "&retmode=text&retmax=251&tool=multigeneblast&email=m.h.medema@rug.nl"
         #Search all IDs matching the query
         try:
-          req = urllib.request.urlopen(url)
-          xmltext = req.read()
-          xmltext = xmltext.partition("<IdList>")[2].partition("</IdList>")[0]
-          ids = [ID.partition("</Id>")[0] for ID in xmltext.split("<Id>")[1:]]
-          if len(ids) == 0:
-            showerror('Error', 'No matches found to your search query.')
+            with urllib.request.urlopen(url) as req:
+                xmltext = req.read().decode('utf-8')
+                xmltext = xmltext.partition("<IdList>")[2].partition("</IdList>")[0]
+                ids = [ID.partition("</Id>")[0] for ID in xmltext.split("<Id>")[1:]]
+                if len(ids) == 0:
+                    showerror('Error', 'No matches found for your search query.')
+                    return
+        except Exception:
+            showerror('Error', 'Could not connect to NCBI server.\nPlease check your internet connection.')
             return
-        except:
-          showerror('Error', 'Could not connect to NCBI server.\nPlease check your internet connection.')
-          return
         #Show message if more than 250 found, asking user to further specify his search
         if len(ids) > 250:
-          showwarning("Warning", "More than 250 matches found for your search query.\nOnly top 250 matches will be shown.")
-          ids = ids[:-1]
+            showwarning("Warning", "More than 250 matches found for your search query.\nOnly top 250 matches will be shown.")
+            ids = ids[:-1]
         self.ids = ids
         #Fetch titles for all IDs
         url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=nuccore&id=" + ",".join(ids) + "&retmode=xml&retmax=251&tool=multigeneblast&email=m.h.medema@rug.nl"
         #Open 'loading...' message
-        loading = Toplevel(self.modalPane, height=200, width=400)
-        loading.title("Loading")
+        loading_frame = Toplevel(self.modalPane, height=200, width=400)
+        loading_frame.title("Loading")
         message = "Loading. Please wait..."
-        a = Label(loading, text=message)
-        a.grid(row=1,column=1, padx=50, pady=50)
-        loading.bind("<Escape>", lambda e: "return")
+        loading_lablel = Label(loading_frame, text=message)
+        loading_lablel.grid(row=1,column=1, padx=50, pady=50)
+        loading_frame.bind("<Escape>", lambda e: "return")
         self.modalPane.update()
         try:
-          req = urllib.request.urlopen(url)
-          xmltext = req.read()
-          if "<DocSum>" not in xmltext or '<Item Name="Title" Type="String">' not in xmltext:
-            showerror('Error', 'Error in fetching match descriptions from NCBI server.')
-            return
-          entries = xmltext.split("<DocSum>")[1:]
-          descriptions = [entry.partition('<Item Name="Title" Type="String">')[2].partition('</Item>')[0] for entry in entries]
+            with urllib.request.urlopen(url) as req:
+                xmltext = req.read().decode('utf-8')
+                if "<DocSum>" not in xmltext or '<Item Name="Title" Type="String">' not in xmltext:
+                    showerror('Error', 'Error in fetching match descriptions from NCBI server.')
+                    return
+                entries = xmltext.split("<DocSum>")[1:]
+                descriptions = [entry.partition('<Item Name="Title" Type="String">')[2].partition('</Item>')[0] for entry in entries]
         except:
-          showerror('Error', 'Could not connect to NCBI server.\nPlease check your internet connection.')
-          return
+            showerror('Error', 'Could not connect to NCBI server.\nPlease check your internet connection.')
+            return
         self._clear()
-        loading.destroy()
+        loading_frame.destroy()
         for description in descriptions:
-          self._insert(description)
+            self._insert(description)
 
     def _clear(self):
         self.listBox.delete(0, END)
@@ -489,50 +489,59 @@ class GenBankFileDownload(Frame):
         self.listBox.insert(END, string)
 
     def _download(self, event=None):
-        try:
-          Selected = self.listBox.curselection()[0]
-        except IndexError:
-          self.value = None
-        currentdir = os.getcwd()
-        os.chdir(self.directory)
-        ID = self.ids[int(Selected)]
-        url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=" + ID + "&rettype=gbwithparts&retmode=text&tool=multigeneblast&email=m.h.medema@rug.nl"
-        filename = tkinter.filedialog.asksaveasfilename(defaultextension="gbk", filetypes = [('GenBank files', '.gbk'), ('all files', '.*')])
-        #Open 'loading...' message
-        loading = Toplevel(self.modalPane, height=200, width=400)
-        loading.title("Download progress")
-        message = "Downloading.\nPlease wait..."
-        a = Label(loading, text=message)
-        a.grid(row=1,column=1, padx=50, pady=50)
-        loading.bind("<Escape>", lambda e: "return")
-        self.modalPane.update()
-        try:
-          req = urllib.request.urlopen(url)
-        except:
-          showerror('Error', 'File not found on server.\nPlease check your internet connection.')
-          loading.destroy()
-          return
-        loading.protocol('WM_DELETE_WINDOW', lambda: cancel_download(req, loading))
-        CHUNK = 128 * 1024
-        with open(filename, 'wb') as fp:
-          while True:
-            message = "Downloading.\nPlease wait..."
+        ids = [self.ids[indx] for indx in self.listBox.curselection()]
+        outdir = tkinter.filedialog.askdirectory(mustexist=False)
+        if outdir == "":
+            return
+
+        #label to show download progress
+        loading_frame = Toplevel(self.modalPane, height=200, width=400)
+        loading_frame.title("Download progress")
+        message = StringVar()
+        message.set("")
+        loading_label = Label(loading_frame, textvariable=message)
+        loading_label.grid(row=1, column=1, padx=50, pady=50)
+        loading_frame.bind("<Escape>", lambda e: "return")
+        loading_frame.protocol('WM_DELETE_WINDOW', lambda: cancel_download(req, loading_frame))
+
+        failed_download_IDs = []
+        for index, id in enumerate(ids):
+            if not loading_frame.winfo_exists():
+                return
+            message.set("Downloading file {} out of {}.\nPlease wait...".format(index + 1, len(ids)))
+            url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=" + id +\
+                  "&rettype=gbwithparts&retmode=text&tool=multigeneblast&email=m.h.medema@rug.nl"
+
+            self.modalPane.update()
             try:
-              a = Label(loading, text=message)
-              a.grid_remove()
-              a.grid(row=1,column=1, padx=20, pady=20)
-              self.modalPane.update()
-              chunk = req.read(CHUNK)
-              if not chunk:
-                break
-              fp.write(chunk)
+                with urllib.request.urlopen(url) as req:
+                    accumulated_size = 0
+                    with open(outdir + os.sep + id + ".gb", 'wb') as fp:
+                        while True:
+                            try:
+                                #close when the loading window is destroyed for wathever reason
+                                if not loading_frame.winfo_exists():
+                                    failed_download_IDs.append(id)
+                                    break
+                                self.modalPane.update()
+                                chunk = req.read(CHUNK)
+                                if not chunk:
+                                    break
+                                fp.write(chunk)
+                            except:
+                                failed_download_IDs.append(id)
+                                break
+
+                    #make sure to not spam request faster then allowed
+                    time.sleep(0.5)
             except:
-              showerror('Error', 'Download interrupted.')
-              return
-        #Report download success
-        self.modalPane.destroy()
-        os.chdir(currentdir)
-        showinfo("Download finished", "Download completed successfully.")
+                failed_download_IDs.append(id)
+                continue
+
+        loading_frame.destroy()
+        # Report download success
+        showinfo("Download finished", "Download completed successfully. Files can be found at {}.The following IDs could not be downloaded: {}".format(outdir, ", ".join(failed_download_IDs)))
+
 
     def _cancel(self, event=None):
         self.modalPane.destroy()
@@ -614,7 +623,7 @@ class MessageBox(object):
         self.messageFrame.text.pack(side=LEFT)
         self.messageFrame.scroll.pack(side=RIGHT,fill=Y)
 
-        #listFrame = Frame(self.modalPane)
+        #listFrame = Frame(self.modal_pane)
         #listFrame.pack(side=TOP, padx=5, pady=5)
 
 
@@ -665,17 +674,17 @@ class MakeDatabase(Frame):
         self.initUI()
 
     def initUI(self):
-        self.modalPane = Toplevel(self.master, height=200, width=400)
+        self.modal_pane = Toplevel(self.master, height=200, width=400)
 
-        self.modalPane.transient(self.master)
-        self.modalPane.grab_set()
+        self.modal_pane.transient(self.master)
+        self.modal_pane.grab_set()
 
-        self.modalPane.bind("<Return>", self.make_database)
-        self.modalPane.bind("<Escape>", self._cancel)
+        self.modal_pane.bind("<Return>", self.make_database)
+        self.modal_pane.bind("<Escape>", self._cancel)
 
-        self.modalPane.title("Make MGB database from file")
+        self.modal_pane.title("Make MGB database from file")
 
-        searchFrame = Frame(self.modalPane)
+        searchFrame = Frame(self.modal_pane)
         searchFrame.pack(side=TOP)
         searchFrame.grid_columnconfigure(0, minsize=100)
         Label(searchFrame, text="Database name: ").grid(row=0,column=0, pady=3)
@@ -701,7 +710,7 @@ class MakeDatabase(Frame):
         searchButton = Button(searchFrame, text="Add files", command=self._addfile)
         searchButton.grid(row=2,column=0, pady=3)
 
-        listFrame = Frame(self.modalPane)
+        listFrame = Frame(self.modal_pane)
         listFrame.pack(side=TOP, padx=20, pady=5)
         scrollBar = Scrollbar(listFrame)
         scrollBar.pack(side=RIGHT, fill=Y)
@@ -714,10 +723,10 @@ class MakeDatabase(Frame):
         for item in self.files:
             self.listBox.insert(END, item)
 
-        clearButton = Button(self.modalPane, text="Clear list", command=self._clear)
+        clearButton = Button(self.modal_pane, text="Clear list", command=self._clear)
         clearButton.pack(side=LEFT)
 
-        buttonFrame = Frame(self.modalPane)
+        buttonFrame = Frame(self.modal_pane)
         buttonFrame.pack(side=BOTTOM)
         chooseButton = Button(buttonFrame, text="Make database", command=self.make_database)
         chooseButton.pack(side=LEFT)
@@ -811,14 +820,14 @@ class MakeDatabase(Frame):
     def __run_db_command(self, command):
         #create a place to push messages to
         outbox = MessageBox(frame=self.master, title="Creating database...")
-        self.master.update()
+        self.modal_pane.update()
         popen = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         lines_iterator = iter(popen.stdout.readline, b"")
         while popen.poll() is None:
             for line in lines_iterator:
                 outbox.text_insert(line)
-                self.master.update()
+                self.modal_pane.update()
         #check exit message
         output, error = popen.communicate()
         if error != b'':
@@ -828,16 +837,16 @@ class MakeDatabase(Frame):
             outbox.change_errormessage(error)
             outbox.add_ok_button()
             outbox.add_error_button()
-            self.master.update()
+            self.modal_pane.update()
         else:
 
             outbox.text_insert("Database created.\nYou can now use this database "
                 "by selecting '{}.pal' by clicking 'open database file' in the main window.\n".format(self.dbname.get()))
             outbox.add_ok_button()
-            self.master.update()
+            self.modal_pane.update()
 
     def _cancel(self, event=None):
-        self.modalPane.destroy()
+        self.modal_pane.destroy()
 
 
 class MakeOnlineDatabase(Frame):
