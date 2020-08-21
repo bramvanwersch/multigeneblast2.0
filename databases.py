@@ -189,7 +189,8 @@ class DataBase:
             new_file_paths = self.__convert_wgs_master_record(file_text, file_name.rsplit(".", 1)[0])
             logging.debug("{} new genbank file(s) where added containing the contigs.".format(len(new_file_paths)))
             file_text = ""
-        # do a basic check to see if the genbank file is valid
+        #TODO hadle supercontig records. At the moment i lack an example to try
+        #do a basic check to see if the genbank file is valid
         elif "     CDS             " not in file_text or "\nORIGIN" not in file_text:
             logging.warning("Genbank file {} is not properly formatted or contains no sequences. Skipping...".format(file))
         return file_text, new_file_paths
@@ -237,6 +238,15 @@ class DataBase:
             tar.add("{}{}pickles".format(TEMP, os.sep), arcname=os.path.basename(dbname))
 
     def __convert_wgs_master_record(self, text, file_name):
+        """
+        Convert WGS master record file into multiple files containing contigs
+
+        :param text: the file text of the WGS file
+        :param file_name: the name of the WGS file, it ensures that the records
+        get read into unique files
+        :return: a list of new gb files that need to be parsed in addition to
+        the existing list
+        """
         #If seq_record is a WGS master record, parse out contig accession numbers and download these as separate seq_records
         if "WGS_SCAFLD  " in text:
             contig_ranges = text.split("WGS_SCAFLD  ")[1].split("\n")[0]
@@ -292,6 +302,19 @@ class DataBase:
         return new_files
 
     def __fetch_urls(self, contig_groups, url_end, file_name):
+        """
+        Fetch information from the NCBI database
+
+        :param contig_groups: a list of lists of identifiers that are submitted
+        in the url requests
+        :param url_end: the end part of the url defining what type of data and
+        return type are requested
+        :param file_name: the name of the WGS file, it ensures that the records
+        get read into unique files
+        :return: a list of file names that contain the requested queries.
+        """
+        #TODO request are allowed to be fatster and bigger but to be safe 1 per
+        # second
         new_files = []
         for index, contig_group in enumerate(contig_groups):
             logging.debug("Fetching url information {}/{}".format(index + 1, len(contig_groups)))
@@ -305,7 +328,7 @@ class DataBase:
             while not url_finished or nrtries < 4:
                 try:
                     nrtries += 1
-                    time.sleep(3)
+                    time.sleep(1)
                     req = urllib.request.Request(efetch_url)
                     response = urllib.request.urlopen(req)
                     output = response.read()
@@ -358,7 +381,9 @@ class GenbankFile:
         """
         Give a fatsa text that is the combined fasta of all proteins in the
         database
-        :return:
+
+        :return: a String containing the combined fasta of all unique proteins
+        in the genbank file.
         """
         text = ""
         for protein in self.proteins.values():
@@ -366,6 +391,11 @@ class GenbankFile:
         return text
 
     def __list_proteins(self):
+        """
+        List all unique proteins from all contigs in a OrderedDict
+
+        :return: an OrderedDict
+        """
         protein_dict = OrderedDict()
         for contig in self.contigs.values():
             prots = contig.proteins.values()
@@ -403,6 +433,16 @@ class GenbankFile:
         return file_text
 
     def __create_contigs(self, text, protein_range, allowed_proteins):
+        """
+        Create an unordered dictionary of Contig objects
+
+        :param text: Text that contains one contig
+        :param protein_range: an optional range in which proteins can be selected
+        from the file instead of all proteins
+        :param allowed_proteins: a list of protein IDs that can be selected from
+        the genbank file instead of all proteins
+        :return: a dictionary of Contig objects
+        """
         contigs = {}
         for cont in text.split("//\n")[:-1]:
             contig = Contig(cont, protein_range, allowed_proteins)
