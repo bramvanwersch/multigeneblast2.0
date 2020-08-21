@@ -1,0 +1,143 @@
+LOCUS       NZ_ABAX03000000      3605636 bp    DNA     linear   BCT 04-APR-2020
+DEFINITION  Anaerostipes caccae DSM 14662, whole genome shotgun sequencing
+            project.
+ACCESSION   NZ_ABAX00000000
+VERSION     NZ_ABAX00000000.3
+DBLINK      BioProject: PRJNA224116
+            BioSample: SAMN00627053
+            Assembly: GCF_000154305.1
+KEYWORDS    WGS; RefSeq.
+SOURCE      Anaerostipes caccae DSM 14662
+  ORGANISM  Anaerostipes caccae DSM 14662
+            Bacteria; Firmicutes; Clostridia; Clostridiales; Lachnospiraceae;
+            Anaerostipes.
+REFERENCE   1  (bases 1 to 3605636)
+  AUTHORS   Sudarsanam,P., Ley,R., Guruge,J., Turnbaugh,P.J., Mahowald,M.,
+            Liep,D. and Gordon,J.
+  TITLE     Draft genome sequence of Anaerostipes caccae (DSM 14662)
+  JOURNAL   Unpublished
+REFERENCE   2  (bases 1 to 3605636)
+  AUTHORS   Fulton,L., Clifton,S., Fulton,B., Xu,J., Minx,P., Pepin,K.H.,
+            Johnson,M., Thiruvilangam,P., Bhonagiri,V., Nash,W.E., Mardis,E.R.
+            and Wilson,R.K.
+  TITLE     Direct Submission
+  JOURNAL   Submitted (07-NOV-2007) Genome Sequencing Center, Washington
+            University School of Medicine, 4444 Forest Park, St. Louis, MO
+            63108, USA
+REFERENCE   3  (bases 1 to 3605636)
+  AUTHORS   Fulton,L., Clifton,S., Fulton,B., Xu,J., Minx,P., Mardis,E.R. and
+            Wilson,R.K.
+  TITLE     Direct Submission
+  JOURNAL   Submitted (22-MAY-2007) Genome Sequencing Center, Washington
+            University School of Medicine, 4444 Forest Park, St. Louis, MO
+            63108, USA
+COMMENT     REFSEQ INFORMATION: The reference sequence was derived from
+            ABAX00000000.
+            On Nov 21, 2007 this sequence version replaced NZ_ABAX00000000.1.
+            The Anaerostipes caccae DSM 14662 whole genome shotgun (WGS)
+            project has the project accession NZ_ABAX00000000.  This version of
+            the project (03) has the accession number NZ_ABAX03000000, and
+            consists of sequences ABAX03000001-ABAX03000039.
+            Anaerostipes caccae (GenBank Accession Number: AJ270487) is a
+            member of the division Firmicutes. It is an acetate-converting
+            butyrate-producing colon bacteria that is involved in metabolic
+            cross-feeding with Bifidobacterium species (Falony et. al. (2006),
+            Belenguer et. al. (2006)). The sequenced strain was obtained from
+            Deutsche Sammlung von Mikroorganismen und Zellkulturen GmbH (DSMZ)
+            (DSM 14662).
+            
+            We have collected 9.8X coverage in plasmid end reads (pOTW13 and
+            pJAZZ vectors) and 454 reads. We have performed one round of
+            automated sequence improvement(pre-finishing), along with manual
+            improvement that includes breaking apart any mis-assembly, and
+            making manual joins where possible. Manual edits also are made
+            where the consensus appears to be incorrect. All low quality data
+            on the ends of contigs is removed. Contigs are ordered and oriented
+            where possible.
+            
+            Sequencing/Assembly: The genomic DNA was purified from liquid
+            culture derived from a single bacterial colony. A hybrid sequencing
+            strategy that utilized reads from both 454 GS-20 and ABI 3730xl
+            sequencers was devised and implemented to generate the draft genome
+            sequences.  454 reads were assembled using Newbler (454 Life
+            Sciences) into 454 de novo contigs. These de novo contigs were
+            converted in silico to 800 base paired reads ('superreads') with
+            400 base overlaps with neighboring superreads.  Finally, PCAP
+            (Huang, et al, Genome Research, 13:2164, (2003)) was used to
+            assemble the super-reads and the conventional 3730xl capillary
+            reads.
+            
+            This sequenced strain is part of a comprehensive, sequence-based
+            survey of members of the normal human gut microbiota.  A joint
+            effort of the WU-GSC and the Center for Genome Sciences at
+            Washington University School of Medicine, the purpose of this
+            survey is to provide the general scientific community with a broad
+            view of the gene content of 100 representatives of the major
+            divisions represented in the intestine's microbial community.
+            
+            Coding sequences were predicted using GeneMark v3.3 and Glimmer2
+            v2.13. Intergenic regions not spanned by GeneMark and Glimmer2 were
+            blasted against NCBI's non-redundant (NR) database and predictions
+            generated based on protein alignments. tRNA genes were determined
+            using tRNAscan-SE 1.23 and non-coding RNA genes by RNAmmer-1.2 and
+            Rfam v8.0. Gene names are generated at the contig level and may not
+            necessarily reflect any known order or orientation between contigs.
+            This information should provide a frame of reference for analyzing
+            metagenomic studies of the human gut microbiome. Further details of
+            this effort are described in a white paper entitled 'Extending Our
+            View of Self: the Human Gut Microbiome Initiative (HGMI)'
+            (http://www.genome.gov/Pages/Research/Sequencing/SeqProposals/HGMIS
+            eq.pdf). These studies are supported by National Human Genome
+            Research Institute.
+            
+            For answers to your questions regarding this assembly or project,
+            or any other GSC genome project, please visit our Genome Groups web
+            page (http://genome.wustl.edu/genome_group_index.cgi) and email the
+            designated contact person.
+            
+            Annotation was added to the contigs in February 2008.
+            
+            This is a reference genome for the Human Microbiome Project. This
+            project is co-owned with the Human Microbiome Project DACC.
+            Product names were updated in August 2012.
+            
+            ##Genome-Annotation-Data-START##
+            Annotation Provider               :: NCBI RefSeq
+            Annotation Date                   :: 04/04/2020 12:39:28
+            Annotation Pipeline               :: NCBI Prokaryotic Genome
+                                                 Annotation Pipeline (PGAP)
+            Annotation Method                 :: Best-placed reference protein
+                                                 set; GeneMarkS-2+
+            Annotation Software revision      :: 4.11
+            Features Annotated                :: Gene; CDS; rRNA; tRNA; ncRNA;
+                                                 repeat_region
+            Genes (total)                     :: 3,547
+            CDSs (total)                      :: 3,457
+            Genes (coding)                    :: 3,347
+            CDSs (with protein)               :: 3,347
+            Genes (RNA)                       :: 90
+            rRNAs                             :: 5, 4, 7 (5S, 16S, 23S)
+            complete rRNAs                    :: 5, 4, 3 (5S, 16S, 23S)
+            partial rRNAs                     :: 4 (23S)
+            tRNAs                             :: 70
+            ncRNAs                            :: 4
+            Pseudo Genes (total)              :: 111
+            CDSs (without protein)            :: 110
+            Pseudo Genes (ambiguous residues) :: 0 of 111
+            Pseudo Genes (frameshifted)       :: 73 of 111
+            Pseudo Genes (incomplete)         :: 32 of 111
+            Pseudo Genes (internal stop)      :: 15 of 111
+            Pseudo Genes (multiple problems)  :: 10 of 111
+            CRISPR Arrays                     :: 7
+            ##Genome-Annotation-Data-END##
+FEATURES             Location/Qualifiers
+     source          1..3605636
+                     /organism="Anaerostipes caccae DSM 14662"
+                     /mol_type="genomic DNA"
+                     /strain="DSM 14662"
+                     /type_material="type strain of Anaerostipes caccae"
+                     /db_xref="taxon:411490"
+WGS         ABAX03000001-ABAX03000039
+WGS_SCAFLD  NZ_DS499719-NZ_DS499722
+//
+

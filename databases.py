@@ -8,6 +8,12 @@ import shutil
 from string import ascii_letters
 from collections import OrderedDict
 
+import urllib.request, urllib.error, urllib.parse
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
+import http.client
+from http.client import BadStatusLine,HTTPException
+
 from utilities import *
 from constants import GENBANK_EXTENSIONS, EMBL_EXTENSIONS, TEMP
 
@@ -85,6 +91,7 @@ def embl_to_genbank(embl_filepath):
     logging.debug("Embl file {} made readable for genbank file object.".format(embl_filepath))
     return "\n".join(text_lines)
 
+
 class DataBase:
     """
     Tracks multiple genbank and embl files and can write the output into a format
@@ -108,7 +115,6 @@ class DataBase:
         """
         self.__write_files(outdir, dbname)
         self.__create_tar_file(outdir, dbname)
-        self.__cleanup_pickles()
 
     def get_fasta(self):
         """
@@ -132,32 +138,61 @@ class DataBase:
         :return: a list of Genbnak objects
         """
         files = []
-        for path in paths:
+        while len(paths) > 0:
+            path = paths.pop()
             #allow relative paths to b
             path = os.path.join(base_path, path)
             root, ext = os.path.splitext(path)
             file = None
             if ext in GENBANK_EXTENSIONS:
-                try:
-                    file = GenbankFile(path=path)
-                except Exception  as error:
-                    print(error)
-                    logging.debug(error)
-                    logging.warning("Failed to process the file {}. Skipping...".format(path))
+                file_text, new_paths = self.__read_genbank_file(path)
+                paths.extend(new_paths)
             elif ext in EMBL_EXTENSIONS:
                 file_text = embl_to_genbank(path)
-                try:
-                    file = GenbankFile(path=path, file_text=file_text)
-                except Exception as error:
-                    print(error)
-                    logging.debug(error)
-                    logging.warning("Failed to process the file {}. Skipping...".format(path))
             else:
                 logging.warning("Invalid extension {}. Skipping file {}.".format(ext, path))
                 continue
-            if file:
-                files.append(file)
+            try:
+                if file_text:
+                    file = GenbankFile(file_text=file_text)
+            except MultiGeneBlastException as error:
+                print(error)
+                logging.debug(error)
+                logging.warning("Failed to process the file {}. Skipping...".format(path))
+            else:
+                if file:
+                    files.append(file)
         return files
+
+    def __read_genbank_file(self, file):
+        """
+        Read a genbank file and check preemptively for invalid files
+
+        :param file: a file path
+        :return: a large string that is the text in the geanbank file
+        """
+        try:
+            with open(file, "r") as f:
+                file_text = f.read()
+        except Exception as e:
+            logging.critical("Invalid genbank file {}. Exiting...".format(file))
+            raise MultiGeneBlastException("Invalid genbank file {}.".format(file))
+
+        new_file_paths = []
+        # make sure to remove potential old occurances of \r. Acts like a \n
+        file_text = file_text.replace("\r", "\n")
+        #if the file is a WGS master file disect it
+        #TODO consider checking if the user has an internet connection
+        if "WGS_SCAFLD  " in file_text or "WGS         " in file_text:
+            logging.debug("Encountered WGS master file. Extracting all contigs...")
+            root, file_name = os.path.split(file)
+            new_file_paths = self.__convert_wgs_master_record(file_text, file_name.rsplit(".", 1)[0])
+            logging.debug("{} new genbank file(s) where added containing the contigs.".format(len(new_file_paths)))
+            file_text = ""
+        # do a basic check to see if the genbank file is valid
+        elif "     CDS             " not in file_text or "\nORIGIN" not in file_text:
+            logging.warning("Genbank file {} is not properly formatted or contains no sequences. Skipping...".format(file))
+        return file_text, new_file_paths
 
     def __write_files(self, outdir, dbname):
         """
@@ -201,13 +236,93 @@ class DataBase:
         with tarfile.open("{}{}{}_contigs.tar.gz".format(outdir, os.sep, dbname), "w:gz") as tar:
             tar.add("{}{}pickles".format(TEMP, os.sep), arcname=os.path.basename(dbname))
 
-    def __cleanup_pickles(self):
-        """
-        Remove the individual pickle files for all the contigs from the temporary
-        folder
-        """
-        logging.debug("Cleaning up pickle files...")
-        shutil.rmtree(TEMP + os.sep + "pickles")
+    def __convert_wgs_master_record(self, text, file_name):
+        #If seq_record is a WGS master record, parse out contig accession numbers and download these as separate seq_records
+        if "WGS_SCAFLD  " in text:
+            contig_ranges = text.split("WGS_SCAFLD  ")[1].split("\n")[0]
+        elif "WGS         " in text:
+            contig_ranges = text.split("WGS         ")[1].split("\n")[0]
+
+        #extract all the ranges
+        if ";" in contig_ranges:
+            ranges = []
+            for contig_range in contig_ranges.split(";"):
+                if "-" in contig_range:
+                    ranges.append(contig_range.split("-"))
+                else:
+                    ranges.append([contig_range])
+            contig_ranges = ranges
+        elif "-" in contig_ranges:
+            contig_ranges = [contig_ranges.split("-")]
+        else:
+            contig_ranges = [[contig_ranges]]
+
+        #extract all contigs for each range
+        allcontigs = []
+        for contig_range in contig_ranges:
+            if len(contig_range) == 1:
+                allcontigs.extend(contig_range)
+                continue
+            startnumber, endnumber = '', ''
+            alpha_tag = ''
+            for char in contig_range[0].partition(".")[0]:
+                if char.isdigit():
+                    startnumber += char
+                else:
+                    alpha_tag += char
+            for char in contig_range[1].partition(".")[0]:
+                if char.isdigit():
+                    endnumber += char
+            nrzeros = 0
+            #certain entries rely on a number of zeroes. This can be at the start of a number
+            for char in startnumber:
+                if char == "0":
+                    nrzeros += 1
+                else:
+                    break
+            contig_range = [alpha_tag + nrzeros * "0" + str(number) for number in range(int(startnumber), int(endnumber))]
+            allcontigs.extend(contig_range)
+
+        #Create contig groups of 50 (reasonable download size per download)
+        nr_groups = len(allcontigs) / 50 + 1
+        contig_groups = [allcontigs[i:i+50] for i in range(0, len(allcontigs), 50)]
+
+        #Download contigs and parse into seq_record objects
+        new_files = self.__fetch_urls(contig_groups, '&rettype=gbwithparts&retmode=text', file_name)
+        return new_files
+
+    def __fetch_urls(self, contig_groups, url_end, file_name):
+        new_files = []
+        for index, contig_group in enumerate(contig_groups):
+            logging.debug("Fetching url information {}/{}".format(index + 1, len(contig_groups)))
+            efetch_url = 'http://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id='
+            efetch_url = efetch_url + ",".join(contig_group) + url_end
+
+            #fetch the url
+            url_finished = False
+            nrtries = 0
+            output = ""
+            while not url_finished or nrtries < 4:
+                try:
+                    nrtries += 1
+                    time.sleep(3)
+                    req = urllib.request.Request(efetch_url)
+                    response = urllib.request.urlopen(req)
+                    output = response.read()
+                    if len(output) > 5:
+                        url_finished = True
+                except (IOError, http.client.BadStatusLine, URLError,http.client.HTTPException):
+                    logging.debug("Entry fetching from NCBI failed. Waiting for connection...")
+                    time.sleep(5)
+            # write the file to appdata to save it.
+            if output != "":
+                file_loc = TEMP + os.sep + file_name + str(index) + ".gb"
+                with open(file_loc, "wb") as f:
+                    f.write(output)
+                new_files.append(file_loc)
+            else:
+                logging.debug("Failed to retrieve files. NCBI servers are temporarily unavailable")
+        return new_files
 
 
 class GenbankFile:
@@ -279,6 +394,9 @@ class GenbankFile:
         file_text = file_text.replace("\r", "\n")
 
         # do a basic check to see if the genbank file is valid
+        if "WGS_SCAFLD  " in file_text or "WGS         " in file_text:
+            root, file_name = os.path.split(file)
+            file_text = convert_wgs_master_record(file_text, file_name)
         if "     CDS             " not in file_text or "\nORIGIN" not in file_text:
             logging.critical("Genbank file {} is not properly formatted or contains no sequences".format(file))
             raise MultiGeneBlastException("Genbank file {} is not properly formatted or contains no sequences".format(file))
@@ -320,7 +438,8 @@ class Contig:
     def __get_unique_proteins(self):
         """
         Make sure that you retrieve a unique list of named proteins after names
-        have been cleaned for illegal characters
+        have been cleaned for illegal characters. Also filter out entries that
+        mis sequences.
 
         :return: a dictionary of protein objects
         """
@@ -328,6 +447,8 @@ class Contig:
         for entry in self.entries:
             if entry.protein.name in protein_dict:
                 logging.warning("Double fasta entry '{}' in file '{}'. Skipping...".format(entry.protein.name, self.file))
+            elif len(entry.protein.sequence) == 0:
+                logging.warning("Cannot find or reconstruct sequence for entry {}. Skipping...".format(entry.protein.name))
             else:
                 protein_dict[entry.protein.name] = entry.protein
         return protein_dict
@@ -443,20 +564,20 @@ class GenbankEntry:
         protein_id = locus_tag = gene_name = None
         for index, line in enumerate(cds_part[1:]):
             line = line.replace("/","").strip()
-            if line.lower().startswith("codon_start"):
+            if line.lower().startswith("codon_start="):
                 self.__codon_start = int(self.__clean_line(line))
-            elif line.lower().startswith("protein_id"):
+            elif line.lower().startswith("protein_id="):
                 self.protein_id = self.__clean_line(line)
-            elif line.lower().startswith("locus_tag"):
+            elif line.lower().startswith("locus_tag="):
                 self.locus_tag = self.__clean_line(line)
-            elif line.lower().startswith("gene"):
+            elif line.lower().startswith("gene="):
                 self.gene_name = self.__clean_line(line)
-            elif line.lower().startswith("translation"):
+            elif line.lower().startswith("translation="):
                 self.protein_code += self.__clean_line(line)
                 for prot_line in cds_part[index + 2:]:
                     self.protein_code += prot_line.strip().replace('"', "")
                 break
-            elif line.lower().startswith("product"):
+            elif line.lower().startswith("product="):
                 self.annotation = self.__clean_line(line)
 
         #configure the genename with this order, locus tag, gene_name protein_id auto generated name

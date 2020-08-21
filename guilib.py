@@ -822,8 +822,7 @@ class MakeDatabase(Frame):
         #check exit message
         output, error = popen.communicate()
         if error != b'':
-            for line in str(error).split("\r\n"):
-                outbox.text_insert(line + "\n")
+            outbox.text_insert(str(error) + "\n")
             outbox.text_insert("MultiGeneBlast experienced a problem while creating the database. Please click"
                 " the button below to send an error report, so we can solve the underlying problem.\n")
             outbox.change_errormessage(error)
@@ -833,7 +832,7 @@ class MakeDatabase(Frame):
         else:
 
             outbox.text_insert("Database created.\nYou can now use this database "
-                "by selecting '{}.pal' under 'Select database' in the 'File' menu.\n".format(self.dbname.get()))
+                "by selecting '{}.pal' by clicking 'open database file' in the main window.\n".format(self.dbname.get()))
             outbox.add_ok_button()
             self.master.update()
 

@@ -82,7 +82,7 @@ def get_temp_data():
             temp = os.environ['HOME'] + os.sep + ".mgbtemp"
         except:
             temp = APPDATA
-    return temp
+    return temp + os.sep + "mgb_temp"
 
 #path constants
 CURRENTDIR = os.getcwd()

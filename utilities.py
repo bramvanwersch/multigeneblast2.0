@@ -8,8 +8,27 @@ import time
 import os, sys
 import datetime
 
+from constants import TEMP
+
 ILLEGAL_CHARACTERS = ["'",'"','=',';',':','[',']','>','<','|','\\',"/",'*','-','.',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
 
+
+def setup_temp_folder():
+    """
+    Setup a the working directory for MultiGeneBlast. This directory is emptied
+    when setting it up ensuring no confilicting files are present when running
+    any of the scripts
+    """
+    mgb_temp_folder = TEMP
+    try:
+        shutil.rmtree(mgb_temp_folder)
+    except:
+        pass
+    try:
+        os.mkdir(mgb_temp_folder)
+    except:
+        pass
+    os.chdir(mgb_temp_folder)
 
 def setup_logger(outdir, starttime, level="basic"):
     """

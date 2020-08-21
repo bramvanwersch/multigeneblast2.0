@@ -3,10 +3,10 @@
 
 import os
 import shutil
-from constants import DATABASE_EXTENSIONS
+from constants import DATABASE_EXTENSIONS, APPDATA
 
 def test_database(command):
-    print("Command exit code: {}".format(os.system(command)))
+    assert os.system(command) == 0
 
     #make sure that even when chaning directories the directory can be found
     my_path = os.path.abspath(os.path.dirname(__file__))
@@ -40,4 +40,10 @@ if __name__ == "__main__":
     test_database(command3)
     print("Finished running combined test...")
     print()
-    print("3/3 tests succesfully finished.")
+
+    #command for testing wgs master record
+    command3 = "..\\make_database.py -o tests\\test_data_base -n test -i tests\\WGS_master_record_test.gb -inf all"
+    test_database(command3)
+    print("Finished running combined test...")
+    print()
+    print("4/4 tests succesfully finished.")

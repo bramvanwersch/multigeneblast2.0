@@ -25,7 +25,7 @@ import shutil
 #own imports
 from databases import GenbankFile, embl_to_genbank, Protein
 from visualisation import ClusterCollectionSvg, create_xhtml_file
-from utilities import MultiGeneBlastException, setup_logger, run_commandline_command, remove_illegal_characters
+from utilities import MultiGeneBlastException, setup_logger, run_commandline_command, remove_illegal_characters, setup_temp_folder
 from constants import *
 
 #constant specifically required for mbg
@@ -1527,23 +1527,6 @@ def main():
     #Move all files to specified output folder
     move_outputfiles(user_options.outdir, len(page_sizes))
     logging.info("MultiGeneBlast succesfully finished. Output can be found at {}.".format(user_options.outdir))
-
-
-def setup_temp_folder():
-    """
-    Setup a the working directory for MultiGeneBlast. This directory is emptied
-    when starting MultiGeneblast
-    """
-    mgb_temp_folder = TEMP + os.sep + "mgb_temp"
-    try:
-        shutil.rmtree(mgb_temp_folder)
-    except:
-        pass
-    try:
-        os.mkdir(mgb_temp_folder)
-    except:
-        pass
-    os.chdir(mgb_temp_folder)
 
 
 if __name__ == '__main__':

@@ -4,7 +4,7 @@ import os
 import shutil
 
 def test_multigeneblast(command, outfolder, remove=True):
-    print("Command exit code: {}".format(os.system(command)))
+    assert os.system(command) == 0
 
     expected_files = ['clusterblast_output.mgb', 'run.log', 'jquery-1.4.2.min.js', 'jquery.svg.js', 'jquery.svgdom.js', 'style.css']
     my_path = os.path.abspath(os.path.dirname(__file__))
