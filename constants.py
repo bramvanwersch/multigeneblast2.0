@@ -13,6 +13,13 @@ DATABASE_EXTENSIONS = ["_database_index.pickle","_contigs.tar.gz",".psq",".psi",
 
 #path constants
 def get_mgb_path():
+    """
+    Get the path to the file where mgb is installed. If multigeneblast is not
+    added to the path environmental variable then calling this method outside of
+    the folder with mgb in it will result in an exception
+
+    :return: a string path or exception
+    """
     #Find path to mgb files if run from another directory
     pathfolders = os.environ['PATH'].split(os.pathsep)
     pathfolders.reverse()
@@ -39,6 +46,11 @@ def get_mgb_path():
 
 
 def get_appdata_path():
+    """
+    Find a path to the appdata of the operating system
+
+    :return: a string path or exception
+    """
     #Find path to Application Data
     if sys.platform == ('win32'):
         appdata = os.environ['ALLUSERSPROFILE'] + os.sep + 'Application Data'
@@ -71,6 +83,15 @@ def get_appdata_path():
     return appdata
 
 def get_temp_data():
+    """
+    Return the path to a mgb_temp folder in the temp folder of the operating
+    system
+
+    :return: a file path to that folder.
+
+    It is not guaranteed the folder exists. It is common practice to remove the
+    folder to clean up files.
+    """
     #Find path to temporary files
     if sys.platform == ('win32'):
         temp = os.environ['TEMP']
