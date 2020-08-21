@@ -422,65 +422,7 @@ class GenBankFileDownload(Frame):
         cancelButton = Button(buttonFrame, text="Cancel", command=self._cancel)
         cancelButton.pack(side=RIGHT)
 
-    def _search(self):
 
-        if self.organism.get() == "" and self.keyword.get() == "" and self.accession.get() == "":
-            showerror("Input error", "Please specify a search term first.")
-            return
-        #Build URL
-        url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nuccore&term="
-        if self.organism.get() != "":
-            url += "%22" + self.organism.get().replace(" ","%20") + "%22[porgn]"
-        if self.keyword.get() != "":
-            if self.organism.get() != "":
-                url += '%20AND%20' + "%22" + self.keyword.get().replace(" ","%20") + "%22"
-            else:
-                url += "%22" + self.keyword.get().replace(" ","%20") + "%22"
-        if self.accession.get() != "":
-            url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nuccore&term=" + self.accession.get() + "[accession]"
-        url += "&retmode=text&retmax=251&tool=multigeneblast&email=m.h.medema@rug.nl"
-        #Search all IDs matching the query
-        try:
-            with urllib.request.urlopen(url) as req:
-                xmltext = req.read().decode('utf-8')
-                xmltext = xmltext.partition("<IdList>")[2].partition("</IdList>")[0]
-                ids = [ID.partition("</Id>")[0] for ID in xmltext.split("<Id>")[1:]]
-                if len(ids) == 0:
-                    showerror('Error', 'No matches found for your search query.')
-                    return
-        except Exception:
-            showerror('Error', 'Could not connect to NCBI server.\nPlease check your internet connection.')
-            return
-        #Show message if more than 250 found, asking user to further specify his search
-        if len(ids) > 250:
-            showwarning("Warning", "More than 250 matches found for your search query.\nOnly top 250 matches will be shown.")
-            ids = ids[:-1]
-        self.ids = ids
-        #Fetch titles for all IDs
-        url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=nuccore&id=" + ",".join(ids) + "&retmode=xml&retmax=251&tool=multigeneblast&email=m.h.medema@rug.nl"
-        #Open 'loading...' message
-        loading_frame = Toplevel(self.modalPane, height=200, width=400)
-        loading_frame.title("Loading")
-        message = "Loading. Please wait..."
-        loading_lablel = Label(loading_frame, text=message)
-        loading_lablel.grid(row=1,column=1, padx=50, pady=50)
-        loading_frame.bind("<Escape>", lambda e: "return")
-        self.modalPane.update()
-        try:
-            with urllib.request.urlopen(url) as req:
-                xmltext = req.read().decode('utf-8')
-                if "<DocSum>" not in xmltext or '<Item Name="Title" Type="String">' not in xmltext:
-                    showerror('Error', 'Error in fetching match descriptions from NCBI server.')
-                    return
-                entries = xmltext.split("<DocSum>")[1:]
-                descriptions = [entry.partition('<Item Name="Title" Type="String">')[2].partition('</Item>')[0] for entry in entries]
-        except:
-            showerror('Error', 'Could not connect to NCBI server.\nPlease check your internet connection.')
-            return
-        self._clear()
-        loading_frame.destroy()
-        for description in descriptions:
-            self._insert(description)
 
     def _clear(self):
         self.listBox.delete(0, END)
@@ -831,7 +773,7 @@ class MakeDatabase(Frame):
         #check exit message
         output, error = popen.communicate()
         if error != b'':
-            outbox.text_insert(str(error) + "\n")
+            outbox.text_insert(error.decode('utf-8') + "\n")
             outbox.text_insert("MultiGeneBlast experienced a problem while creating the database. Please click"
                 " the button below to send an error report, so we can solve the underlying problem.\n")
             outbox.change_errormessage(error)
@@ -865,22 +807,28 @@ class MakeOnlineDatabase(Frame):
         self.dbname = StringVar()
         self.dbname.set("<Enter a name for your database>")
         self.descriptions = []
+
+        self.__search_warning = StringVar()
+        self.__outdir_label = StringVar()
+        self.__outdir_label.set(APPDATA)
+        self.__outdir_path = APPDATA
+
         self.initUI()
 
     def initUI(self):
-        self.modalPane = Toplevel(self.master, height=200, width=400)
+        self.modal_pane = Toplevel(self.master, height=200, width=400)
 
-        self.modalPane.transient(self.master)
-        self.modalPane.grab_set()
+        self.modal_pane.transient(self.master)
+        self.modal_pane.grab_set()
 
-        self.modalPane.bind("<Return>", self._download_makedb)
-        self.modalPane.bind("<Escape>", self._cancel)
+        self.modal_pane.bind("<Return>", self.download_make_database)
+        self.modal_pane.bind("<Escape>", self._cancel)
 
-        self.modalPane.title("Search GenBank")
+        self.modal_pane.title("Search GenBank")
 
-        Label(self.modalPane, text="Find GenBank entries on NCBI server").grid(row=0, column=0)
+        Label(self.modal_pane, text="Find GenBank entries on NCBI server").grid(row=0, column=0)
         
-        searchFrame = Frame(self.modalPane)
+        searchFrame = Frame(self.modal_pane)
         searchFrame.grid(row=1, column=0)
         searchFrame.grid_columnconfigure(0, minsize=100)
         Label(searchFrame, text="Keyword: ").grid(row=0,column=0, pady=3)
@@ -893,275 +841,273 @@ class MakeOnlineDatabase(Frame):
         accessionentry = Entry(searchFrame, textvariable=self.accession, width=25)
         accessionentry.grid(row=2,column=1, pady=3)
         searchButton = Button(searchFrame, text="Search", command=self._search)
-        searchButton.grid(row=3,column=2, pady=3)
+        searchButton.grid(row=3,column=1, pady=3)
 
-        listFrame = Frame(self.modalPane)
+        listFrame = Frame(self.modal_pane)
         listFrame.grid(row=2, column=0, padx=20, pady=5)
         Label(listFrame, text="Search results:").pack(side=TOP)
+        Label(listFrame, textvariable=self.__search_warning, foreground="red").pack(side=TOP)
         listInnerFrame = Frame(listFrame)
         listInnerFrame.pack(side=BOTTOM)
         scrollBar = Scrollbar(listInnerFrame)
         scrollBar.pack(side=RIGHT, fill=Y)
-        self.listBox = Listbox(listInnerFrame, selectmode=EXTENDED, width=100, height=8)
-        self.listBox.pack(side=LEFT, fill=Y)
-        scrollBar.config(command=self.listBox.yview)
-        self.listBox.config(yscrollcommand=scrollBar.set)
+        self.search_listbox = Listbox(listInnerFrame, selectmode="multiple", width=100, height=8)
+        self.search_listbox.pack(side=LEFT, fill=Y)
+        scrollBar.config(command=self.search_listbox.yview)
+        self.search_listbox.config(yscrollcommand=scrollBar.set)
         self.list.sort()
         for item in self.list:
-            self.listBox.insert(END, item)
+            self.search_listbox.insert(END, item)
         
-        buttonFrame1 = Frame(self.modalPane, width=100)
+        buttonFrame1 = Frame(self.modal_pane, width=100)
         buttonFrame1.grid(row=3, column=0)
         selectButton = Button(buttonFrame1, text="Select", command=self._insert_selected)
         selectButton.pack(side=RIGHT)
 
-        Label(self.modalPane, text=" ").grid(row=4, column=0, sticky=S)
-        Label(self.modalPane, text="Selected entries:").grid(row=5, column=0, sticky=S)
+        Label(self.modal_pane, text=" ").grid(row=4, column=0, sticky=S)
+        Label(self.modal_pane, text="Selected entries:").grid(row=5, column=0, sticky=S)
         
-        listFrame2 = Frame(self.modalPane)
+        listFrame2 = Frame(self.modal_pane)
         listFrame2.grid(row=6, column=0, padx=20, pady=5)
         scrollBar2 = Scrollbar(listFrame2)
         scrollBar2.pack(side=RIGHT, fill=Y)
-        self.listBox2 = Listbox(listFrame2, selectmode=SINGLE, width=100, height=8)
-        self.listBox2.pack(side=LEFT, fill=Y)
-        scrollBar2.config(command=self.listBox2.yview)
-        self.listBox2.config(yscrollcommand=scrollBar2.set)
-        self.listBox2.bind("<Delete>", self._remove_selected)
+        self.select_listbox = Listbox(listFrame2, selectmode="multiple", width=100, height=8)
+        self.select_listbox.pack(side=LEFT, fill=Y)
+        scrollBar2.config(command=self.select_listbox.yview)
+        self.select_listbox.config(yscrollcommand=scrollBar2.set)
+        self.select_listbox.bind("<Delete>", self._remove_selected)
         self.selected.sort()
         for item in self.selected:
-            self.listBox2.insert(END, item)
+            self.select_listbox.insert(END, item)
 
-        dbnameFrame = Frame(self.modalPane)
+        dbnameFrame = Frame(self.modal_pane)
         dbnameFrame.grid(row=7,column=0, pady=5)
-        Label(dbnameFrame, text="Database name: ").pack(side=LEFT)
-        self.dbname_entry = Entry(dbnameFrame, textvariable=self.dbname, width=50)
-        self.dbname_entry.pack(side=RIGHT)
-        self.dbname_entry.bind("<FocusOut>", self.OnValidate)
-        self.dbname_entry.bind("<Return>", self.OnValidate)
+        Label(dbnameFrame, text="Database name: ").grid(row=0, column=0, padx=3, pady=5)
+        dbname_entry = Entry(dbnameFrame, textvariable=self.dbname, width=40)
+        dbname_entry.grid(row=0, column=1, padx=3, pady=5)
+        dbname_entry.bind("<FocusOut>", self.OnValidate)
+        dbname_entry.bind("<Return>", self.OnValidate)
 
-        checkboxFrame = Frame(self.modalPane)
-        checkboxFrame.grid(row=8,column=0)
-        text = Label(checkboxFrame, text="Make raw nucleotide database for tblastn-searching:")
-        text.pack(side=LEFT, pady=10)
-        self.dbtype = CheckBox(checkboxFrame, [0,0], "")
-        self.dbtype.pack(side=RIGHT)
+        Label(dbnameFrame, text="Output folder name:").grid(row=1, column=0, padx=3, pady=5)
+        outdir_label = Label(dbnameFrame, textvariable=self.__outdir_label, width=40)
+        outdir_label.grid(row=1, column=1, padx=3, pady=5)
+        Button(dbnameFrame, text="Select output folder", command=self.select_out_directory).grid(row=1, column=2, padx=3, pady=5)
 
-        buttonFrame2 = Frame(self.modalPane)
+
+        buttonFrame2 = Frame(self.modal_pane)
         buttonFrame2.grid(row=9, column=0)
 
         clearButton = Button(buttonFrame2, text="Clear selection", command=self._clear_selected)
-        clearButton.pack(side=LEFT)
+        clearButton.grid(row=0, column=0, padx=3, pady=5)
 
-        chooseButton = Button(buttonFrame2, text="Download and create database", command=self._download_makedb)
-        chooseButton.pack(side=LEFT)
+        chooseButton = Button(buttonFrame2, text="Download and create database", command=self.download_make_database)
+        chooseButton.grid(row=0, column=1, padx=3, pady=5)
 
         cancelButton = Button(buttonFrame2, text="Cancel", command=self._cancel)
-        cancelButton.pack(side=RIGHT)
+        cancelButton.grid(row=0, column=2, padx=3, pady=5)
 
     def OnValidate(self, val):
-        forbiddencharacters = ["'",'"','=',':',';','-','[',']','>','<','|','\\',"/",'*',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
-        for char in forbiddencharacters:
-          if self.dbname.get() != "<Enter a name for your database>":
-            if char in self.dbname.get():
-              showerror("Error", "Forbidden character found in specified database name: " + char)
-              self.dbname.set("<Enter a name for your database>")
-              return
+        for char in ILLEGAL_CHARACTERS:
+            if self.dbname.get() != "<Enter a name for your database>":
+                if char in self.dbname.get():
+                    showerror("Input Error", "Database name contains illegal character. {} is not allowed".format(char))
+                    self.dbname.set("<Enter a name for your database>")
+                return
         if self.dbname.get() != None:
-          if self.dbname.get() != "<Enter a name for your database>":
-            dbname = self.dbname.get().replace(" ","_")
-            self.dbname.set(dbname)
+            if self.dbname.get() != "<Enter a name for your database>":
+                dbname = self.dbname.get().replace(" ","_")
+                self.dbname.set(dbname)
         else:
-          self.dbname.set("<Enter a name for your database>")
+            self.dbname.set("<Enter a name for your database>")
+            
+    def select_out_directory(self):
+        selected = tkinter.filedialog.askdirectory(mustexist=False)
+        if selected == "":
+            return
+        try:
+            with open(selected + os.sep + "test.txt", "w") as f:
+                f.write("test")
+            os.remove(selected + os.sep + "test.txt")
+        except PermissionError:
+            showerror("Error", "No permission to write to this folder. "
+                "Please choose a directory in which you have writing permissions.")
+            self.select_out_directory()
+        display_selected = selected
+        if len(selected) > 50:
+            display_selected = "{}...".format(selected[:47])
+        self.__outdir_label.set(display_selected)
+        self.__outdir_path = selected.replace("/", os.sep)
 
     def _search(self):
-        #Redirect if no input given
         if self.organism.get() == "" and self.keyword.get() == "" and self.accession.get() == "":
-          showerror("Input error", "Please specify a search term first.")
-          return
-        #Build URL
+            showerror("Input error", "Please specify a search term first.")
+            return
+        # Build URL
         url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nuccore&term="
         if self.organism.get() != "":
-          url += "%22" + self.organism.get().replace(" ","%20") + "%22[porgn]"
+            url += "%22" + self.organism.get().replace(" ",
+                                                       "%20") + "%22[porgn]"
         if self.keyword.get() != "":
-          if self.organism.get() != "":
-            url += '%20AND%20' + "%22" + self.keyword.get().replace(" ","%20") + "%22"
-          else:
-            url += "%22" + self.keyword.get().replace(" ","%20") + "%22"
+            if self.organism.get() != "":
+                url += '%20AND%20' + "%22" + self.keyword.get().replace(" ",
+                                                                        "%20") + "%22"
+            else:
+                url += "%22" + self.keyword.get().replace(" ", "%20") + "%22"
         if self.accession.get() != "":
-          url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nuccore&term=" + self.accession.get() + "[accession]"
+            url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nuccore&term=" + self.accession.get() + "[accession]"
         url += "&retmode=text&retmax=251&tool=multigeneblast&email=m.h.medema@rug.nl"
-        #Search all IDs matching the query
+        # Search all IDs matching the query
         try:
-          req = urllib.request.urlopen(url)
-          xmltext = req.read()
-          xmltext = xmltext.partition("<IdList>")[2].partition("</IdList>")[0]
-          ids = [ID.partition("</Id>")[0] for ID in xmltext.split("<Id>")[1:]]
-          if len(ids) == 0:
-            showerror('Error', 'No matches found to your search query.')
+            with urllib.request.urlopen(url) as req:
+                xmltext = req.read().decode('utf-8')
+                xmltext = \
+                xmltext.partition("<IdList>")[2].partition("</IdList>")[0]
+                ids = [ID.partition("</Id>")[0] for ID in
+                       xmltext.split("<Id>")[1:]]
+                if len(ids) == 0:
+                    showerror('Error',
+                              'No matches found for your search query.')
+                    return
+        except Exception:
+            showerror('Error','Could not connect to NCBI server.\nPlease check your internet connection.')
             return
-        except:
-          showerror('Error', 'Could not connect to NCBI server.\nPlease check your internet connection.')
-          return
-        #Show message if more than 250 found, asking user to further specify his search
-        warning250 = False
+        # Show message if more than 250 found, asking user to further specify his search
         if len(ids) > 250:
-          warning250 = True
-          ids = ids[:-1]
+            self.__search_warning.set("Warning. More than 250 matches found for your search query. Only top 250 matches will be shown.")
+            ids = ids[:-1]
         self.ids = ids
-        #Fetch titles for all IDs
-        url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=nuccore&id=" + ",".join(ids) + "&retmode=xml&retmax=251&tool=multigeneblast&email=m.h.medema@rug.nl"
-        #Open 'loading...' message
-        loading = Toplevel(self.modalPane, height=200, width=400)
-        loading.title("Loading")
-        message = "Loading. Please wait..."
-        a = Label(loading, text=message)
-        a.grid(row=1,column=1, padx=50, pady=50)
-        loading.bind("<Escape>", lambda e: "return")
-        self.modalPane.update()
+        # Fetch titles for all IDs
+        url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=nuccore&id=" + ",".join(
+            ids) + "&retmode=xml&retmax=251&tool=multigeneblast&email=m.h.medema@rug.nl"
+        # Open 'loading...' message
+        loading_frame = Toplevel(self.modal_pane, height=200, width=400)
+        loading_frame.title("Loading")
+        loading_lablel = Label(loading_frame, text="Loading. Please wait...")
+        loading_lablel.grid(row=1, column=1, padx=50, pady=50)
+        loading_frame.bind("<Escape>", lambda e: "return")
+        self.modal_pane.update()
         try:
-          req = urllib.request.urlopen(url)
-          xmltext = req.read()
-          if "<DocSum>" not in xmltext or '<Item Name="Title" Type="String">' not in xmltext:
-            showerror('Error', 'Error in fetching match descriptions from NCBI server.')
-            return
-          entries = xmltext.split("<DocSum>")[1:]
-          self.descriptions = [entry.partition('<Item Name="Title" Type="String">')[2].partition('</Item>')[0] for entry in entries]
+            with urllib.request.urlopen(url) as req:
+                xmltext = req.read().decode('utf-8')
+                if "<DocSum>" not in xmltext or '<Item Name="Title" Type="String">' not in xmltext:
+                    showerror('Error', 'Error in fetching match descriptions from NCBI server.')
+                    return
+                entries = xmltext.split("<DocSum>")[1:]
+                descriptions = [entry.partition('<Item Name="Title" Type="String">')[2].partition('</Item>')[0] for entry in entries]
         except:
-          showerror('Error', 'Could not connect to NCBI server.\nPlease check your internet connection.')
-          return
-        self._clear()
-        loading.destroy()
-        if warning250:
-          showwarning("Warning", "More than 250 matches found for your search query.\nOnly top 250 matches will be shown.")
-        for description in self.descriptions:
-          self._insert(description)
+            showerror('Error', 'Could not connect to NCBI server.\nPlease check your internet connection.')
+            return
+        loading_frame.destroy()
+        self._insert_search_results(descriptions)
 
-    def _clear(self):
-        self.listBox.delete(0, END)
-
-    def _insert(self, string):
-        self.listBox.insert(END, string)
+    def _insert_search_results(self, descriptions):
+        #make sure to delete contents before putting new in
+        self.search_listbox.delete(0, END)
+        self.descriptions = []
+        for desc in descriptions:
+            self.search_listbox.insert(END, desc)
+            self.descriptions.append(desc)
 
     def _clear_selected(self):
         self.selected = []
-        self.listBox2.delete(0, END)
+        self.select_listbox.delete(0, END)
 
     def _remove_selected(self, idx):
-        pos = self.listBox2.curselection()
-        self.listBox2.delete(pos, pos)
+        pos = self.select_listbox.curselection()
+        self.select_listbox.delete(pos, pos)
         ID = self.ids[int(pos)]
         del self.selected[self.selected.index(ID)]
 
     def _insert_selected(self):
-        try:
-          Selected = self.listBox.curselection()
-        except IndexError:
-          return
-        for Sel in Selected:
-          ID = self.ids[int(Sel)]
-          if ID not in self.selected:
-            self.listBox2.insert(END, self.descriptions[int(Sel)])
-            self.selected.append(ID)     
+        selected = self.search_listbox.curselection()
+        for sel_indx in selected:
+            ID = self.ids[sel_indx]
+            if ID not in self.selected:
+                self.select_listbox.insert(END, self.descriptions[sel_indx])
+                self.selected.append(ID)
 
-    def _download_makedb(self, event=None):
-        global APPDATA
-        currentdir = os.getcwd()
-        os.chdir(self.directory)
+    def download_make_database(self):
         if len(self.selected) == 0:
-          showerror("Error", "No Entries selected.")
-          return
+            showerror("Error", "No Entries selected.")
+            return
         #Final check for correct database name
-        if not validname(self.dbname.get()):
-          showerror("Error", "Please select a valid database name.")
-          return
-        #Remove spaces from dbname if this was not done automatically already
-        self.dbname.set(self.dbname.get().replace(" ","_"))
-        #Check for overwriting
-        if self.dbname.get() + ".pal" in os.listdir(APPDATA) or self.dbname.get() + ".nal" in os.listdir(APPDATA):
-          answer = askyesno('Database name exists', 'A database with this name already exists. Overwrite?')
-          if not answer:
-            return
-        IDs = ",".join(self.selected)
-        url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=" + IDs + "&rettype=gbwithparts&retmode=text&tool=multigeneblast&email=m.h.medema@rug.nl"
-        filename = self.dbname.get() + ".gbk"
-        #Open 'loading...' message
-        loading = Toplevel(self.modalPane, height=200, width=400)
-        loading.title("Download progress")
-        message = "Downloading.\nPlease wait..."
-        a = Label(loading, text=message)
-        a.grid(row=1,column=1, padx=50, pady=50)
-        loading.bind("<Escape>", lambda e: "return")
-        self.modalPane.update()
-        try:
-          req = urllib.request.urlopen(url)
-        except:
-          showerror('Error', 'File not found on server.\nPlease check your internet connection.')
-          loading.destroy()
-          return
-        loading.protocol('WM_DELETE_WINDOW', lambda: cancel_download(req, loading))
-        CHUNK = 128 * 1024
-        with open(filename, 'wb') as fp:
-          while True:
-            message = "Downloading.\nPlease wait..."
-            try:
-              a = Label(loading, text=message)
-              a.grid_remove()
-              a.grid(row=1,column=1, padx=20, pady=20)
-              self.modalPane.update()
-              chunk = req.read(CHUNK)
-              if not chunk:
-                break
-              fp.write(chunk)
-            except:
-              showerror('Error', 'Download interrupted.')
-              return
-        #Report download success
-        self.modalPane.destroy()
-        showinfo("Download finished", "Download completed successfully.\nProceeding with creating the database...\n")
+        for char in self.dbname.get():
+            if char in ILLEGAL_CHARACTERS:
+                showerror("Input Error","Database name contains illegal character. {} is not allowed".format(char))
+                return
+        # create a place to push messages to
+        outbox = MessageBox(frame=self.master, title="Creating database...")
+        #if downloading was a succes proceed with creating the database
+        if self.download_database(outbox):
+            command = self.__make_db_command()
+            outbox.text_insert("Running make_database.py:\n")
+            self.__run_db_command(command, outbox)
 
-        #Open up toplevel that reports progress
+    def download_database(self, outbox):
+
+        ids = self.selected
+
+        outbox.text_insert("Downloading {} files. This can take a while..\n".format(len(ids)))
+        self.modal_pane.update()
+        url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=" + ",".join(ids) +\
+              "&rettype=gbwithparts&retmode=text&tool=multigeneblast&email=m.h.medema@rug.nl"
+        start_time = time.time()
+        last_message_time = start_time
         try:
-          self.makedb2_outbox = MessageBox(self.master, self, "Creating Database...")
-        except(TclError):
-          pass
-        
-        #Create database
-        if self.dbtype.getval() == 0:
-          try:
-            runmakedb(self.master, self.makedb2_outbox, [self.dbname.get() + ".gbk"], self.dbname.get())
-          except(TclError):
-            pass
-          except:
-            showerror("Failure", "Database creation failed.")
-            os.chdir(currentdir)
-            self.makedb2_outbox.add_ok_button()
-            self.modalPane.destroy()
-            return
+            with urllib.request.urlopen(url) as req:
+                with open(self.__outdir_path + os.sep + self.dbname.get() + ".gbk", 'wb') as fp:
+                    while True:
+                        time_passed = time.time() - last_message_time
+                        chunk = req.read(CHUNK)
+                        if not chunk:
+                            break
+                        fp.write(chunk)
+                        if time_passed > 10:
+                            last_message_time = time.time()
+                            outbox.text_insert("Downloading in progress. Time since start {}s\n".format(time.time() - start_time))
+                            self.modal_pane.update()
+        except Exception as error:
+            outbox.text_insert("Failed to download files with the following error: {}\n".format(error))
+            return False
+
+        # Report download success
+        outbox.text_insert("Download completed successfully.\n")
+        return True
+
+    def __make_db_command(self):
+        base_command = "{}{}make_database.py ".format(MGBPATH, os.sep)
+        required_information = "-o {} -n {} -i {} ".format(self.__outdir_path, self.dbname.get(),self.__outdir_path + os.sep + self.dbname.get() + ".gbk")
+        full_command = base_command + required_information
+        return full_command
+
+    def __run_db_command(self, command, outbox):
+        # create a place to push messages to
+        self.modal_pane.update()
+        popen = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        lines_iterator = iter(popen.stdout.readline, b"")
+        while popen.poll() is None:
+            for line in lines_iterator:
+                outbox.text_insert(line)
+                self.modal_pane.update()
+        # check exit message
+        output, error = popen.communicate()
+        if error != b'':
+            outbox.text_insert(error.decode('utf-8') + "\n")
+            outbox.text_insert("MultiGeneBlast experienced a problem while creating the database. Please click"
+                               " the button below to send an error report, so we can solve the underlying problem.\n")
+            outbox.change_errormessage(error)
+            outbox.add_ok_button()
+            outbox.add_error_button()
+            self.modal_pane.update()
         else:
-          try:
-            runmakendb(self.master, self.makedb2_outbox, [self.dbname.get() + ".gbk"], self.dbname.get())
-          except(TclError):
-            pass
-          except:
-            showerror("Failure", "Database creation failed.")
-            os.chdir(currentdir)
-            self.makedb2_outbox.add_ok_button()
-            self.modalPane.destroy()
-            return
-        #Report success
-        try:
-          if self.dbtype.getval() == 0:
-            self.makedb2_outbox.text_insert("Database created.\nYou can now use this database by selecting '" + self.dbname.get() + ".pal' under 'Select database' in the 'File' menu.\n")
-          else:
-            self.makedb2_outbox.text_insert("Database created.\nYou can now use this database by selecting '" + self.dbname.get() + ".nal' under 'Select database' in the 'File' menu.\n")
-          self.makedb2_outbox.add_ok_button()
-          self.modalPane.destroy()
-        except(TclError):
-          pass
-        os.chdir(currentdir)
+            outbox.text_insert("Database created. You can now use this database "
+                "by selecting '{}.pal' by clicking 'open database file' in the main window.\n".format(self.dbname.get()))
+            outbox.add_ok_button()
+            self.modal_pane.update()
         
     def _cancel(self, event=None):
-        self.modalPane.destroy()
+        self.modal_pane.destroy()
 
 
 class MakeGenBankDatabase(Frame):

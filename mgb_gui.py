@@ -90,7 +90,6 @@ def makedb_file(frame):
     MakeDatabase(frame)
 
 def makedb_ncbi(frame):
-    global APPDATA
     MakeOnlineDatabase(frame, APPDATA)
 
 def makedb_gb():
@@ -146,17 +145,17 @@ class MainMultiGeneBlastGui(Frame):
         # filemenu.add_command(label="Select __database_file_label", command=db_open)
         filemenu.add_command(label="Exit", command=master.quit)
 
-        downloadmenu = Menu(menu)
-        menu.add_cascade(label="Download", menu=downloadmenu)
-        downloadmenu.add_command(label="Download GenBank entrys",
-                                 command=lambda: file_download(self))
+        # downloadmenu = Menu(menu)
+        # menu.add_cascade(label="Download", menu=downloadmenu)
+        # downloadmenu.add_command(label="Download GenBank entrys",
+        #                          command=lambda: file_download(self))
 
         dbmenu = Menu(menu)
         menu.add_cascade(label="Database", menu=dbmenu)
-        dbmenu.add_command(label="Create database from files",
+        dbmenu.add_command(label="Create database from local files",
                            command=lambda: makedb_file(self))
         dbmenu.add_command(label="Create database from online GenBank entries",
-                           command=lambda: makedb_ncbi(frame))
+                           command=lambda: makedb_ncbi(self))
         dbmenu.add_command(label="Create database from GenBank subdivisions",
                            command=makedb_gb)
 
@@ -538,7 +537,7 @@ class MainMultiGeneBlastGui(Frame):
         #check exit message
         output, error = popen.communicate()
         if error != b'':
-            outbox.text_insert(str(error))
+            outbox.text_insert(error.decode('utf-8') + "\n")
             outbox.text_insert("MultiGeneBlast experienced a problem. Please click"
                 " the button below to send an error report, so we can solve the underlying problem.\n")
             outbox.change_errormessage(error)

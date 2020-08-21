@@ -400,7 +400,7 @@ class GenbankFile:
             prots = contig.proteins.values()
             for prot in prots:
                 if prot.name in protein_dict:
-                    logging.warning("Double fasta entry '{}' in file '{}'. Skipping...".format(entry.protein.name, self.file))
+                    logging.warning("Double fasta entry '{}'. Skipping...".format(prot.name))
                 else:
                     protein_dict[prot.name] = prot
         return protein_dict
