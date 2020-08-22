@@ -568,6 +568,7 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
         html_outfile.write('<div id="description{}" style="text-align:left; position:absolute; top:{}px; left:10px; font-size:10px;'
                            ' font-style:italic">{}</div>\n'.format(page_nr, int(63 + (51.7 * (index + 1))), cluster_desc))
         #add query for the first index
+    index = 0
     for index, cluster in enumerate(clusters):
         if index == 0:
             query_starts = [arrow.start for arrow in all_svg_image.cluster_svgs["query"].gene_arrows.values()]

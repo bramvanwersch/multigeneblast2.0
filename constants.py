@@ -13,6 +13,7 @@ DATABASE_EXTENSIONS = ["_database_index.pickle","_contigs.tar.gz",".psq",".psi",
 
 #other constants
 CHUNK = 256 * 1024
+OUT_FOLDER_NAME = "multigeneblast_result"
 
 #path constants
 def get_mgb_path():

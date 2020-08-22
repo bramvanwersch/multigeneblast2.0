@@ -351,7 +351,7 @@ class GenbankFile:
     """
     An Object for easily disecting a genbank file into the individual proteins
     """
-    def __init__(self, path = None, file_text = None, contigs = None, protein_range=None, allowed_proteins=None):
+    def __init__(self, path = None, file_text = None, contigs = None, protein_range=[None, None], allowed_proteins=None):
         """
         :param path: a path to a genbank file
         :param file_text: an optional parameter that will be used as the file text
@@ -517,14 +517,14 @@ class Contig:
             #skip if no valid protein is found
             if g.protein == None:
                 continue
-            elif protein_range != None and g.protein.start >= protein_range[0] and g.protein.stop <= protein_range[1]:
+            elif protein_range[0] != None and g.protein.start >= protein_range[0] and g.protein.stop <= protein_range[1]:
                 genbank_entries.append(g)
             elif allowed_proteins != None and g.protein.protein_id in allowed_proteins:
                 genbank_entries.append(g)
                 found_proteins += 1
                 if found_proteins >= len(allowed_proteins):
                     break
-            elif allowed_proteins == None and protein_range == None:
+            elif allowed_proteins == None and protein_range[0] == None:
                 genbank_entries.append(g)
         return genbank_entries
 
