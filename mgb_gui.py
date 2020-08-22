@@ -235,23 +235,23 @@ class MainMultiGeneBlastGui(Frame):
         self.homology_frame.grid(row=0, columnspan=3, padx=5, pady=10, sticky=W)
         self.homology_frame.columnconfigure(0, minsize= 300)
 
-        # Start nt selection
-        self.nuc_start_lbl = Label(self.homology_frame, text="Nucleotide start position of fragment to search:")
-        self.nuc_start_lbl.grid(row=7, column=0, sticky=W, pady=5)
-        self.cstart = ScaleBar(self.homology_frame, self, [7, 1], 0, self.dnaseqlength, 0, resetgenes="y")
-
-        # End nt selection
-        self.nuc_end_lbl = Label(self.homology_frame, text="Nucleotide end position of fragment to search:")
-        self.nuc_end_lbl.grid(row=8, column=0, pady=3, sticky=W)
-        self.cend = ScaleBar(self.homology_frame, self, [8, 1], 0, self.dnaseqlength, self.dnaseqlength, resetgenes="y")
-
-        or_label = Label(self.homology_frame, text = "OR")
-        or_label.grid(row=9, column=1, pady=3)
-
         # Genes selection
         self.gene_selection_lbl = Label(self.homology_frame, text="Genes to search (locus tags / accession numbers):")
         self.gene_selection_lbl.grid(row=10, column=0, sticky=W, pady=5)
         self.selectedgenes = GeneSelectionFrame(self.homology_frame, self, [10, 1], self.geneslist)
+
+        # Start nt selection
+        self.nuc_start_lbl = Label(self.homology_frame, text="Nucleotide start position of fragment to search:")
+        self.nuc_start_lbl.grid(row=7, column=0, sticky=W, pady=5)
+        self.cstart = ScaleBar(self.homology_frame, self, [7, 1], 0, self.dnaseqlength, 0, scale_command=self.selectedgenes.clear_selection)
+
+        # End nt selection
+        self.nuc_end_lbl = Label(self.homology_frame, text="Nucleotide end position of fragment to search:")
+        self.nuc_end_lbl.grid(row=8, column=0, pady=3, sticky=W)
+        self.cend = ScaleBar(self.homology_frame, self, [8, 1], 0, self.dnaseqlength, self.dnaseqlength, scale_command=self.selectedgenes.clear_selection)
+
+        or_label = Label(self.homology_frame, text = "OR")
+        or_label.grid(row=9, column=1, pady=3)
 
         ###general input widgets
         general_widgets_frame = LabelFrame(options_frame, borderwidth=2, relief=GROOVE, text="General options:")
@@ -315,7 +315,7 @@ class MainMultiGeneBlastGui(Frame):
             self.homology_frame.grid()
             self.cstart.set_scale(0, self.dnaseqlength, 0)
             self.cend.set_scale(0, self.dnaseqlength, self.dnaseqlength)
-            self.selectedgenes.set_selected_genes(self.geneslist)
+            self.selectedgenes.set_selectable_genes(self.geneslist)
         elif self.searchtype.get() == "architecture":
             self.__input_file_label.set("<No file selected>")
             self.homology_frame.grid_remove()
@@ -332,7 +332,7 @@ class MainMultiGeneBlastGui(Frame):
         if self.searchtype.get() == "homology":
             self.cstart.set_scale(0, self.dnaseqlength, 0)
             self.cend.set_scale(0, self.dnaseqlength, self.dnaseqlength)
-            self.selectedgenes.set_selected_genes(self.geneslist)
+            self.selectedgenes.set_selectable_genes(self.geneslist)
 
     def file_open(self):
         """
@@ -424,25 +424,25 @@ class MainMultiGeneBlastGui(Frame):
         """
         command = self.__construct_mgb_command()
         if command != None:
-            self.__run_mgb_command(command)
-            self.open_final_webpage()
+            #if command finished succesfully
+            if self.__run_mgb_command(command) == 0:
+                self.open_final_webpage()
 
     def __construct_mgb_command(self):
         """
         Construct a command from the data input by the user
-        :return:
+
+        :return: a string that is the full command using the options of the user
         """
         #first check if in database and out are defined
         if self.input_file_path == "" or self.database_file_path == "" or self.outdir_path == "":
             showerror("Input incomplete Error", "Please fill in the input query file, the database file and the output directory")
             return None
-        if not self.__create_outdir():
-            showerror("Outdir Error", "Outir does not exist anymore. Please select a different one.")
-            return None
 
         #if there are genes selected use genes, otherwise use locations
         filter_options = ""
         if self.searchtype.get() == "homology":
+
             genes = self.selectedgenes.getval().split(";")
             if len(genes) > 1:
                 for gene in genes:
@@ -450,6 +450,9 @@ class MainMultiGeneBlastGui(Frame):
                         showerror("Input Error", "Invalid gene name {} in the provided list of genes".format(gene))
                         return None
                 filter_options = "-g {} ".format(" ".join(genes))
+            elif len(genes) == 1 and genes != ["<Select genes>"]:
+                showerror("Input Error", "Please select at least 2 proteins for the query.")
+                return None
             else:
                 start = self.cstart.getval()
                 end = self.cend.getval()
@@ -457,6 +460,9 @@ class MainMultiGeneBlastGui(Frame):
                     showerror("Input Error", "Start location has to be smaller then end location")
                     return None
                 filter_options = "-f {} -t {} ".format(start, end)
+
+        if not self.__create_outdir():
+            return None
 
         base_command = "{}{}multigeneblast.py ".format(MGBPATH, os.sep)
 
@@ -491,9 +497,11 @@ class MainMultiGeneBlastGui(Frame):
         try:
             dir_files = os.listdir(self.outdir_path + os.sep + OUT_FOLDER_NAME)
         except FileNotFoundError:
+            showerror("Outdir Error", "Outir does not exist anymore. Please select a different one.")
             return False
         if len(dir_files) > 0:
-            askyesno("Overwrite files", "The directory already exists files may be overwritten. Continue?")
+            if not askyesno("Overwrite files", "The directory already exists files may be overwritten. Continue?"):
+                return False
         return True
 
     def __run_mgb_command(self, command):
@@ -502,6 +510,7 @@ class MainMultiGeneBlastGui(Frame):
         MessageBox object
 
         :param command: a string that represents a valid mgb command
+        :return: the exitcode of running multigeneblast. An exitcode other then 0 means an error
         """
         #create a place to push messages to
         outbox = MessageBox(frame=self, title="Running MultiGeneBlast...")
@@ -516,19 +525,31 @@ class MainMultiGeneBlastGui(Frame):
         #check exit message
         output, error = popen.communicate()
         if error != b'':
-            outbox.text_insert(error.decode('utf-8') + "\n")
-            outbox.text_insert("MultiGeneBlast experienced a problem. Please click"
-                " the button below to send an error report, so we can solve the underlying problem.\n")
+            string_error = error.decode('utf-8')
+            error_lines = string_error.split("\n")
+
+            #expected error dont show the error message
+            if "raise MultiGeneBlastException" in error_lines[-1] or "raise MultiGeneBlastException" in error_lines[-2]\
+                    or "raise MultiGeneBlastException" in error_lines[-3]:
+                outbox.text_insert("\nMultigeneblast exitied because an input variable was not complete. Make sure to fix it "
+                                   "and run Multigeneblast again OR if you think this is not a problem with the input "
+                                   "please click the button below to send an error report.")
+            else:
+                outbox.text_insert(string_error + "\n")
+                outbox.text_insert("MultiGeneBlast experienced a problem. Please click"
+                    " the button below to send an error report, so we can solve the underlying problem.\n")
             outbox.change_errormessage(error)
             outbox.add_ok_button()
             outbox.add_error_button()
             self.update()
+            return popen.returncode
         else:
             outbox.text_insert('\nVisual output can be accessed by opening: '
                 '"file://' + self.outdir_path + os.sep + 'visual' + os.sep +
                                'displaypage1.xhtml" with a web browser\n')
             outbox.add_ok_button()
             self.update()
+            return popen.returncode
 
     def open_final_webpage(self):
         """

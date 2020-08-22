@@ -177,7 +177,7 @@ def validname(string):
 
 class ScaleBar(Frame):
   
-    def __init__(self, parent, SpObj, positions, minimum, maximum, default="0", resetgenes="n", input_type="int"):
+    def __init__(self, parent, SpObj, positions, minimum, maximum, default="0", scale_command=None, input_type="int"):
         Frame.__init__(self, parent)   
          
         self.parent = parent
@@ -186,7 +186,7 @@ class ScaleBar(Frame):
         self.minimum = minimum
         self.maximum = maximum
         self.default = default
-        self.resetgenes = resetgenes
+        self.command = scale_command
         self.input_type = input_type
         self.initUI()
         
@@ -239,8 +239,8 @@ class ScaleBar(Frame):
         else:
           v = float("".join(str(val).partition(".")[0:2]) + str(val).partition(".")[2][:2])
         self.var.set(str(v))
-        if hasattr(self.SpObj, 'selectedgenes') and self.resetgenes == "y":
-          self.SpObj.selectedgenes.clear_selection()
+        if self.command != None:
+            self.command()
         
     def setval(self, val):
         self.var.set(val)
@@ -513,8 +513,9 @@ class GeneSelectionFrame(Frame):
           self.SpObj.cend.setval(0)
           self.selected.set(selectedgenes)
 
-    def set_selected_genes(self, genes):
+    def set_selectable_genes(self, genes):
         self.entrieslist = genes
+        self.clear_selection()
 
     def initUI(self):
         self.grid(row=self.positions[0],column=self.positions[1], sticky=W)

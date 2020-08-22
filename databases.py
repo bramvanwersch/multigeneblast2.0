@@ -422,10 +422,11 @@ class GenbankFile:
         # make sure to remove potential old occurances of \r. Acts like a \n
         file_text = file_text.replace("\r", "\n")
 
-        # do a basic check to see if the genbank file is valid
+        #if there is a WGS in the genbank record make sure to raise an error.
         if "WGS_SCAFLD  " in file_text or "WGS         " in file_text:
-            root, file_name = os.path.split(file)
-            file_text = convert_wgs_master_record(file_text, file_name)
+            logging.critical("WGS master files cannot be used as query input files.")
+            raise MultiGeneBlastException("WGS master files cannot be used as query input files.")
+        # do a basic check to see if the genbank file is valid
         if "     CDS             " not in file_text or "\nORIGIN" not in file_text:
             logging.critical("Genbank file {} is not properly formatted or contains no sequences".format(file))
             raise MultiGeneBlastException("Genbank file {} is not properly formatted or contains no sequences".format(file))
@@ -519,7 +520,7 @@ class Contig:
                 continue
             elif protein_range[0] != None and g.protein.start >= protein_range[0] and g.protein.stop <= protein_range[1]:
                 genbank_entries.append(g)
-            elif allowed_proteins != None and g.protein.protein_id in allowed_proteins:
+            elif allowed_proteins != None and (g.protein.protein_id in allowed_proteins or g.protein.name in allowed_proteins or g.protein.locus_tag in allowed_proteins):
                 genbank_entries.append(g)
                 found_proteins += 1
                 if found_proteins >= len(allowed_proteins):
