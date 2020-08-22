@@ -12,7 +12,7 @@ import time
 import tkinter.filedialog
 from tkinter.messagebox import askyesno, showerror, showwarning, showinfo
 from tkinter.ttk import Frame, Label, Scale, Style
-from tkinter import Tk, BOTH, IntVar, Checkbutton, Spinbox, Listbox, StringVar, Entry, Button, Toplevel, TOP, RIGHT, LEFT, BOTTOM, Y, END, EXTENDED, Scrollbar, Text, NORMAL, INSERT, DISABLED, SINGLE, S, N, TclError
+from tkinter import Tk, BOTH, IntVar, Checkbutton, Spinbox, Listbox, StringVar, Entry, Button, Toplevel, TOP, RIGHT, LEFT, BOTTOM, Y, END, EXTENDED, Scrollbar, Text, NORMAL, INSERT, DISABLED, SINGLE, S, N, W, TclError
 import os
 import sys
 import shutil
@@ -198,7 +198,7 @@ class ScaleBar(Frame):
         
         #self.pack(fill=BOTH, expand=1)
         
-        self.grid(row=self.positions[0],column=self.positions[1], sticky=S)
+        self.grid(row=self.positions[0],column=self.positions[1], sticky=W)
         
         scale = Scale(self, from_=self.minimum, to=self.maximum, 
             command=self.onScale, length=200)
@@ -213,6 +213,12 @@ class ScaleBar(Frame):
         self.entry.bind("<FocusOut>", self.OnValidate)
         self.entry.bind("<Return>", self.OnValidate)
         self.entry.grid(row=0,column=0)
+
+    def set_scale(self, start, end, value):
+        self.scale.configure(from_=start)
+        self.scale.configure(to=end)
+        self.var.set(str(value))
+        self.scale.set(value)
         
     def OnValidate(self, val):
         if "-" in self.var.get():
@@ -258,7 +264,7 @@ class CheckBox(Frame):
       
         #self.parent.title("Checkbutton")
 
-        self.grid(row=self.positions[0],column=self.positions[1], sticky=S)
+        self.grid(row=self.positions[0],column=self.positions[1], sticky=W, padx=25)
         self.var = IntVar()
         
         cb = Checkbutton(self, text=self.description,
@@ -287,7 +293,7 @@ class SpinBox(Frame):
       
         #self.parent.title("Checkbutton")
 
-        self.grid(row=self.positions[0],column=self.positions[1], sticky=S)
+        self.grid(row=self.positions[0],column=self.positions[1], sticky=W)
         self.var = IntVar()
         self.var.set(self.default)
         
@@ -507,8 +513,11 @@ class GeneSelectionFrame(Frame):
           self.SpObj.cend.setval(0)
           self.selected.set(selectedgenes)
 
+    def set_selected_genes(self, genes):
+        self.entrieslist = genes
+
     def initUI(self):
-        self.grid(row=self.positions[0],column=self.positions[1], sticky=S)
+        self.grid(row=self.positions[0],column=self.positions[1], sticky=W)
         self.selected = StringVar()
         self.selected.set("<Select genes>")
         self.genes_entry = Entry(self, textvariable=self.selected, width=25)
@@ -516,7 +525,7 @@ class GeneSelectionFrame(Frame):
         self.genes_entry.bind("<FocusOut>", self.OnValidate)
         self.genes_entry.bind("<Return>", self.OnValidate)
         selectionBox = Button(self, text="Select genes", command=self.select)
-        selectionBox.grid(row=0,column=1)
+        selectionBox.grid(row=0,column=1, padx=10)
         
     def OnValidate(self, val):
         if self.selected.get() != None and self.selected.get() != "<Select genes>" and len(self.selected.get().split(";")) > 1:

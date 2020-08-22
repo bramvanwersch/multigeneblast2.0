@@ -106,8 +106,7 @@ class MainMultiGeneBlastGui(Frame):
         Frame.__init__(self, master)
         self.master = master
 
-        self.main_window_frame = Frame(master)
-        self.grid()
+        self.grid(padx=20, pady=20)
 
         #setup the menu widgets
         self.__setup_menu(master)
@@ -122,6 +121,11 @@ class MainMultiGeneBlastGui(Frame):
         self.outdir_path = APPDATA
 
         self.searchtype = StringVar()
+        self.searchtype.set("homology")
+
+        self.searchtype_explanation = StringVar()
+        self.searchtype_explanation.set("Homology search: Find operons or gene clusters homologous to"
+                                        " a known operon or gene cluster")
 
         #values for homology search when reading a query
         self.geneslist = []
@@ -156,8 +160,8 @@ class MainMultiGeneBlastGui(Frame):
                            command=lambda: makedb_file(self))
         dbmenu.add_command(label="Create database from online GenBank entries",
                            command=lambda: makedb_ncbi(self))
-        dbmenu.add_command(label="Create database from GenBank subdivisions",
-                           command=makedb_gb)
+        # dbmenu.add_command(label="Create database from GenBank subdivisions",
+        #                    command=makedb_gb)
 
         helpmenu = Menu(menu)
         menu.add_cascade(label="Help", menu=helpmenu)
@@ -168,147 +172,136 @@ class MainMultiGeneBlastGui(Frame):
         Innitialize all widgets present in the innitial frame
         :return:
         """
-        #frame to hold the widgets
-        self.main_window_frame.grid()
 
         #minimum sizes
-        self.main_window_frame.grid_columnconfigure(0, minsize=300)
-        self.main_window_frame.grid_columnconfigure(1, minsize=300)
-        self.main_window_frame.grid_rowconfigure(8, minsize=32)
-        self.main_window_frame.grid_rowconfigure(9, minsize=32)
-        self.main_window_frame.grid_rowconfigure(10, minsize=34)
-        self.main_window_frame.grid_rowconfigure(11, minsize=34)
-        self.main_window_frame.grid_rowconfigure(12, minsize=34)
-        self.main_window_frame.grid_rowconfigure(13, minsize=34)
-        self.main_window_frame.grid_rowconfigure(14, minsize=34)
-        self.main_window_frame.grid_rowconfigure(15, minsize=34)
-        self.main_window_frame.grid_rowconfigure(16, minsize=34)
 
-        #header text before
-        header_text = Label(self.main_window_frame, text="MultiGeneBlast input\n")
-        header_text.grid(row=0,column=0)
+        base_selection_frame = Frame(self, borderwidth=5, relief=GROOVE)
+        base_selection_frame.grid(row=0, column=0, padx=5, pady=5)
 
+        # base_selection_frame.grid_columnconfigure(0, minsize=300)
+        base_selection_frame.grid_columnconfigure(1, minsize=300)
         #Database selection
         if "genbank_mf.pal" in os.listdir("."):
             self.__database_file_label.set((os.getcwd() + os.sep + "genbank_mf").replace("\\", "/"))
         else:
             self.__database_file_label.set("<No database selected>")
-        database_label = Label(self.main_window_frame, text = "Current database:")
-        database_label.grid(row=1, column=0)
-        database_text = Label(self.main_window_frame, textvariable = self.__database_file_label)
-        database_text.grid(row=1, column=1)
+        database_label = Label(base_selection_frame, text = "Current database:")
+        database_label.grid(row=1, column=0, sticky=W, padx=5)
+        database_text = Label(base_selection_frame, textvariable = self.__database_file_label)
+        database_text.grid(row=1, column=1, sticky=W)
 
-        database_button = Button(self.main_window_frame, text = "Open database file", command=self.db_open)
-        database_button.grid(row=1,column=2)
+        database_button = Button(base_selection_frame, text = "Open database file", command=self.db_open)
+        database_button.grid(row=1,column=2, pady=5, sticky=W)
 
         #Input file selection
         self.__input_file_label.set("<No file selected>")
-        infile_label = Label(self.main_window_frame, text = "Current input file: ")
-        infile_label.grid(row=2,column=0)
-        infile_text = Label(self.main_window_frame, textvariable = self.__input_file_label)
-        infile_text.grid(row=2,column=1)
+        infile_label = Label(base_selection_frame, text = "Current query input file: ")
+        infile_label.grid(row=2,column=0, sticky=W, padx=5)
+        infile_text = Label(base_selection_frame, textvariable = self.__input_file_label)
+        infile_text.grid(row=2,column=1, sticky=W)
 
-        infile_button = Button(self.main_window_frame, text = "Open input file", command=self.file_open)
-        infile_button.grid(row=2,column=2)
+        infile_button = Button(base_selection_frame, text = "Open input file", command=self.file_open)
+        infile_button.grid(row=2,column=2, pady=5, sticky=W)
 
         # Output folder selection
         self.__outdir_label.set(APPDATA)
-        outdir_lbl = Label(self.main_window_frame, text="Output folder name:")
-        outdir_lbl.grid(row=3, column=0)
-        outdir_text = Label(self.main_window_frame, textvariable=self.__outdir_label)
-        outdir_text.grid(row=3, column=1)
-        outdir_button = Button(self.main_window_frame, text="Select the output folder", command=self.select_out_directory)
-        outdir_button.grid(row=3, column=2)
+        outdir_lbl = Label(base_selection_frame, text="Output folder name:")
+        outdir_lbl.grid(row=3, column=0, sticky=W, padx=5)
+        outdir_text = Label(base_selection_frame, textvariable=self.__outdir_label)
+        outdir_text.grid(row=3, column=1, sticky=W)
+        outdir_button = Button(base_selection_frame, text="Select the output folder", command=self.select_out_directory)
+        outdir_button.grid(row=3, column=2, pady=5, sticky=W)
 
-        self.searchtype.set("homology")
+        radio_button_frame = Frame(self)
+        radio_button_frame.grid(row=1, column=0, columnspan=2, pady=20)
 
-        # Search type radio buttons
-        space1 = Label(self.main_window_frame, text="\n")
-        space1.grid(row=4, column=0, columnspan=2)
-        homradio = Radiobutton(self.main_window_frame, text="Homology search", variable=self.searchtype,
+        explanation_label = Label(radio_button_frame, textvariable=self.searchtype_explanation)
+        explanation_label.grid(row=4, column=0, columnspan=2, pady=10)
+
+        homradio = Radiobutton(radio_button_frame, text="Homology search", variable=self.searchtype,
                                command=self.setup_search_type_widgets, value="homology")
-        homradio.grid(row=5, column=0)
-        archradio = Radiobutton(self.main_window_frame, text="Architecture search", variable=self.searchtype,
+        homradio.grid(row=5, column=0, padx=50, pady=10)
+        archradio = Radiobutton(radio_button_frame, text="Architecture search", variable=self.searchtype,
                                 command=self.setup_search_type_widgets, value="architecture")
-        archradio.grid(row=5, column=1)
+        archradio.grid(row=5, column=1, padx=50, pady=10)
         homradio.select()
 
-        space2 = Label(self.main_window_frame, text="\n")
-        space2.grid(row=6, column=0, columnspan=2)
+        #frame to hold all the search options
+        options_frame = Frame(self)
+        options_frame.grid(row=2, column=0)
+
+        ###widgets for homology search
+        self.homology_frame = LabelFrame(options_frame, borderwidth=2, relief=GROOVE, text="Homology options:")
+        self.homology_frame.grid(row=0, columnspan=3, padx=5, pady=10, sticky=W)
+        self.homology_frame.columnconfigure(0, minsize= 300)
 
         # Start nt selection
-        self.nuc_start_lbl = Label(self.main_window_frame, text="Nucleotide start position of fragment to search:")
-        self.nuc_start_lbl.grid(row=7, column=0, sticky=N)
-        self.cstart = ScaleBar(self.main_window_frame, self, [7, 1], 0, self.dnaseqlength, 0,
-                               resetgenes="y")
+        self.nuc_start_lbl = Label(self.homology_frame, text="Nucleotide start position of fragment to search:")
+        self.nuc_start_lbl.grid(row=7, column=0, sticky=W, pady=5)
+        self.cstart = ScaleBar(self.homology_frame, self, [7, 1], 0, self.dnaseqlength, 0, resetgenes="y")
 
         # End nt selection
-        self.nuc_end_lbl = Label(self.main_window_frame, text="Nucleotide end position of fragment to search:")
-        self.nuc_end_lbl.grid(row=8, column=0)
-        self.cend = ScaleBar(self.main_window_frame, self, [8, 1], 0, self.dnaseqlength,
-                             self.dnaseqlength, resetgenes="y")
+        self.nuc_end_lbl = Label(self.homology_frame, text="Nucleotide end position of fragment to search:")
+        self.nuc_end_lbl.grid(row=8, column=0, pady=3, sticky=W)
+        self.cend = ScaleBar(self.homology_frame, self, [8, 1], 0, self.dnaseqlength, self.dnaseqlength, resetgenes="y")
+
+        or_label = Label(self.homology_frame, text = "OR")
+        or_label.grid(row=9, column=1, pady=3)
 
         # Genes selection
-        self.gene_selection_lbl = Label(self.main_window_frame,
-                                        text="\nOr genes to search (locus tags / accession numbers):")
-        self.gene_selection_lbl.grid(row=9, column=0, sticky=N)
-        self.selectedgenes = GeneSelectionFrame(self.main_window_frame, self, [9, 1],
-                                                self.geneslist)
+        self.gene_selection_lbl = Label(self.homology_frame, text="Genes to search (locus tags / accession numbers):")
+        self.gene_selection_lbl.grid(row=10, column=0, sticky=W, pady=5)
+        self.selectedgenes = GeneSelectionFrame(self.homology_frame, self, [10, 1], self.geneslist)
+
+        ###general input widgets
+        general_widgets_frame = LabelFrame(options_frame, borderwidth=2, relief=GROOVE, text="General options:")
+        general_widgets_frame.grid(row=1, columnspan=3, padx=5, pady=10)
+        general_widgets_frame.grid_columnconfigure(0, minsize=300)
 
         # Number of cores to use
-        nr_cores_lbl = Label(self.main_window_frame, text="\nNumber of CPU cores to be used:")
-        nr_cores_lbl.grid(row=10, column=0, sticky=N)
-        self.cores = ScaleBar(self.main_window_frame, self, [10, 1], 1,
-                              determine_cpu_nr("all"), determine_cpu_nr("all"))
+        nr_cores_lbl = Label(general_widgets_frame, text="Number of CPU cores to be used:")
+        nr_cores_lbl.grid(row=11, column=0, sticky=W, pady=5)
+        self.cores = ScaleBar(general_widgets_frame, self, [11, 1], 1, determine_cpu_nr("all"), determine_cpu_nr("all"))
 
         # Minimal sequence coverage of Blast hit
-        hitspergene_lbl = Label(self.main_window_frame,
-                      text="\nNumber of Blast hits per gene to be mapped:")
-        hitspergene_lbl.grid(row=11, column=0, sticky=N)
-        self.hitspergene = ScaleBar(self.main_window_frame, self, [11, 1], 50, 1000, 250)
+        hitspergene_lbl = Label(general_widgets_frame, text="Number of Blast hits per gene to be mapped:")
+        hitspergene_lbl.grid(row=12, column=0, sticky=W, pady=5)
+        self.hitspergene = ScaleBar(general_widgets_frame, self, [12, 1], 50, 1000, 250)
 
         # Weight of synteny conservation score
-        syntentwheight_lbl = Label(self.main_window_frame,
-                      text="\nWeight of synteny conservation in hit sorting:")
-        syntentwheight_lbl.grid(row=12, column=0, sticky=N)
-        self.syntenyweight = ScaleBar(self.main_window_frame, self, [12, 1], 0.0, 2.0, 0.5,
-                                      input_type="float")
+        syntentwheight_lbl = Label(general_widgets_frame, text="Weight of synteny conservation in hit sorting:")
+        syntentwheight_lbl.grid(row=13, column=0, sticky=W, pady=5)
+        self.syntenyweight = ScaleBar(general_widgets_frame, self, [13, 1], 0.0, 2.0, 0.5, input_type="float")
 
         # Minimal sequence coverage of Blast hit
-        seqcov_lbl = Label(self.main_window_frame,
-                      text="\nMinimal sequence coverage of BLAST hits:")
-        seqcov_lbl.grid(row=13, column=0, sticky=N)
-        self.seqcov = ScaleBar(self.main_window_frame, self, [13, 1], 0, 100, 25)
+        seqcov_lbl = Label(general_widgets_frame, text="Minimal sequence coverage of BLAST hits:")
+        seqcov_lbl.grid(row=14, column=0, sticky=W, pady=5)
+        self.seqcov = ScaleBar(general_widgets_frame, self, [14, 1], 0, 100, 25)
 
         # Minimal % ID of Blast hit
-        percid_lbl = Label(self.main_window_frame, text="\nMinimal % identity of BLAST hits:")
-        percid_lbl.grid(row=14, column=0, sticky=N)
-        self.percid = ScaleBar(self.main_window_frame, self, [14, 1], 0, 100, 30)
+        percid_lbl = Label(general_widgets_frame, text="Minimal % identity of BLAST hits:")
+        percid_lbl.grid(row=15, column=0, sticky=W, pady=5)
+        self.percid = ScaleBar(general_widgets_frame, self, [15, 1], 0, 100, 30)
 
         # Maximum allowed distance between hits in locus
-        distancekb_lbl = Label(self.main_window_frame,
-                       text="\nMaximum distance between genes in locus (kb):")
-        distancekb_lbl.grid(row=15, column=0, sticky=N)
-        self.distancekb = ScaleBar(self.main_window_frame, self, [15, 1], 1, 100, 20)
+        distancekb_lbl = Label(general_widgets_frame, text="Maximum distance between genes in locus (kb):")
+        distancekb_lbl.grid(row=16, column=0, sticky=W, pady=5)
+        self.distancekb = ScaleBar(general_widgets_frame, self, [16, 1], 1, 100, 20)
 
         # Number of hit loci to show
-        hitsperloci_lbl = Label(self.main_window_frame, text="\nNumber of hit loci to display:")
-        hitsperloci_lbl.grid(row=16, column=0, sticky=N)
-        self.hitsperloci = SpinBox(self.main_window_frame, [16, 1], 0, 500, 50, 250)
+        hitsperloci_lbl = Label(general_widgets_frame, text="Number of hit loci to display:")
+        hitsperloci_lbl.grid(row=17, column=0, sticky=W, pady=5)
+        self.hitsperloci = SpinBox(general_widgets_frame, [17, 1], 0, 500, 50, 250)
 
         # Generate Muscle alignments
-        muscle_lbl = Label(self.main_window_frame,
-                       text="\nMuscle alignment of homologs with queries:")
-        muscle_lbl.grid(row=17, column=0, sticky=N)
-        self.muscle = CheckBox(self.main_window_frame, [17, 1], "")
+        muscle_lbl = Label(general_widgets_frame, text="Muscle alignment of homologs with queries:")
+        muscle_lbl.grid(row=18, column=0, sticky=W, pady=5)
+        self.muscle = CheckBox(general_widgets_frame, [18, 1], "")
 
-        # Empty space
-        space3 = Label(self.main_window_frame, text="   ")
-        space3.grid(row=18, column=0, columnspan=2)
-
+        button_frame = Frame(self)
+        button_frame.grid(row=3, column=0)
         #Run button to start analysis
-        run_mgb_btn = Button(self.main_window_frame, text="Run MultiGeneBlast", command=self.run_multigeneblast)
-        run_mgb_btn.grid(row=20,column=0)
+        Button(button_frame, text="Run MultiGeneBlast", command=self.run_multigeneblast).pack(side=BOTTOM, pady=20)
 
     def setup_search_type_widgets(self):
         """
@@ -317,28 +310,19 @@ class MainMultiGeneBlastGui(Frame):
         """
         if self.searchtype.get() == "homology":
             self.__input_file_label.set("<No file selected>")
-            if len(list(self.nuc_start_lbl.grid_info().keys())) == 0:
-                self.nuc_start_lbl.grid(row=7, column=0)
-                self.nuc_end_lbl.grid(row=8, column=0)
-                self.gene_selection_lbl.grid(row=9, column=0)
-                self.cstart = ScaleBar(self.main_window_frame, self, [7, 1], 0,
-                                       self.dnaseqlength, 0, resetgenes="y")
-                self.cend = ScaleBar(self.main_window_frame, self, [8, 1], 0,
-                                     self.dnaseqlength, self.dnaseqlength,
-                                     resetgenes="y")
-                self.selectedgenes = GeneSelectionFrame(self.main_window_frame, self,
-                                                        [9, 1], self.geneslist)
+            self.searchtype_explanation.set("Homology search: Find operons or gene clusters"
+                                            " homologous to a known operon or gene cluster")
+            self.homology_frame.grid()
+            self.cstart.set_scale(0, self.dnaseqlength, 0)
+            self.cend.set_scale(0, self.dnaseqlength, self.dnaseqlength)
+            self.selectedgenes.set_selected_genes(self.geneslist)
         elif self.searchtype.get() == "architecture":
             self.__input_file_label.set("<No file selected>")
-            if len(list(self.nuc_start_lbl.grid_info().keys())) > 0:
-                self.nuc_start_lbl.grid_forget()
-                self.nuc_end_lbl.grid_forget()
-                self.gene_selection_lbl.grid_forget()
-                self.cstart.grid_remove()
-                self.cend.grid_remove()
-                self.selectedgenes.grid_remove()
-                self.dnaseqlength = 0
-                self.geneslist = []
+            self.homology_frame.grid_remove()
+            self.dnaseqlength = 0
+            self.geneslist = []
+            self.searchtype_explanation.set("Architecture search: Find novel genomic loci which"
+                                            " contain a certain user-specified combination of genes")
 
     def update_starts_ends(self):
         """
@@ -346,12 +330,9 @@ class MainMultiGeneBlastGui(Frame):
         selection as well as the genes that can be selected.
         """
         if self.searchtype.get() == "homology":
-            self.cstart.grid_remove()
-            self.cend.grid_remove()
-            self.selectedgenes.grid_remove()
-            self.cstart = ScaleBar(self.main_window_frame, self, [6,1], 0, self.dnaseqlength, 0, resetgenes="y")
-            self.cend = ScaleBar(self.main_window_frame, self, [7,1], 0, self.dnaseqlength, self.dnaseqlength, resetgenes="y")
-            self.selectedgenes = GeneSelectionFrame(self.main_window_frame, self, [8,1], self.geneslist)
+            self.cstart.set_scale(0, self.dnaseqlength, 0)
+            self.cend.set_scale(0, self.dnaseqlength, self.dnaseqlength)
+            self.selectedgenes.set_selected_genes(self.geneslist)
 
     def file_open(self):
         """
@@ -416,50 +397,26 @@ class MainMultiGeneBlastGui(Frame):
 
     def select_out_directory(self):
         """
-        Select the output directory. If files are present a new directory is
-        created in that directory to prevent unwanted overwriting or removal of
-        files.
+        Select the output directory.
         """
         selected = tkinter.filedialog.askdirectory(mustexist=False)
         if selected == "":
             return
-        try:
-            dir_files = os.listdir(selected)
-        except FileNotFoundError:
-            showerror("Error", "Folder does not exist. Select a different one")
-            self.select_out_directory()
-        #if files in the directory make a directory in the directory
-        if len(dir_files) > 0:
-            #generate a unique name
-            count = 1
-            name = "MultiGeneBlast_out{}".format(count)
-            while name in dir_files:
-                count += 1
-                name = "MultiGeneBlast_out{}".format(count)
-            try:
-                os.mkdir(selected + os.sep + name)
-            except:
-                showerror("Error", "No permission to write to this folder. "
-                    "Please choose a directory in which you have writing permissions.")
-                self.select_out_directory()
-            selected = selected + "/" + name
         #if not files are present test if you can write in the folder
-        else:
-            #easier to ask forgiveniss then permission
-            try:
-                with open(selected + os.sep + "test.txt", "w") as f:
-                    f.write("test")
-                os.remove(selected + os.sep + "test.txt")
-            except PermissionError:
-                showerror("Error", "No permission to write to this folder. "
-                    "Please choose a directory in which you have writing permissions.")
-                self.select_out_directory()
+        #easier to ask forgiveniss then permission
+        try:
+            with open(selected + os.sep + "test.txt", "w") as f:
+                f.write("test")
+            os.remove(selected + os.sep + "test.txt")
+        except PermissionError:
+            showerror("Error", "No permission to write to this folder. "
+                "Please choose a directory in which you have writing permissions.")
+            self.select_out_directory()
         display_selected = selected
         if len(selected) > 50:
             display_selected = "{}...".format(selected[:47])
         self.__outdir_label.set(display_selected)
         self.outdir_path = selected.replace("/", os.sep)
-
 
     def run_multigeneblast(self):
         """
@@ -468,7 +425,7 @@ class MainMultiGeneBlastGui(Frame):
         command = self.__construct_mgb_command()
         if command != None:
             self.__run_mgb_command(command)
-
+            self.open_final_webpage()
 
     def __construct_mgb_command(self):
         """
@@ -476,8 +433,11 @@ class MainMultiGeneBlastGui(Frame):
         :return:
         """
         #first check if in database and out are defined
-        if self.input_file_path == "" or self.database_file_path == "" or  self.outdir_path == "":
+        if self.input_file_path == "" or self.database_file_path == "" or self.outdir_path == "":
             showerror("Input incomplete Error", "Please fill in the input query file, the database file and the output directory")
+            return None
+        if not self.__create_outdir():
+            showerror("Outdir Error", "Outir does not exist anymore. Please select a different one.")
             return None
 
         #if there are genes selected use genes, otherwise use locations
@@ -512,10 +472,29 @@ class MainMultiGeneBlastGui(Frame):
             nr_pages = int(nr_pages) + 1
 
         general_options = "-in {} -db {} -out {} -c {} -hpg {} -msc {} -dkb {} -mpi {} -m {} -sw {} -op {}".format(self.input_file_path,
-                self.database_file_path, self.outdir_path, self.cores.getval(), self.hitspergene.getval(), self.seqcov.getval(),
+                self.database_file_path, self.outdir_path + os.sep + OUT_FOLDER_NAME, self.cores.getval(), self.hitspergene.getval(), self.seqcov.getval(),
                 self.distancekb.getval(), self.percid.getval(), muscle_val, self.syntenyweight.getval(), nr_pages)
         full_command = base_command + filter_options + general_options
         return full_command
+
+    def __create_outdir(self):
+        """
+        Create the output directory
+
+        :return: a boolean telling if it was succesfull
+        """
+
+        try:
+            os.mkdir(self.outdir_path + os.sep + OUT_FOLDER_NAME)
+        except:
+            pass
+        try:
+            dir_files = os.listdir(self.outdir_path + os.sep + OUT_FOLDER_NAME)
+        except FileNotFoundError:
+            return False
+        if len(dir_files) > 0:
+            askyesno("Overwrite files", "The directory already exists files may be overwritten. Continue?")
+        return True
 
     def __run_mgb_command(self, command):
         """
@@ -545,8 +524,6 @@ class MainMultiGeneBlastGui(Frame):
             outbox.add_error_button()
             self.update()
         else:
-            self.open_final_webpage()
-
             outbox.text_insert('\nVisual output can be accessed by opening: '
                 '"file://' + self.outdir_path + os.sep + 'visual' + os.sep +
                                'displaypage1.xhtml" with a web browser\n')
@@ -557,7 +534,7 @@ class MainMultiGeneBlastGui(Frame):
         """
         Try to open an xhtml file in a browser
         """
-        display_page_1 = self.outdir_path + os.sep + 'visual' + os.sep + 'displaypage1.xhtml'
+        display_page_1 = self.outdir_path + os.sep + OUT_FOLDER_NAME + os.sep + 'visual' + os.sep + 'displaypage1.xhtml'
         if sys.platform == ('win32'):
             os.startfile(display_page_1)
         else:
@@ -594,7 +571,7 @@ def maingui():
         except:
             pass
     root.title('MultiGeneBlast')
-    root.geometry("%dx%d%+d%+d" % (850, 750, 0, 0))
+    # root.geometry("%dx%d%+d%+d" % (750, 750, 0, 0))
 
     mg = MainMultiGeneBlastGui(root)
 
