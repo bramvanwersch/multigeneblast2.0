@@ -102,6 +102,7 @@ class Options:
         """
         #the input file
         self.infile = arguments.i
+        self.run_name = self.__get_run_name()
         #the output directory
         self.outdir = arguments.o
         #the database to use
@@ -124,16 +125,24 @@ class Options:
         self.pages = arguments.op
         self.syntenyweight = arguments.sw
 
-        #TODO move this value to a more logical place
-        self.screenwidth = 1024
         self.log_level = arguments.inf
         self.gui = False
+
+    def __get_run_name(self):
+        """
+        Extract a name for the run based on the name of the input file
+
+        :return: a string that is the name without extension or path
+        """
+        root, file = os.path.split(self.infile)
+        file_name = file.split(".", 1)[0]
+        return file_name
 
     def __check_architecture_mode(self):
         """
         Check if MultiGeneBlast is running in architecture or homolgy search mode
 
-        :return: Boolean that is True if the __input_file_label ends in a fasta extension
+        :return: Boolean that is True if the input file ends in a fasta extension
         meaning MultiGeneBlast is running in architecture mode.
         """
         if any(self.infile.lower().endswith(ext) for ext in FASTA_EXTENSIONS):
@@ -204,7 +213,7 @@ def get_arguments():
                                             " blast hits to be counted as"
                                             " belonging to the same locus"
                                             " (default: 10)", default=20,
-                        type=int, choices=range(0,100),
+                        type=int, choices=range(0,101),
                         metavar="[0 - 100]")
     parser.add_argument("-sw", "-syntenywheight", help="Weight of synteny conservation"
                                                " in hit sorting score: (default"
@@ -1259,12 +1268,13 @@ def write_txt_output(query_proteins, clusters, blast_output, user_options):
     - '-' indicates a piece of information, that can be regarded as general
     facts of a certain header
     """
-    logging.info("Writing .mgb output file into {}...".format(os.path.join(user_options.outdir, "clusterblast_output.mgb")))
+    file_name = user_options.run_name + TEXT_OUT_NAME
+    logging.info("Writing .mgb output file into {}...".format(os.path.join(user_options.outdir, file_name)))
     try:
-        out_file = open("{}\clusterblast_output.mgb".format(user_options.outdir),"w")
+        out_file = open("{}\{}".format(user_options.outdir, file_name),"w")
     except (OSError, IOError):
-        logging.critical("Writing .mgb file has failed. Can not opern file {}".format(os.path.join(user_options.outdir, "clusterblast_output.mgb")))
-        raise MultiGeneBlastException("Can not open the output file {}.".format(os.path.join(user_options.outdir, "clusterblast_output.mgb")))
+        logging.critical("Writing .mgb file has failed. Can not opern file {}".format(os.path.join(user_options.outdir, file_name)))
+        raise MultiGeneBlastException("Can not open the output file {}.".format(os.path.join(user_options.outdir, file_name)))
 
     #write for what database
     out_file.write("ClusterBlast scores for: {}\{}\n\n".format(os.environ["BLASTDB"], user_options.db))

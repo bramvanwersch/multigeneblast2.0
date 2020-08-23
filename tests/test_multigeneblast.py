@@ -6,7 +6,7 @@ import shutil
 def test_multigeneblast(command, outfolder, remove=True):
     assert os.system(command) == 0
 
-    expected_files = ['clusterblast_output.mgb', 'run.log', 'jquery-1.4.2.min.js', 'jquery.svg.js', 'jquery.svgdom.js', 'style.css']
+    expected_files = ['run.log', 'jquery-1.4.2.min.js', 'jquery.svg.js', 'jquery.svgdom.js', 'style.css']
     my_path = os.path.abspath(os.path.dirname(__file__))
     db_folder = os.path.join(my_path, outfolder)
 
@@ -18,6 +18,8 @@ def test_multigeneblast(command, outfolder, remove=True):
         for file in files:
             if os.path.basename(path) == "visual":
                 assert file in expected_files or (file.startswith("displaypage") and file.endswith(".xhtml"))
+            elif file.endswith(".mgb"):
+                assert file.endswith("_cluster_text.mgb")
             else:
                 assert file in expected_files
 

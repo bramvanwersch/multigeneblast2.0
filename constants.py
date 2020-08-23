@@ -2,18 +2,20 @@
 #imports
 import os, sys
 
-
 #shared constants between files
 HITS_PER_PAGE = 50
+SCREENWIDTH = 1024
 FASTA_EXTENSIONS = (".fasta",".fas",".fa",".fna")
 EMBL_EXTENSIONS = (".embl",".emb")
 GENBANK_EXTENSIONS = (".gbk",".gb",".genbank", ".gbff")
 SVG_CORE_EXTENSION = 5000
 DATABASE_EXTENSIONS = ["_database_index.pickle","_contigs.tar.gz",".psq",".psi",".psd",".pin",".phr"]
-
-#other constants
 CHUNK = 256 * 1024
+
+#name of the folder containing the final results
 OUT_FOLDER_NAME = "multigeneblast_result"
+#last part of the name of the text output
+TEXT_OUT_NAME = "_cluster_text.mgb"
 
 #path constants
 def get_mgb_path():

@@ -32,7 +32,7 @@ class ClusterCollectionSvg:
         :param gene_color_dict: a dictionary linking protein names to rgb colors
         :param user_options: an option object with user defined options
         """
-        self.width = user_options.screenwidth
+        self.width = SCREENWIDTH
         self.dpn = self.__calculate_distance_per_nucleotide \
             (clusters + [query_cluster])
         self.cluster_svgs = self.__configure_cluster_svgs(clusters, query_cluster, gene_color_dict, user_options)
@@ -397,7 +397,7 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
     :param svg_images: A dictionary with classes containing information for
     creating all the svg images needed for the visual output.
     """
-    screenwidth = user_options.screenwidth
+    screenwidth = SCREENWIDTH
     html_outfile.write('<div id="clusterblastview" class="clusterdescr">\n\n')
     #Add menu bar 3
     html_outfile.write('<div id="bartext3" style="color:#FFFFFF; font-size:1em; position:absolute; z-index:2; top:3px; left:20px;"><b>MultiGeneBlast hits</b></div>')

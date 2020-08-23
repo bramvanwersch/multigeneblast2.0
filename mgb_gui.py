@@ -545,7 +545,7 @@ class MainMultiGeneBlastGui(Frame):
             return popen.returncode
         else:
             outbox.text_insert('\nVisual output can be accessed by opening: '
-                '"file://' + self.outdir_path + os.sep + 'visual' + os.sep +
+                '"file://' + self.outdir_path + os.sep + OUT_FOLDER_NAME + os.sep + 'visual' + os.sep +
                                'displaypage1.xhtml" with a web browser\n')
             outbox.add_ok_button()
             self.update()
