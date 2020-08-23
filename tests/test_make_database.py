@@ -42,8 +42,14 @@ if __name__ == "__main__":
     print()
 
     #command for testing wgs master record
-    command3 = "..\\make_database.py -o tests\\test_data_base -n test -i tests\\WGS_master_record_test.gb -inf all"
-    test_database(command3)
-    print("Finished running combined test...")
+    command4 = "..\\make_database.py -o tests\\test_data_base -n test -i tests\\WGS_master_record_test.gb -inf all"
+    test_database(command4)
+    print("Finished running WGS test...")
     print()
-    print("4/4 tests succesfully finished.")
+
+    #command for testing rare cases (missing sequences incomplete entries etc.)
+    command5 = "..\\make_database.py -o tests\\test_data_base -n test -i tests\\rare_case_test.embl -inf all"
+    test_database(command5)
+    print("Finished running rare case test...")
+    print()
+    print("5/5 tests succesfully finished.")

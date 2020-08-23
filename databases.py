@@ -486,7 +486,7 @@ class Contig:
         protein_dict = OrderedDict()
         for entry in self.entries:
             if entry.protein.name in protein_dict:
-                logging.warning("Double fasta entry '{}' in file '{}'. Skipping...".format(entry.protein.name, self.file))
+                logging.warning("Double fasta entry '{}' for contig '{}'. Skipping...".format(entry.protein.name, self.accession))
             elif len(entry.protein.sequence) == 0:
                 logging.warning("Cannot find or reconstruct sequence for entry {}. Skipping...".format(entry.protein.name))
             else:
@@ -554,9 +554,9 @@ class Contig:
             logging.debug("Probably invalid GenBank/Refseq accesion {} found.".format(self.accession))
             self.accession = ""
         if self.accession == "":
-            logging.debug("No valid accesion found for file {}".format(self.file))
+            logging.debug("No valid accesion found forcontig {}".format(self.accession))
         if self.definition == "":
-            logging.debug("No definition found for file {}".format(self.file))
+            logging.debug("No definition found for contig {}".format(self.accession))
 
 
 class GenbankEntry:
@@ -718,14 +718,14 @@ class GenbankEntry:
         :return: a list of lenght 2 with 2 integers
         """
         if ".." not in s:
-            logging.warning("No valid location found for genbank entry {}".format(self.gene_name))
+            logging.warning("No valid location specifier found for genbank entry {}".format(self.gene_name))
             return None
         try:
             str_locations = s.replace("<", "").replace(">", "").strip().split("..")
             return list(map(int, str_locations))
         #in case the str locations cannot be converted to integers
         except AttributeError:
-            logging.warning("No valid location found for genbank entry {}".format(self.gene_name))
+            logging.warning("No valid location specifier found for genbank entry {}".format(self.gene_name))
             return None
 
     def __create_protein(self, dna_seq, c_dna_seq):
