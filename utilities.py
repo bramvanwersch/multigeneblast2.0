@@ -7,6 +7,7 @@ import subprocess
 import time
 import os, sys
 import datetime
+import multiprocessing
 
 from constants import TEMP
 
@@ -34,7 +35,6 @@ def setup_logger(outdir, starttime, level="basic"):
     """
     Function for setting up a logger that will write output to file as well as
     to sdout.
-
     :param outdir: output directory specified by the user. this is where the
     log file should end up.
     :param starttime: the time the program was started. The logger is created
@@ -131,6 +131,32 @@ class MultiGeneBlastException(Exception):
     """
     pass
 
+
+def determine_cpu_nr(cores):
+    """
+    Determine the number of CPU's needed based on the nr provided by the user.
+
+    :param cores: a string that represents the amount of cores
+    :return: an integer that is between 1 and maximum cores
+
+    the cores can be any integer or 'all'. If 'all' is provided the maximum
+    amount of cores is selected. If a number higher then the maximum number of
+    cores is requested the maximum number is returned.
+    """
+    if cores.lower() == "all":
+        try:
+            nrcpus = multiprocessing.cpu_count()
+        except(IOError,OSError,NotImplementedError):
+            nrcpus = 1
+    else:
+        cores = int(cores)
+        try:
+            nrcpus = multiprocessing.cpu_count()
+        except(IOError,OSError,NotImplementedError):
+            nrcpus = 1
+        if cores < nrcpus:
+            nrcpus = cores
+    return nrcpus
 
 def remove_illegal_characters(string):
     """

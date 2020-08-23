@@ -9,17 +9,14 @@ import sys
 import os
 from multiprocessing import freeze_support
 import subprocess
-
-
 from tkinter import *
-import tkinter.filedialog
-from tkinter.messagebox import askyesno, showerror, showinfo
-from tkinter.ttk import Frame, Label, Scale, Style
 import webbrowser
-from guilib import *
 
+
+from guilib import *
 from databases import GenbankFile, embl_to_genbank
 from constants import *
+from utilities import determine_cpu_nr
 
 MGBPATH = get_mgb_path()
 
@@ -78,25 +75,6 @@ def checkfasta(infile):
     return True
 
 
-def file_download(frame):
-    GenBankFileDownload(frame)
-
-def cancel_extraction(tar, toplevel):
-    tar.close()
-    toplevel.destroy()
-
-
-def makedb_file(frame):
-    MakeDatabase(frame)
-
-def makedb_ncbi(frame):
-    MakeOnlineDatabase(frame, APPDATA)
-
-def makedb_gb():
-    global APPDATA
-    MakeGenBankDatabase(frame, APPDATA)
-
-
 class MainMultiGeneBlastGui(Frame):
     """
     The main gui class that holds all the widgets for the main window that is
@@ -118,7 +96,7 @@ class MainMultiGeneBlastGui(Frame):
         self.input_file_path = ""
 
         self.__outdir_label = StringVar()
-        self.outdir_path = APPDATA
+        self.outdir_path = MGBPATH
 
         self.searchtype = StringVar()
         self.searchtype.set("homology")
@@ -149,17 +127,17 @@ class MainMultiGeneBlastGui(Frame):
         # filemenu.add_command(label="Select __database_file_label", command=db_open)
         filemenu.add_command(label="Exit", command=master.quit)
 
-        # downloadmenu = Menu(menu)
-        # menu.add_cascade(label="Download", menu=downloadmenu)
-        # downloadmenu.add_command(label="Download GenBank entrys",
-        #                          command=lambda: file_download(self))
+        downloadmenu = Menu(menu)
+        menu.add_cascade(label="Download", menu=downloadmenu)
+        downloadmenu.add_command(label="Download GenBank entrys",
+                                 command=lambda: self.file_download())
 
         dbmenu = Menu(menu)
         menu.add_cascade(label="Database", menu=dbmenu)
         dbmenu.add_command(label="Create database from local files",
-                           command=lambda: makedb_file(self))
+                           command=lambda: self.makedb_file())
         dbmenu.add_command(label="Create database from online GenBank entries",
-                           command=lambda: makedb_ncbi(self))
+                           command=lambda: self.makedb_ncbi())
         # dbmenu.add_command(label="Create database from GenBank subdivisions",
         #                    command=makedb_gb)
 
@@ -167,19 +145,25 @@ class MainMultiGeneBlastGui(Frame):
         menu.add_cascade(label="Help", menu=helpmenu)
         helpmenu.add_command(label="About...", command=about)
 
+    def file_download(self):
+        GenBankFileDownload(self)
+
+    def makedb_file(self):
+        MakeDatabase(self)
+
+    def makedb_ncbi(self):
+        MakeOnlineDatabase(self)
+
     def __innitialize_widgets(self):
         """
         Innitialize all widgets present in the innitial frame
-        :return:
         """
-
-        #minimum sizes
 
         base_selection_frame = Frame(self, borderwidth=5, relief=GROOVE)
         base_selection_frame.grid(row=0, column=0, padx=5, pady=5)
 
-        # base_selection_frame.grid_columnconfigure(0, minsize=300)
         base_selection_frame.grid_columnconfigure(1, minsize=300)
+
         #Database selection
         if "genbank_mf.pal" in os.listdir("."):
             self.__database_file_label.set((os.getcwd() + os.sep + "genbank_mf").replace("\\", "/"))
@@ -204,7 +188,10 @@ class MainMultiGeneBlastGui(Frame):
         infile_button.grid(row=2,column=2, pady=5, sticky=W)
 
         # Output folder selection
-        self.__outdir_label.set(APPDATA)
+        display_location = MGBPATH
+        if len(MGBPATH) > 50:
+            display_location = "{}...".format(MGBPATH[:47])
+        self.__outdir_label.set(display_location)
         outdir_lbl = Label(base_selection_frame, text="Output folder name:")
         outdir_lbl.grid(row=3, column=0, sticky=W, padx=5)
         outdir_text = Label(base_selection_frame, textvariable=self.__outdir_label)
@@ -477,7 +464,7 @@ class MainMultiGeneBlastGui(Frame):
         else:
             nr_pages = int(nr_pages) + 1
 
-        general_options = "-in {} -db {} -out {} -c {} -hpg {} -msc {} -dkb {} -mpi {} -m {} -sw {} -op {}".format(self.input_file_path,
+        general_options = '-in "{}" -db "{}" -out "{}" -c {} -hpg {} -msc {} -dkb {} -mpi {} -m {} -sw {} -op {}'.format(self.input_file_path,
                 self.database_file_path, self.outdir_path + os.sep + OUT_FOLDER_NAME, self.cores.getval(), self.hitspergene.getval(), self.seqcov.getval(),
                 self.distancekb.getval(), self.percid.getval(), muscle_val, self.syntenyweight.getval(), nr_pages)
         full_command = base_command + filter_options + general_options
@@ -513,7 +500,7 @@ class MainMultiGeneBlastGui(Frame):
         :return: the exitcode of running multigeneblast. An exitcode other then 0 means an error
         """
         #create a place to push messages to
-        outbox = MessageBox(frame=self, title="Running MultiGeneBlast...")
+        outbox = MessageBox(frame=self, title="Running MultiGeneBlast...", outdir=self.outdir_path)
         self.update()
         popen = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -581,10 +568,9 @@ class MainMultiGeneBlastGui(Frame):
 
 
 def maingui():
-
-    #to ensure that the MGB directory can be located
-    # os.environ['PATH'] = os.getcwd() + os.pathsep + os.environ['PATH']
-
+    """
+    Starting point of the gui and mainloop
+    """
     root = Tk()
     if sys.platform == ('win32'):
         try:
@@ -595,9 +581,9 @@ def maingui():
     # root.geometry("%dx%d%+d%+d" % (750, 750, 0, 0))
 
     mg = MainMultiGeneBlastGui(root)
+    root.mainloop()
 
 
 if __name__ == '__main__':
     freeze_support()
     maingui()
-    mainloop()

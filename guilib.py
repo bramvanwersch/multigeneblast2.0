@@ -5,7 +5,6 @@
 ## License: GNU General Public License v3 or later
 ## A copy of GNU GPL v3 should have been included in this software package in LICENSE.txt.
 
-import multiprocessing
 import subprocess
 import webbrowser
 import time
@@ -14,166 +13,22 @@ from tkinter.messagebox import askyesno, showerror, showwarning, showinfo
 from tkinter.ttk import Frame, Label, Scale, Style
 from tkinter import Tk, BOTH, IntVar, Checkbutton, Spinbox, Listbox, StringVar, Entry, Button, Toplevel, TOP, RIGHT, LEFT, BOTTOM, Y, END, EXTENDED, Scrollbar, Text, NORMAL, INSERT, DISABLED, SINGLE, S, N, W, TclError
 import os
-import sys
-import shutil
-import platform
-import ctypes
 import urllib.request, urllib.error, urllib.parse
-from dblib.parse_gbk import parse_gbk_embl, nucparse_gbk_embl_fasta
-from dblib.utils import fasta_names, make_blast_db, clean_up, get_accession
-from dblib.generate_genecords_tar import generate_genecords_tar
-from dblib.generate_proteininfo_tar import generate_proteininfo_tar
+import smtplib
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import formatdate
 
 from utilities import ILLEGAL_CHARACTERS
-from constants import APPDATA, GENBANK_EXTENSIONS, EMBL_EXTENSIONS, get_mgb_path, CHUNK
+from constants import APPDATA, GENBANK_EXTENSIONS, EMBL_EXTENSIONS, get_mgb_path, CHUNK, OUT_FOLDER_NAME
 
 MGBPATH = get_mgb_path()
-# import makegbdb
-# import makegbndb
 
-#Find path to mgb files if run from another directory
-# pathfolders = os.environ['PATH'].split(os.pathsep)
-# pathfolders.append(os.getcwd())
-# CURRENTDIR = os.getcwd()
-# MGBPATH = ""
-# for folder in pathfolders:
-#   try:
-#     if "read_input_gui.py" in os.listdir(folder) and "guilib.py" in os.listdir(folder) and "empty.xhtml" in os.listdir(folder) and "multigeneblast.py" in os.listdir(folder) and "mgb_gui.py" in os.listdir(folder):
-#       MGBPATH = folder
-#       break
-#   except:
-#     pass
-# try:
-#   if  MGBPATH == "" and os.sep in sys.argv[0] and "read_input_gui.py" in os.listdir(sys.argv[0].rpartition(os.sep)[0]) and "guilib.py" in os.listdir(sys.argv[0].rpartition(os.sep)[0]):
-#     MGBPATH = sys.argv[0].rpartition(os.sep)[0]
-#     os.chdir(MGBPATH)
-# except:
-#   pass
-# if MGBPATH == "":
-#   print("Error: Please add the MultiGeneBlast installation directory to your $PATH environment variable before running the executable from another folder.")
-#   enter = eval(input())
-#   sys.exit(1)
-#
-# #Find path to Application Data
-# if sys.platform == ('win32'):
-#   APPDATA = os.environ['ALLUSERSPROFILE'] + os.sep + 'Application Data'
-# elif sys.platform == ('darwin'):
-#   APPDATA = os.path.expanduser("~") + "/Library/Application Support"
-# else:
-#   try:
-#     if os.path.exists(os.getcwd() + os.sep + "multigeneblast_data"):
-#       APPDATA = os.getcwd() + os.sep + "multigeneblast_data"
-#     else:
-#       os.mkdir(os.getcwd() + os.sep + "multigeneblast_data")
-#       APPDATA = os.getcwd() + os.sep + "multigeneblast_data"
-#   except:
-#     try:
-#       if os.path.exists(os.environ['HOME'] + os.sep + "multigeneblast_data"):
-#         APPDATA = os.getcwd() + os.sep + "multigeneblast_data"
-#       else:
-#         os.mkdir(os.environ['HOME'] + os.sep + "multigeneblast_data")
-#         APPDATA = os.environ['HOME'] + os.sep + "multigeneblast_data"
-#     except:
-#       print("No permission to write to installation folder. Please change user or save somewhere else.")
-#       sys.exit()
-# if sys.platform == ('darwin') or sys.platform == ('win32'):
-#   try:
-#     os.mkdir(APPDATA + os.sep + 'MultiGeneBlast')
-#     APPDATA = APPDATA + os.sep + 'MultiGeneBlast'
-#   except:
-#     if os.path.exists(APPDATA + os.sep + 'MultiGeneBlast'):
-#       APPDATA = APPDATA + os.sep + 'MultiGeneBlast'
-# #Find path to temporary files
-# if sys.platform == ('win32'):
-#   TEMP = os.environ['TEMP']
-# elif sys.platform == ('darwin'):
-#   TEMP = os.environ['TMPDIR']
-# else:
-#   try:
-#     os.mkdir(os.environ['HOME'] + os.sep + ".mgbtemp")
-#     TEMP = os.environ['HOME'] + os.sep + ".mgbtemp"
-#   except:
-#     TEMP = APPDATA
-# #Set other environment variables
-# os.environ['EXEC'] = MGBPATH + os.pathsep + "exec"
-# os.environ['PATH'] = os.environ['EXEC'] + os.pathsep + os.environ['PATH']
-# if sys.platform == ('win32'):
-#   USERDIR = os.environ['USERPROFILE'] + os.sep + 'Documents'
-# else:
-#   USERDIR = os.environ['HOME']
-
-def cancel_download(req, toplevel):
-  req.close()
-  toplevel.destroy()
-
-def get_remote_filesize(url):
-  try:
-    usock = urllib.request.urlopen(url)
-    dbfilesize = usock.info().get('Content-Length')
-    if dbfilesize is None:
-        dbfilesize = 0
-  except:
-    dbfilesize = 0
-  dbfilesize = float(int(dbfilesize)) # db file size in bytes
-  return dbfilesize
-
-def get_free_space(folder):
-    """ Return folder/drive free space (in bytes)
-    """
-    if platform.system() == 'Windows':
-        free_bytes = ctypes.c_ulonglong(0)
-        ctypes.windll.kernel32.GetDiskFreeSpaceExW(ctypes.c_wchar_p(folder), None, None, ctypes.pointer(free_bytes))
-        return free_bytes.value
-    else:
-        return os.statvfs(folder).f_bfree * os.statvfs(folder).f_frsize
-
-def determine_cpu_nr(cores):
-    #Determine number of CPUs used
-    if cores == "all":
-        try:
-            nrcpus = multiprocessing.cpu_count()
-        except(IOError,OSError,NotImplementedError):
-            nrcpus = 1
-    else:
-        try:
-            nrcpus = multiprocessing.cpu_count()
-        except(IOError,OSError,NotImplementedError):
-            nrcpus = 1
-        if cores < nrcpus:
-            nrcpus = cores
-    return nrcpus
-    
-global checkgenes
-def checkgenes(genes):
-    genes = genes.replace(", ",";")
-    genes = genes.replace(",",";")
-    genes = genes.replace(" ",";")
-    genes = genes.replace("'","")
-    genes = genes.replace('"','')
-    forbiddencharacters = ["'",'"','=',':','[',']','>','<','|','\\',"/",'*','-',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
-    for char in genes:
-      if char in forbiddencharacters:
-        return "<ERROR>"
-    return genes
-    
-global checkfoldername
-def checkfoldername(foldername):
-    forbiddencharacters = ["'",'"','=',':','[',']','>','<','|','\\',"/",'*','-',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
-    for char in foldername:
-      if char in forbiddencharacters:
-        return "<ERROR>"
-    return foldername
 
 def about():
     webbrowser.open('http://multigeneblast.sourceforge.net/')
-    print("Navigating to MultiGeneBlast web page on Sourceforge.net")
 
-def validname(string):
-    forbiddencharacters = ["'",'"','=',':',';','-','[',']','>','<','|','\\',"/",'*',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
-    for char in forbiddencharacters:
-      if char in string:
-        return False
-    return True
 
 class ScaleBar(Frame):
   
@@ -365,135 +220,6 @@ class ListBoxChoice(object):
         self.master.wait_window(self.modalPane)
         return self.value
 
-class GenBankFileDownload(Frame):
-  
-    def __init__(self, master):
-        self.master = master
-        self.list = []
-        self.keyword = StringVar()
-        self.keyword.set("")
-        self.organism = StringVar()
-        self.organism.set("")
-        self.accession = StringVar()
-        self.accession.set("")
-        self.initUI()
-
-    def initUI(self):
-        self.modalPane = Toplevel(self.master, height=200, width=400)
-
-        self.modalPane.transient(self.master)
-        self.modalPane.grab_set()
-
-        self.modalPane.bind("<Return>", self._download)
-        self.modalPane.bind("<Escape>", self._cancel)
-
-        self.modalPane.title("Search GenBank")
-
-        Label(self.modalPane, text="Find GenBank entries on NCBI server").pack(padx=5, pady=5)
-        
-        searchFrame = Frame(self.modalPane)
-        searchFrame.pack(side=TOP)
-        searchFrame.grid_columnconfigure(0, minsize=100)
-        Label(searchFrame, text="Keyword: ").grid(row=0,column=0, pady=3)
-        keywordentry = Entry(searchFrame, textvariable=self.keyword, width=25)
-        keywordentry.grid(row=0,column=1, pady=3)
-        Label(searchFrame, text="Organism: ").grid(row=1,column=0, pady=3)
-        organismentry = Entry(searchFrame, textvariable=self.organism, width=25)
-        organismentry.grid(row=1,column=1, pady=3)
-        Label(searchFrame, text="Accession: ").grid(row=2,column=0, pady=3)
-        accessionentry = Entry(searchFrame, textvariable=self.accession, width=25)
-        accessionentry.grid(row=2,column=1, pady=3)
-        searchButton = Button(searchFrame, text="Search", command=self._search)
-        searchButton.grid(row=3,column=1, pady=3)
-
-        listFrame = Frame(self.modalPane)
-        listFrame.pack(side=TOP, padx=20, pady=20)
-        
-        scrollBar = Scrollbar(listFrame)
-        scrollBar.pack(side=RIGHT, fill=Y)
-        self.listBox = Listbox(listFrame, selectmode="multiple", width=100, height=20)
-        self.listBox.pack(side=LEFT, fill=Y)
-        scrollBar.config(command=self.listBox.yview)
-        self.listBox.config(yscrollcommand=scrollBar.set)
-        self.list.sort()
-        for item in self.list:
-            self.listBox.insert(END, item)
-
-        buttonFrame = Frame(self.modalPane)
-        buttonFrame.pack(side=BOTTOM)
-
-        chooseButton = Button(buttonFrame, text="Download", command=self._download)
-        chooseButton.pack(side=LEFT)
-
-        cancelButton = Button(buttonFrame, text="Cancel", command=self._cancel)
-        cancelButton.pack(side=RIGHT)
-
-
-
-    def _clear(self):
-        self.listBox.delete(0, END)
-
-    def _insert(self, string):
-        self.listBox.insert(END, string)
-
-    def _download(self, event=None):
-        ids = [self.ids[indx] for indx in self.listBox.curselection()]
-        outdir = tkinter.filedialog.askdirectory(mustexist=False)
-        if outdir == "":
-            return
-
-        #label to show download progress
-        loading_frame = Toplevel(self.modalPane, height=200, width=400)
-        loading_frame.title("Download progress")
-        message = StringVar()
-        message.set("")
-        loading_label = Label(loading_frame, textvariable=message)
-        loading_label.grid(row=1, column=1, padx=50, pady=50)
-        loading_frame.bind("<Escape>", lambda e: "return")
-        loading_frame.protocol('WM_DELETE_WINDOW', lambda: cancel_download(req, loading_frame))
-
-        failed_download_IDs = []
-        for index, id in enumerate(ids):
-            if not loading_frame.winfo_exists():
-                return
-            message.set("Downloading file {} out of {}.\nPlease wait...".format(index + 1, len(ids)))
-            url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=" + id +\
-                  "&rettype=gbwithparts&retmode=text&tool=multigeneblast&email=m.h.medema@rug.nl"
-
-            self.modalPane.update()
-            try:
-                with urllib.request.urlopen(url) as req:
-                    accumulated_size = 0
-                    with open(outdir + os.sep + id + ".gb", 'wb') as fp:
-                        while True:
-                            try:
-                                #close when the loading window is destroyed for wathever reason
-                                if not loading_frame.winfo_exists():
-                                    failed_download_IDs.append(id)
-                                    break
-                                self.modalPane.update()
-                                chunk = req.read(CHUNK)
-                                if not chunk:
-                                    break
-                                fp.write(chunk)
-                            except:
-                                failed_download_IDs.append(id)
-                                break
-
-                    #make sure to not spam request faster then allowed
-                    time.sleep(0.5)
-            except:
-                failed_download_IDs.append(id)
-                continue
-
-        loading_frame.destroy()
-        # Report download success
-        showinfo("Download finished", "Download completed successfully. Files can be found at {}.The following IDs could not be downloaded: {}".format(outdir, ", ".join(failed_download_IDs)))
-
-
-    def _cancel(self, event=None):
-        self.modalPane.destroy()
-
 
 class GeneSelectionFrame(Frame):
   
@@ -543,13 +269,16 @@ class GeneSelectionFrame(Frame):
     def getval(self):
         return self.selected.get()
 
-class MessageBox(object):
-    def __init__(self, frame=None, master=None, title=None, message=None, list=[]):
+class MessageBox:
+    def __init__(self, frame=None, master=None, title=None, message=None, list=[], outdir=None):
         self.frame = frame
         self.master = master
         self.value = None
         self.errormessage = ""
         self.list = list[:]
+        self._log_loc = outdir
+        if outdir != None:
+            self._log_loc = outdir + os.sep + OUT_FOLDER_NAME + os.sep + "run.log"
         
         self.modalPane = Toplevel(self.frame, height=800, width=300)
 
@@ -596,22 +325,216 @@ class MessageBox(object):
         self.buttonFrame = Frame(self.modalPane)
         self.buttonFrame.pack(side=BOTTOM)
 
-        self.errorButton = Button(self.buttonFrame, text="Send Error Report", command=self.sendreport, width=20)
+        self.errorButton = Button(self.buttonFrame, text="Send Error Report",
+                                  command=self.sendreport, width=20)
         self.errorButton.pack()
 
     def change_errormessage(self, errormessage):
-      self.errormessage = errormessage
+        self.errormessage = errormessage
 
     def sendreport(self, event=None):
-      try:
-        webbrowser.open("mailto:multigeneblast@gmail.com?SUBJECT=ErrorReport&BODY=" + urllib.parse.quote(self.errormessage.encode("utf8")))
-      except:
-        webbrowser.open("sourceforge.net/tracker/?func=add&group_id=565495&atid=2293721")
-      else:
-        pass
+        #TODO make this more proper by sending automatically
+        try:
+
+            webbrowser.open("mailto:multigeneblast@gmail.com?SUBJECT=ErrorReport&BODY=" + urllib.parse.quote(self.errormessage.encode("utf8")))
+        except:
+            webbrowser.open("sourceforge.net/tracker/?func=add&group_id=565495&atid=2293721")
+        else:
+            pass
 
     def _ok(self, event=None):
-        #self.master._cancel() #Would destroy parent window as well
+        self.modalPane.destroy()
+
+class GenBankFileDownload(Frame):
+
+    def __init__(self, master):
+        self.master = master
+        self.list = []
+        self.keyword = StringVar()
+        self.keyword.set("")
+        self.organism = StringVar()
+        self.organism.set("")
+        self.accession = StringVar()
+        self.accession.set("")
+        self.initUI()
+
+    def initUI(self):
+        self.modalPane = Toplevel(self.master, height=200, width=400)
+
+        self.modalPane.transient(self.master)
+        self.modalPane.grab_set()
+
+        self.modalPane.bind("<Return>", self._download)
+        self.modalPane.bind("<Escape>", self._cancel)
+
+        self.modalPane.title("Search GenBank")
+
+        Label(self.modalPane, text="Find GenBank entries on NCBI server").pack(padx=5, pady=5)
+
+        searchFrame = Frame(self.modalPane)
+        searchFrame.pack(side=TOP)
+        searchFrame.grid_columnconfigure(0, minsize=100)
+        Label(searchFrame, text="Keyword: ").grid(row=0, column=0, pady=3)
+        keywordentry = Entry(searchFrame, textvariable=self.keyword, width=25)
+        keywordentry.grid(row=0, column=1, pady=3)
+        Label(searchFrame, text="Organism: ").grid(row=1, column=0, pady=3)
+        organismentry = Entry(searchFrame, textvariable=self.organism, width=25)
+        organismentry.grid(row=1, column=1, pady=3)
+        Label(searchFrame, text="Accession: ").grid(row=2, column=0, pady=3)
+        accessionentry = Entry(searchFrame, textvariable=self.accession, width=25)
+        accessionentry.grid(row=2, column=1, pady=3)
+        searchButton = Button(searchFrame, text="Search", command=self._search)
+        searchButton.grid(row=3, column=1, pady=3)
+
+        listFrame = Frame(self.modalPane)
+        listFrame.pack(side=TOP, padx=20, pady=20)
+
+        scrollBar = Scrollbar(listFrame)
+        scrollBar.pack(side=RIGHT, fill=Y)
+        self.listBox = Listbox(listFrame, selectmode="multiple", width=100, height=20)
+        self.listBox.pack(side=LEFT, fill=Y)
+        scrollBar.config(command=self.listBox.yview)
+        self.listBox.config(yscrollcommand=scrollBar.set)
+        self.list.sort()
+        for item in self.list:
+            self.listBox.insert(END, item)
+
+        buttonFrame = Frame(self.modalPane)
+        buttonFrame.pack(side=BOTTOM)
+
+        chooseButton = Button(buttonFrame, text="Download", command=self._download)
+        chooseButton.pack(side=LEFT)
+
+        cancelButton = Button(buttonFrame, text="Cancel", command=self._cancel)
+        cancelButton.pack(side=RIGHT)
+
+    def _search(self):
+
+        if self.organism.get() == "" and self.keyword.get() == "" and self.accession.get() == "":
+            showerror("Input error", "Please specify a search term first.")
+            return
+        # Build URL
+        url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nuccore&term="
+        if self.organism.get() != "":
+            url += "%22" + self.organism.get().replace(" ", "%20") + "%22[porgn]"
+        if self.keyword.get() != "":
+            if self.organism.get() != "":
+                url += '%20AND%20' + "%22" + self.keyword.get().replace(" ", "%20") + "%22"
+            else:
+                url += "%22" + self.keyword.get().replace(" ", "%20") + "%22"
+        if self.accession.get() != "":
+            url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nuccore&term=" + self.accession.get() + "[accession]"
+        url += "&retmode=text&retmax=251&tool=multigeneblast&email=m.h.medema@rug.nl"
+        # Search all IDs matching the query
+        try:
+            with urllib.request.urlopen(url) as req:
+                xmltext = req.read().decode('utf-8')
+                xmltext = xmltext.partition("<IdList>")[2].partition("</IdList>")[0]
+                ids = [ID.partition("</Id>")[0] for ID in xmltext.split("<Id>")[1:]]
+                if len(ids) == 0:
+                    showerror('Error', 'No matches found for your search query.')
+                    return
+        except Exception:
+            showerror('Error', 'Could not connect to NCBI server.\nPlease check your internet connection.')
+            return
+        # Show message if more than 250 found, asking user to further specify his search
+        if len(ids) > 250:
+            showwarning("Warning",
+                        "More than 250 matches found for your search query.\nOnly top 250 matches will be shown.")
+            ids = ids[:-1]
+        self.ids = ids
+        # Fetch titles for all IDs
+        url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=nuccore&id=" + ",".join(
+            ids) + "&retmode=xml&retmax=251&tool=multigeneblast&email=m.h.medema@rug.nl"
+        # Open 'loading...' message
+        loading_frame = Toplevel(self.modalPane, height=200, width=400)
+        loading_frame.title("Loading")
+        message = "Loading. Please wait..."
+        loading_lablel = Label(loading_frame, text=message)
+        loading_lablel.grid(row=1, column=1, padx=50, pady=50)
+        loading_frame.bind("<Escape>", lambda e: "return")
+        self.modalPane.update()
+        try:
+            with urllib.request.urlopen(url) as req:
+                xmltext = req.read().decode('utf-8')
+                if "<DocSum>" not in xmltext or '<Item Name="Title" Type="String">' not in xmltext:
+                    showerror('Error', 'Error in fetching match descriptions from NCBI server.')
+                    return
+                entries = xmltext.split("<DocSum>")[1:]
+                descriptions = [entry.partition('<Item Name="Title" Type="String">')[2].partition('</Item>')[0]
+                                for
+                                entry in entries]
+        except:
+            showerror('Error', 'Could not connect to NCBI server.\nPlease check your internet connection.')
+            return
+        self._clear()
+        loading_frame.destroy()
+        for description in descriptions:
+            self._insert(description)
+
+    def _clear(self):
+        self.listBox.delete(0, END)
+
+    def _insert(self, string):
+        self.listBox.insert(END, string)
+
+    def _download(self, event=None):
+        ids = [self.ids[indx] for indx in self.listBox.curselection()]
+        outdir = tkinter.filedialog.askdirectory(mustexist=False)
+        if outdir == "":
+            return
+
+        # label to show download progress
+        loading_frame = Toplevel(self.modalPane, height=200, width=400)
+        loading_frame.title("Download progress")
+        message = StringVar()
+        message.set("")
+        loading_label = Label(loading_frame, textvariable=message)
+        loading_label.grid(row=1, column=1, padx=50, pady=50)
+        loading_frame.bind("<Escape>", lambda e: "return")
+        loading_frame.protocol('WM_DELETE_WINDOW', lambda: cancel_download(req, loading_frame))
+
+        failed_download_IDs = []
+        for index, id in enumerate(ids):
+            if not loading_frame.winfo_exists():
+                return
+            message.set("Downloading file {} out of {}.\nPlease wait...".format(index + 1, len(ids)))
+            url = "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=" + id + \
+                  "&rettype=gbwithparts&retmode=text&tool=multigeneblast&email=m.h.medema@rug.nl"
+
+            self.modalPane.update()
+            try:
+                with urllib.request.urlopen(url) as req:
+                    accumulated_size = 0
+                    with open(outdir + os.sep + id + ".gb", 'wb') as fp:
+                        while True:
+                            try:
+                                # close when the loading window is destroyed for wathever reason
+                                if not loading_frame.winfo_exists():
+                                    failed_download_IDs.append(id)
+                                    break
+                                self.modalPane.update()
+                                chunk = req.read(CHUNK)
+                                if not chunk:
+                                    break
+                                fp.write(chunk)
+                            except:
+                                failed_download_IDs.append(id)
+                                break
+
+                    # make sure to not spam request faster then allowed
+                    time.sleep(0.5)
+            except:
+                failed_download_IDs.append(id)
+                continue
+
+        loading_frame.destroy()
+        # Report download success
+        showinfo("Download finished",
+                 "Download completed successfully. Files can be found at {}.The following IDs could not be downloaded: {}".format(
+                     outdir, ", ".join(failed_download_IDs)))
+
+    def _cancel(self, event=None):
         self.modalPane.destroy()
 
 class MakeDatabase(Frame):
@@ -765,7 +688,7 @@ class MakeDatabase(Frame):
                 showerror("Input Error", "Database name contains illegal character. {} is not allowed".format(char))
                 return None
         base_command = "{}{}make_database.py ".format(MGBPATH, os.sep)
-        required_information = "-o {} -n {} -i {} ".format(self.__outdir_path, self.dbname.get(), " ".join(self.files))
+        required_information = '-o "{}" -n "{}" -i "{}" '.format(self.__outdir_path, self.dbname.get(), " ".join(self.files))
         full_command = base_command + required_information
         return full_command
 
@@ -803,9 +726,8 @@ class MakeDatabase(Frame):
 
 class MakeOnlineDatabase(Frame):
   
-    def __init__(self, master, directory):
+    def __init__(self, master):
         self.master = master
-        self.directory = directory
         self.list = []
         self.selected = []
         self.keyword = StringVar()
@@ -826,7 +748,7 @@ class MakeOnlineDatabase(Frame):
         self.initUI()
 
     def initUI(self):
-        self.modal_pane = Toplevel(self.master, height=200, width=400)
+        self.modal_pane = Toplevel(self.master)
 
         self.modal_pane.transient(self.master)
         self.modal_pane.grab_set()
@@ -1118,146 +1040,3 @@ class MakeOnlineDatabase(Frame):
         
     def _cancel(self, event=None):
         self.modal_pane.destroy()
-
-
-class MakeGenBankDatabase(Frame):
-  
-    def __init__(self, master, directory):
-        self.master = master
-        self.directory = directory
-        self.gbdivisions = ["BCT: Bacteria", "PLN: Plants, Fungi and Algae", "PHG: Bacteriophages", "SYN: Synthetic sequences", "PAT: Patent sequences", "ENV: Environmental sequences", "WGS: whole genome shotgun sequencing data", "CON: Unfinished genomes"]
-        self.selected = []
-        self.dbname = StringVar()
-        self.dbname.set("<Enter a name for your database>")
-        self.initUI()
-
-    def initUI(self):
-        self.modalPane = Toplevel(self.master, height=200, width=400)
-
-        self.modalPane.transient(self.master)
-        self.modalPane.grab_set()
-
-        self.modalPane.bind("<Return>", self._makedb)
-        self.modalPane.bind("<Escape>", self._cancel)
-
-        self.modalPane.title("Make MGB database from GenBank divisions")
-
-        searchFrame = Frame(self.modalPane)
-        searchFrame.pack(side=TOP)
-        searchFrame.grid_columnconfigure(0, minsize=100)
-        Label(searchFrame, text="Database name: ").grid(row=0,column=0, pady=3)
-        self.dbname_entry = Entry(searchFrame, textvariable=self.dbname, width=30)
-        self.dbname_entry.grid(row=0,column=1, pady=3)
-        self.dbname_entry.bind("<FocusOut>", self.OnValidate)
-        self.dbname_entry.bind("<Return>", self.OnValidate)
-
-        listFrame = Frame(self.modalPane)
-        listFrame.pack(side=TOP, padx=20, pady=20)
-        scrollBar = Scrollbar(listFrame)
-        scrollBar.pack(side=RIGHT, fill=Y)
-        self.listBox = Listbox(listFrame, selectmode=EXTENDED, width=45, height=8)
-        self.listBox.pack(side=LEFT, fill=Y)
-        scrollBar.config(command=self.listBox.yview)
-        self.listBox.config(yscrollcommand=scrollBar.set)
-        for item in self.gbdivisions:
-            self.listBox.insert(END, item)
-
-        buttonFrame = Frame(self.modalPane)
-        buttonFrame.pack(side=BOTTOM)
-        chooseButton = Button(buttonFrame, text="Make database", command=self._makedb)
-        chooseButton.pack(side=LEFT)
-        cancelButton = Button(buttonFrame, text="Cancel", command=self._cancel)
-        cancelButton.pack(side=RIGHT)
-
-        checkboxFrame = Frame(self.modalPane)
-        checkboxFrame.pack(side=BOTTOM)
-        text = Label(checkboxFrame, text="Make raw nucleotide database for tblastn-searching:")
-        text.pack(side=LEFT, pady=5)
-        self.dbtype = CheckBox(checkboxFrame, [0,0], "")
-        self.dbtype.pack(side=RIGHT)
-
-
-    def OnValidate(self, val):
-        forbiddencharacters = ["'",'"','=',':',';','-','[',']','>','<','|','\\',"/",'*',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
-        for char in forbiddencharacters:
-          if self.dbname.get() != "<Enter a name for your database>":
-            if char in self.dbname.get():
-              showerror("Error", "Forbidden character found in specified database name: " + char)
-              self.dbname.set("<Enter a name for your database>")
-              return
-        if self.dbname.get() != None:
-          if self.dbname.get() != "<Enter a name for your database>":
-            dbname = self.dbname.get().replace(" ","_")
-            self.dbname.set(dbname)
-        else:
-          self.dbname.set("<Enter a name for your database>")
-
-    def _makedb(self, event=None):
-        global APPDATA
-        #Final check for correct database name
-        selected = [self.gbdivisions[int(idx)].partition(":")[0] for idx in self.listBox.curselection()]
-        if not validname(self.dbname.get()):
-          showerror("Error", "Please select a valid database name.")
-          return
-        if len(selected) == 0:
-          showerror("Error", "Please select input files for your database first.")
-          return
-        #Remove spaces from dbname if this was not done automatically already; check for overwriting
-        self.dbname.set(self.dbname.get().replace(" ","_"))
-        if self.dbname.get() + ".pal" in os.listdir(APPDATA) or self.dbname.get() + ".nal" in os.listdir(APPDATA):
-          answer = askyesno('Database name exists', 'A database with this name already exists. Overwrite?')
-          if not answer:
-            return
-        #Check that user is really ok with doing this
-        answer = askyesno('Time', 'Database downloading and creation will take minutes to hours, depending on the divisions selected.\nAre you sure you want to continue?')
-        if not answer:
-          return
-        #Check to prevent overwriting
-        currentdir = os.getcwd()
-        os.chdir(self.directory)
-        if "genbank" in os.listdir(APPDATA):
-          user_response = askyesno("Warning", "A folder named 'genbank' (which is used by MultiGeneBlast to store downloaded GenBank files) is already present,\n probably from an earlier search that was interrupted.\n Overwrite?")
-          if not user_response:
-            return
-          else:
-            shutil.rmtree("genbank")
-        if "WGS" in selected and "wgs" in os.listdir(APPDATA):
-          user_response = askyesno("Warning", "A folder named 'wgs' (which is used by MultiGeneBlast to store downloaded WGS GenBank files) is already present,\n probably from an earlier search that was interrupted.\n Overwrite?")
-          if not user_response:
-            return
-          else:
-            shutil.rmtree("wgs")
-        #Open up toplevel that reports progress
-        try:
-          self.makegbdb_outbox = MessageBox(self.master, self, "Creating Database...")
-          self.makegbdb_outbox.text_insert("GenBank divisions to be downloaded: " + ",".join(selected) + "\n")
-
-          #Create database
-          if self.dbtype.getval() == 0:
-            makegbdb.maingui(selected, self.dbname.get(), self.master, self.makegbdb_outbox)
-          else:
-            makegbndb.maingui(selected, self.dbname.get(), self.master, self.makegbdb_outbox)
-        except(TclError):
-          pass
-        except:
-          os.chdir(currentdir)
-          self.makegbdb_outbox.add_ok_button()
-          self.modalPane.destroy()
-          return
-        if not (self.dbname.get() + ".pal" in os.listdir(APPDATA) or self.dbname.get() + ".nal" in os.listdir(APPDATA)):
-          self.makegbdb_outbox.text_insert("Error: database creation failed due to unknown error.\n")
-          os.chdir(currentdir)
-          self.makegbdb_outbox.add_ok_button()
-          self.modalPane.destroy()
-          return
-        #Report success
-        if self.dbtype.getval() == 0:
-          self.makegbdb_outbox.text_insert("Database created.\nYou can now use this database by selecting '" + self.dbname.get() + ".pal' under 'Select database' in the 'File' menu.\n")
-        else:
-          self.makegbdb_outbox.text_insert("Database created.\nYou can now use this database by selecting '" + self.dbname.get() + ".nal' under 'Select database' in the 'File' menu.\n")
-        self.makegbdb_outbox.add_ok_button()
-        self.modalPane.destroy()
-        os.chdir(currentdir)
-
-    def _cancel(self, event=None):
-        self.modalPane.destroy()

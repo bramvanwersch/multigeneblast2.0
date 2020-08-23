@@ -1,6 +1,7 @@
 
 #imports
 import os, sys
+import platform
 
 #shared constants between files
 HITS_PER_PAGE = 50
@@ -27,7 +28,7 @@ def get_mgb_path():
     :return: a string path or exception
     """
     #Find path to mgb files if run from another directory
-    pathfolders = os.environ['PATH'].split(os.pathsep)
+    pathfolders = os.getenv('PATH').split(os.pathsep)
     pathfolders.reverse()
     pathfolders.append(os.getcwd())
     pathfolders.reverse()
@@ -41,7 +42,7 @@ def get_mgb_path():
         except:
             pass
     try:
-        if  mgb_path == "" and os.sep in sys.argv[0] and "guilib.py" in os.listdir(sys.argv[0].rpartition(os.sep)[0]):
+        if mgb_path == "" and os.sep in sys.argv[0] and "guilib.py" in os.listdir(sys.argv[0].rpartition(os.sep)[0]):
             mgb_path = sys.argv[0].rpartition(os.sep)[0]
     except:
         pass
@@ -58,11 +59,12 @@ def get_appdata_path():
     :return: a string path or exception
     """
     #Find path to Application Data
-    if sys.platform == ('win32'):
-        appdata = os.environ['ALLUSERSPROFILE'] + os.sep + 'Application Data'
-    elif sys.platform == ('darwin'):
+    if platform.system() == "Windows":
+        #roaming appdata folder of windows
+        appdata = os.getenv("APPDATA")
+    elif platform.system() == "Darwin":
         appdata = os.path.expanduser("~") + "/Library/Application Support"
-    else:
+    elif platform.system() == "Linux":
         try:
             if os.path.exists(os.getcwd() + os.sep + "multigeneblast_data"):
                 appdata = os.getcwd() + os.sep + "multigeneblast_data"
@@ -78,8 +80,9 @@ def get_appdata_path():
                     appdata = os.environ['HOME'] + os.sep + "multigeneblast_data"
             except:
                 raise Exception("No permission to write to installation folder. Please change user or save somewhere else.")
-
-    if sys.platform == ('darwin') or sys.platform == ('win32'):
+    else:
+        raise Exception("MultiGeneBlast does not support {}".format(platform.system()))
+    if platform.system() == "Darwin" or platform.system() == "Windows":
         try:
             os.mkdir(appdata + os.sep + 'MultiGeneBlast')
             appdata = appdata + os.sep + 'MultiGeneBlast'
@@ -99,16 +102,17 @@ def get_temp_data():
     folder to clean up files.
     """
     #Find path to temporary files
-    if sys.platform == ('win32'):
-        temp = os.environ['TEMP']
-    elif sys.platform == ('darwin'):
-        temp = os.environ['TMPDIR']
+    if platform.system() == "Windows":
+        temp = os.getenv('TEMP')
+    elif platform.system() == "Darwin":
+        temp = os.getenv('TMPDIR')
     else:
         try:
-            os.mkdir(os.environ['HOME'] + os.sep + ".mgbtemp")
-            temp = os.environ['HOME'] + os.sep + ".mgbtemp"
+            os.mkdir(os.getenv('HOME') + os.sep + ".mgbtemp")
+            temp = os.getenv('HOME') + os.sep + ".mgbtemp"
         except:
             temp = APPDATA
+    #return a unique folder name to make sure that no unwanted files are deleted when cleaning the folder
     return temp + os.sep + "mgb_temp"
 
 #path constants

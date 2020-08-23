@@ -25,7 +25,8 @@ import shutil
 #own imports
 from databases import GenbankFile, embl_to_genbank, Protein
 from visualisation import ClusterCollectionSvg, create_xhtml_file
-from utilities import MultiGeneBlastException, setup_logger, run_commandline_command, remove_illegal_characters, setup_temp_folder
+from utilities import MultiGeneBlastException, setup_logger, run_commandline_command, remove_illegal_characters,\
+    setup_temp_folder, determine_cpu_nr
 from constants import *
 
 #constant specifically required for mbg
@@ -337,33 +338,6 @@ def check_db_folder(path):
             raise argparse.ArgumentTypeError("Expected a file named {} in "
                                              "the database folder".format(file))
     return path
-
-
-def determine_cpu_nr(cores):
-    """
-    Determine the number of CPU's needed based on the nr provided by the user.
-
-    :param cores: a string that represents the amount of cores
-    :return: an integer that is between 1 and maximum cores
-
-    the cores can be any integer or 'all'. If 'all' is provided the maximum
-    amount of cores is selected. If a number higher then the maximum number of
-    cores is requested the maximum number is returned.
-    """
-    if cores.lower() == "all":
-        try:
-            nrcpus = multiprocessing.cpu_count()
-        except(IOError,OSError,NotImplementedError):
-            nrcpus = 1
-    else:
-        cores = int(cores)
-        try:
-            nrcpus = multiprocessing.cpu_count()
-        except(IOError,OSError,NotImplementedError):
-            nrcpus = 1
-        if cores < nrcpus:
-            nrcpus = cores
-    return nrcpus
 
 def restricted_float(x):
     """
