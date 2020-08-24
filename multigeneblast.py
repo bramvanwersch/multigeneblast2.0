@@ -1371,7 +1371,10 @@ def move_outputfiles(outdir, pages):
             os.remove(outdir + os.sep + "visual" + os.sep + f)
         except:
             pass
-        shutil.copy(MGBPATH + os.sep + "visual_copys" + os.sep + f, outdir + os.sep + "visual" + os.sep + f)
+        try:
+            shutil.copy(MGBPATH + os.sep + "visual_copys" + os.sep + f, outdir + os.sep + "visual" + os.sep + f)
+        except IOError:
+            raise MultiGeneBlastException("{} cannot be copied from {}. The file is missing.".format(f, MGBPATH + os.sep + "visual_copys"))
 
     folderstocopy = ["images"]
     for f in folderstocopy:

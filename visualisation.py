@@ -448,11 +448,11 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
         if is_valid_accession(cluster.contig):
             cluster_desc = 'Cluster{}: <a href="http://www.ncbi.nlm.nih.gov/nuccore/{}" target="_blank"> {}</a> {}&nbsp;&nbsp;&nbsp;&nbsp;Total' \
                            ' score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp; Cumulative Blast bit score {:.2f}'.format(cluster.no, cluster.contig, cluster.contig,contig_desc,
-                                                                                cluster.score,cluster.segmented_score("accumulated_blast_score")[0] * 1_000_000)
+                                                                                cluster.score,cluster.segmented_score("accumulated blast score")[0] * 1_000_000)
         else:
             cluster_desc = 'Cluster{}: {} {}&nbsp;&nbsp;&nbsp;&nbsp;Total score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp;' \
                            ' Cumulative Blast bit score: {:.2f}'.format(cluster.no, cluster.contig, contig_desc, cluster.scorecluster,
-                                cluster.segmented_score("accumulated_blast_score")[0] * 1_000_000)
+                                cluster.segmented_score("accumulated blast score")[0] * 1_000_000)
         query_desc = query_cluster.contig_description
         if len(query_desc) < 90:
             query_desc = "Query: {}".format(query_desc)
@@ -560,11 +560,11 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
         if is_valid_accession(cluster.contig):
             cluster_desc = 'Cluster{}: <a href="http://www.ncbi.nlm.nih.gov/nuccore/{}" target="_blank"> {}</a> {}&nbsp;&nbsp;&nbsp;&nbsp;Total' \
                            ' score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp; Cumulative Blast bit score {:.2f}'.format(cluster.no, cluster.contig, cluster.contig,contig_desc,
-                                                                                cluster.score,cluster.segmented_score("accumulated_blast_score")[0] * 1_000_000)
+                                                                                cluster.score,cluster.segmented_score("accumulated blast score")[0] * 1_000_000)
         else:
             cluster_desc = 'Cluster{}: {} {}&nbsp;&nbsp;&nbsp;&nbsp;Total score: {:.1f}&nbsp;&nbsp;&nbsp;&nbsp;' \
                            ' Cumulative Blast bit score: {:.2f}'.format(cluster.no, cluster.contig, contig_desc, cluster.scorecluster,
-                                cluster.segmented_score("accumulated_blast_score")[0] * 1_000_000)
+                                cluster.segmented_score("accumulated blast score")[0] * 1_000_000)
         html_outfile.write('<div id="description{}" style="text-align:left; position:absolute; top:{}px; left:10px; font-size:10px;'
                            ' font-style:italic">{}</div>\n'.format(page_nr, int(63 + (51.7 * (index + 1))), cluster_desc))
         #add query for the first index
@@ -645,10 +645,10 @@ def create_xhtml_file(clusters, query_cluster, user_options, svg_images, page_si
             html_parts = html.split("<SPLIT HERE>")
     except:
         logging.critical("empty.xhml is missing from {}. Cannot create "
-                         "the full html page. Exiting...".format(MGBPATH))
+                         "the full html page. Exiting...".format(MGBPATH + os.sep + "visual_copys"))
         raise MultiGeneBlastException(
             "empty.xhml is missing from {}. Cannot create "
-            "the full html page.".format(MGBPATH))
+            "the full html page.".format(MGBPATH + os.sep + "visual_copys"))
     #note this returns an open file stream. Take care addign code in this loop
     html_outfile = create_xhtml_template(html_parts, page_indx, page_sizes)
     write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_sizes[page_indx], user_options, svg_images)
