@@ -21,6 +21,7 @@ import logging
 from collections import OrderedDict
 import pickle as pickle
 import shutil
+import colorsys
 
 #own imports
 from databases import GenbankFile, embl_to_genbank, Protein
@@ -75,7 +76,8 @@ def fasta_to_dict(file_name, check_headers = True):
     for entry in fasta_entries:
         lines = entry.split("\n")
 
-        #make sure that names do not contain illegal characters.
+        #make sure that names do not contain illegal characters. This makes sure no strange results are retrieved from
+        #blast+ tools
         name = remove_illegal_characters(lines[0])
         #make sure no trailing newlines
         sequence = "".join(lines[1:]).strip()
@@ -88,80 +90,8 @@ def fasta_to_dict(file_name, check_headers = True):
             sequences[name] = sequence
     return sequences
 
-####PARSE OPTIONS####
 
-class Options:
-    """
-    Options object for saving all the user defined options aswell as some
-    variables that can be directly calculated from these options like the
-    architecture_mode value
-    """
-    def __init__(self, arguments):
-        """
-        :param arguments: an Argparser object containing all the options
-        specified by the user.
-        """
-        #the input file
-        self.infile = arguments.i
-        self.run_name = self.__get_run_name()
-        #the output directory
-        self.outdir = arguments.o
-        #the database to use
-        #TODO make sure this gets configured based on the database input
-        self.db_mode = "local"
-        self.dbtype, self.db = self.__configure_db_and_type(arguments.db)
-
-        self.architecture_mode = self.__check_architecture_mode()
-        #values that define the query
-        self.startpos = arguments.f
-        self.endpos = arguments.t
-        self.ingenes = arguments.g
-
-        self.cores = arguments.c
-        self.minseqcov = arguments.msc
-        self.minpercid = arguments.mpi
-        self.hitspergene = arguments.hpg
-        self.distancekb = int(arguments.dkb * 1000)
-        self.muscle = arguments.m
-        self.pages = arguments.op
-        self.syntenyweight = arguments.sw
-
-        self.log_level = arguments.inf
-        self.gui = False
-
-    def __get_run_name(self):
-        """
-        Extract a name for the run based on the name of the input file
-
-        :return: a string that is the name without extension or path
-        """
-        root, file = os.path.split(self.infile)
-        file_name = file.split(".", 1)[0]
-        return file_name
-
-    def __check_architecture_mode(self):
-        """
-        Check if MultiGeneBlast is running in architecture or homolgy search mode
-
-        :return: Boolean that is True if the input file ends in a fasta extension
-        meaning MultiGeneBlast is running in architecture mode.
-        """
-        if any(self.infile.lower().endswith(ext) for ext in FASTA_EXTENSIONS):
-            return True
-        return False
-
-    def __configure_db_and_type(self, database_path):
-        to_path, db_file = os.path.split(database_path)
-        #very important to configure. Otherwise BLAST+ cannot find database files
-        os.environ['BLASTDB'] = to_path
-
-        # make sure the databae file is of the correct file type
-        dbname, ext = db_file.split(".")
-        if ext == "pal":
-            return "prot", dbname
-        elif ext == "nal":
-            return "nucl", dbname
-
+#### STEP 1: PARSE OPTIONS ####
 def get_arguments():
     """
     Parse the command line arguments using argparser.
@@ -357,7 +287,81 @@ def restricted_float(x):
         raise argparse.ArgumentTypeError("{} not in range [0.0, 2.0]".format(x))
     return x
 
-####READ THE INPUT FILE###
+
+class Options:
+    """
+    Options object for saving all the user defined options aswell as some
+    variables that can be directly calculated from these options like the
+    architecture_mode value
+    """
+    def __init__(self, arguments):
+        """
+        :param arguments: an Argparser object containing all the options
+        specified by the user.
+        """
+        #the input file
+        self.infile = arguments.i
+        self.run_name = self.__get_run_name()
+        #the output directory
+        self.outdir = arguments.o
+        #the database to use
+        #TODO make sure this gets configured based on the database input
+        self.db_mode = "local"
+        self.dbtype, self.db = self.__configure_db_and_type(arguments.db)
+
+        self.architecture_mode = self.__check_architecture_mode()
+        #values that define the query
+        self.startpos = arguments.f
+        self.endpos = arguments.t
+        self.ingenes = arguments.g
+
+        self.cores = arguments.c
+        self.minseqcov = arguments.msc
+        self.minpercid = arguments.mpi
+        self.hitspergene = arguments.hpg
+        self.distancekb = int(arguments.dkb * 1000)
+        self.muscle = arguments.m
+        self.pages = arguments.op
+        self.syntenyweight = arguments.sw
+
+        self.log_level = arguments.inf
+        self.gui = False
+
+    def __get_run_name(self):
+        """
+        Extract a name for the run based on the name of the input file
+
+        :return: a string that is the name without extension or path
+        """
+        root, file = os.path.split(self.infile)
+        file_name = file.split(".", 1)[0]
+        return file_name
+
+    def __check_architecture_mode(self):
+        """
+        Check if MultiGeneBlast is running in architecture or homolgy search mode
+
+        :return: Boolean that is True if the input file ends in a fasta extension
+        meaning MultiGeneBlast is running in architecture mode.
+        """
+        if any(self.infile.lower().endswith(ext) for ext in FASTA_EXTENSIONS):
+            return True
+        return False
+
+    def __configure_db_and_type(self, database_path):
+        to_path, db_file = os.path.split(database_path)
+        #very important to configure. Otherwise BLAST+ cannot find database files
+        os.environ['BLASTDB'] = to_path
+
+        # make sure the databae file is of the correct file type
+        dbname, ext = db_file.split(".")
+        if ext == "pal":
+            return "prot", dbname
+        elif ext == "nal":
+            return "nucl", dbname
+
+
+#### STEP 2: READ INPUT FILE ####
 
 def read_query_file(user_options):
     """
@@ -417,11 +421,13 @@ def query_proteins_from_fasta(fasta_file):
         entry_protein = Protein(sequence, total_lenght, entry_name, "+")
         query_proteins[entry_protein.name] = entry_protein
 
-        #TODO figure out why the +100. I assume for drawing
+        #+100 for drawing purposes to show the proteins at appropriate places
         total_lenght += entry_protein.nt_lenght + 100
     logging.debug("Finished parsing architecture input file")
     return query_proteins
 
+
+#### STEP 3/4/5: RUNNING AND PARSING BLAST ####
 def internal_blast(user_options, query_proteins):
     """
     Run an internal blast of the query against itself.
@@ -437,8 +443,6 @@ def internal_blast(user_options, query_proteins):
     clusternumber = 1
 
     #Make Blast db for using the sequences saved in query.fasta in the previous step
-    #TODO when running this again after a crash with a different database, a new database
-    # is not created. This is problematic because it can lead to inconsistent nameing
     make_blast_db_command = "{}\\exec_new\\makeblastdb.exe -in query.fasta -out query_db -dbtype prot".format(MGBPATH)
     logging.debug("Started making internal blast database...")
     try:
@@ -522,6 +526,11 @@ class BlastResult:
         self.percent_coverage = self.allignment_lenght / self.query_protein.aa_lenght * 100
 
     def summary(self):
+        """
+        The original blast line reported for the blast result
+
+        :return: a string with tab separated values
+        """
         return "\t".join(self.line)
 
 
@@ -635,156 +644,16 @@ def parse_db_blast(user_options, query_proteins, blast_output):
         sys.exit(0)
     return blast_dict
 
-def generate_rgbscheme(nr):
-    #TODO look furter into function if there is time look into antismash for methods here
-    usablenumbers = [1,2,4,8,12,18,24,32,48,64,10000]
-    lengthsdict = {1:[1,1,1],2:[1,1,2],4:[1,2,2],8:[2,2,2],12:[2,2,3],18:[2,3,3],24:[3,3,3],32:[3,3,4],48:[3,4,4],64:[4,4,4]}
-    shortestdistance = 10000
-    for i in usablenumbers:
-        distance = i - nr
-        if distance >= 0:
-            if distance < shortestdistance:
-                shortestdistance = distance
-                closestnr = i
-    toohigh = "n"
-    if closestnr == 10000:
-        toohigh = "y"
-        closestnr = 64
-    xyznumbers = lengthsdict[closestnr]
-    x = xyznumbers[0]
-    y = xyznumbers[1]
-    z = xyznumbers[2]
-    xpoints = []
-    xpoint = (255/z)/2
-    for i in range(x):
-        xpoints.append(xpoint)
-        xpoint += (255/x)
-    ypoints = []
-    ypoint = (255/z)/2
-    for i in range(y):
-        ypoints.append(ypoint)
-        ypoint += (255/y)
-    zpoints = []
-    zpoint = (255/z)/2
-    for i in range(z):
-        zpoints.append(zpoint)
-        zpoint += (255/z)
-    colorlist = []
-    for i in xpoints:
-        for j in ypoints:
-            for k in zpoints:
-                rgb = "rgb(" + str(i) + "," + str(j) + "," + str(k) + ")"
-                colorlist.append(rgb)
-    if toohigh == "y":
-        colorlist = colorlist + colorlist + colorlist + colorlist + colorlist + colorlist + colorlist + colorlist + colorlist + colorlist + colorlist + colorlist + colorlist + colorlist + colorlist + colorlist + colorlist + colorlist + colorlist + colorlist
-    if closestnr == 24:
-        colorlist = colorlist[:15] + colorlist[18:]
-    if closestnr == 32:
-        colorlist = colorlist[:21] + colorlist[24:]
-    colorlist2 = []
-    if closestnr == 1:
-        colorlist2.append("red")
-    if closestnr == 2:
-        colorlist2.append("red")
-        colorlist2.append("green")
-    if closestnr == 4:
-        colorlist2.append("red")
-        colorlist2.append("green")
-        colorlist2.append("blue")
-        colorlist2.append("yellow")
-    if closestnr == 8:
-        neworder=[4,1,2,5,6,7,3,0]
-        colorlist2 = [colorlist[i] for i in neworder]
-    if closestnr == 12:
-        neworder=[6,3,5,9,7,2,11,4,8,1,10,0]
-        colorlist2 = [colorlist[i] for i in neworder]
-    if closestnr == 18:
-        neworder=[9,6,2,14,15,8,12,10,3,5,7,11,4,1,16,13,0]
-        colorlist2 = [colorlist[i] for i in neworder]
-    if closestnr == 24:
-        neworder=[15,12,9,6,5,0,21,1,16,14,8,17,2,23,22,3,13,7,10,4,18,20,19,11]
-        colorlist2 = [colorlist[i] for i in neworder]
-    if closestnr == 32:
-        neworder = [21,19,27,6,8,1,14,7,20,13,9,30,4,23,18,12,5,29,24,17,11,31,2,28,22,15,26,3,20,16,10,25]
-        colorlist2 = [colorlist[i] for i in neworder]
-    if closestnr > 32:
-        random.shuffle(colorlist)
-        colorlist2 = colorlist
-    colorlist = colorlist2
-    return colorlist
-
-def calculate_colorgroups(blast_dict, query_cluster):
+#### STEP 6: LOAD RELEVANT PARTS OF THE DATABASE ####
+def load_databases(blast_dict, user_options):
     """
-    Get distinct colors for all the groups of genes present in the query cluster
+    Load each contig that has at least one blast hit.
 
-    :param blast_dict: a dictionary of Blast result objects
-    :param query_cluster: a Cluster object containing the user defined query
-    :return: a dictionary that links proteins with blast hits to
-    colors so all proteins with the same blast subject have the same color
+    :param blast_dict: a dictionary that contains all query genes with a list
+    of BlastResults objects that where against these genes.
+    :param user_options: Option object of user specified options
+    :return: a GenbankFile object containing all the contigs with blast hits.
     """
-    #TODO it is the case that genes that do not have any blast hits are ignored in the query
-
-    #first get groups internal homologs in the query cluster
-    groups = []
-    for key in query_cluster.blast_hit_proteins:
-        # create a set to automatically filter for duplicates
-        group = {key}
-        for blast_result in query_cluster.blast_hit_proteins[key]:
-            group.add(blast_result.query)
-
-        # make sure that a no member of the new group is present in any of the
-        # current groups. If that is the case add to current groups, else make
-        # new group
-        added = False
-        for present_group in groups:
-            for value in present_group:
-                if value in group:
-                    present_group.update(group)
-                    added = True
-                    break
-        if not added:
-            groups.append(group)
-
-    #get all blast proteins associated to the query proteins in the same groups
-    color_groups = []
-    for st in groups:
-        color_group = set()
-        for protein_name in st:
-            if not protein_name in blast_dict:
-                continue
-            color_group.add(protein_name)
-            for blast_result in blast_dict[protein_name]:
-                color_group.add(blast_result.subject)
-        if len(color_group) > 0:
-            color_groups.append(list(color_group))
-    #Generate RGB scheme
-    rgb_color_scheme = generate_rgbscheme(len(color_groups))
-
-    #generate a dictionary linking all proteins with blast hits to colors
-    gene_color_dict = {}
-    for gr_indx, group in enumerate(color_groups):
-        for protein_name in group:
-            gene_color_dict[protein_name] = rgb_color_scheme[gr_indx]
-    return gene_color_dict
-
-
-def load_genecluster_info(dbname, allgenomes):
-    #Load gene cluster info to memory
-    DBPATH = os.environ['BLASTDB']
-    clusters = {}
-    allgenomes_tags = [genomename[:6] for genomename in allgenomes]
-    for i in fileinput.input(DBPATH + os.sep + dbname + "_all_descrs.txt"):
-        tabs = i.split("\t")
-        if len(tabs) > 0 and (tabs[0] in allgenomes or tabs[0] in allgenomes_tags):
-            accession = tabs[0]
-            clusterdescription = tabs[1]
-            clusters[accession] = clusterdescription
-    nucdescriptions = clusters
-    frame_update()
-    return nucdescriptions, clusters
-
-
-def load_databases(query_proteins, blast_dict, user_options):
 
     logging.info("Loading GenBank positional info into memory...")
     db_path = os.environ["BLASTDB"]
@@ -814,6 +683,7 @@ def load_databases(query_proteins, blast_dict, user_options):
     gb_collection = GenbankFile(contigs=contigs)
     return gb_collection
 
+#### STEP 7: FIND GENE CLUSTERS ####
 def find_gene_clusters(blast_dict, user_options, database):
     """
     Find clusters of genes in the blast_dict
@@ -1000,7 +870,7 @@ class Cluster:
         self.__blast_proteins = OrderedDict()
 
         #a dictionary for tracking individual parts of the score
-        self.__score = {"synteny" : 0, "accumulated_blast_score" : 0, "number unique hits" : 0}
+        self.__score = {"synteny" : 0, "accumulated blast score" : 0, "number unique hits" : 0}
 
     def add_protein(self, protein, query_blast_hit = False):
         """
@@ -1022,6 +892,12 @@ class Cluster:
             self.__sorted = False
 
     def get_protein(self, name):
+        """
+        Get a protein object from the cluster by protein.name
+
+        :param name: a string that is the name property of a protein object
+        :return: a protein Object
+        """
         return self.__proteins[name]
 
     @property
@@ -1068,10 +944,17 @@ class Cluster:
         :param number_unique_hits: integer that is the number of unique blast hits
         """
         self.__score["synteny"] = synteny
-        self.__score["accumulated_blast_score"] = accumulated_blast_score
+        self.__score["accumulated blast score"] = accumulated_blast_score
         self.__score["number unique hits"] = number_unique_hits
 
-    def segmented_score(self, names = ["synteny", "accumulated_blast_score", "number unique hits"]):
+    def segmented_score(self, names = ["synteny", "accumulated blast score", "number unique hits"]):
+        """
+        Get a selection of the score values using string names of the score values. The default is all the
+        values.
+
+        :param names: optional 3 names 'synteny', 'accumulated_blast_score' and 'number unique hits'
+        :return: a dictionary with the names as keys and the associated scores as numbers as values
+        """
         requested_scores = [val for key, val in self.__score.items () if key in names]
         return requested_scores
 
@@ -1129,7 +1012,7 @@ class Cluster:
         full_summary += "- MultiGeneBlast 2.0 score: {:.7f}\n  - synteny score: {}\n  " \
                         "- accumulated blast bit score / 1.000.000: {:.7f}\n  " \
                         "- Number of unique blast hits: {}\n\n".\
-            format(self.score, self.__score["synteny"], self.__score["accumulated_blast_score"], self.__score["number unique hits"])
+            format(self.score, self.__score["synteny"], self.__score["accumulated blast score"], self.__score["number unique hits"])
 
         #Table of all proteins in cluster
         full_summary += ">Table of genes in cluster:\n"
@@ -1152,6 +1035,7 @@ class Cluster:
         return full_summary
 
 
+#### STEP 8: SCORE THE CLUSTERS ####
 def score_clusters(clusters, query_proteins, user_options):
     """
     Score all clusters based on cumulative blast scores, the total number of
@@ -1222,6 +1106,7 @@ def score_synteny(hit_positions):
             score += 1
     return score
 
+#### STEP 9: WRITE TEXT OUTPUT ####
 def write_txt_output(query_proteins, clusters, blast_output, user_options):
     """
     Write the output into a file containing information on all clusters.
@@ -1275,6 +1160,7 @@ def write_txt_output(query_proteins, clusters, blast_output, user_options):
         out_file.write("{}\n".format(cluster.summary()))
     out_file.close()
 
+#### STEP 10/11: CREATE SVG VISUAL OUTPUT ####
 def write_svg_files(clusters, user_options, query_cluster, blast_dict, page_nr):
     """
     Write clusters into svgs of comparissons between the query and each
@@ -1306,6 +1192,80 @@ def write_svg_files(clusters, user_options, query_cluster, blast_dict, page_nr):
     svg_images["clusterblast_page{}_all".format(page_nr)] = collection
 
     return svg_images
+
+def calculate_colorgroups(blast_dict, query_cluster):
+    """
+    Get distinct colors for all the groups of genes present in the query cluster
+
+    :param blast_dict: a dictionary of Blast result objects
+    :param query_cluster: a Cluster object containing the user defined query
+    :return: a dictionary that links proteins with blast hits to
+    colors so all proteins with the same blast subject have the same color
+    """
+    #TODO it is the case that genes that do not have any blast hits are ignored in the query, they should probably be colored
+
+    #first get groups internal homologs in the query cluster
+    groups = []
+    for key in query_cluster.blast_hit_proteins:
+        # create a set to automatically filter for duplicates
+        group = {key}
+        for blast_result in query_cluster.blast_hit_proteins[key]:
+            group.add(blast_result.query)
+
+        # make sure that a no member of the new group is present in any of the
+        # current groups. If that is the case add to current groups, else make
+        # new group
+        added = False
+        for present_group in groups:
+            for value in present_group:
+                if value in group:
+                    present_group.update(group)
+                    added = True
+                    break
+        if not added:
+            groups.append(group)
+
+    #get all blast proteins associated to the query proteins in the same groups
+    color_groups = []
+    for st in groups:
+        color_group = set()
+        for protein_name in st:
+            if not protein_name in blast_dict:
+                continue
+            color_group.add(protein_name)
+            for blast_result in blast_dict[protein_name]:
+                color_group.add(blast_result.subject)
+        if len(color_group) > 0:
+            color_groups.append(list(color_group))
+    #Generate RGB scheme
+    rgb_color_scheme = generate_distinct_colours(len(color_groups))
+
+    #generate a dictionary linking all proteins with blast hits to colors
+    gene_color_dict = {}
+    for gr_indx, group in enumerate(color_groups):
+        for protein_name in group:
+            gene_color_dict[protein_name] = rgb_color_scheme[gr_indx]
+    return gene_color_dict
+
+def generate_distinct_colours(count):
+    """
+    Create random distinct non-white colors
+
+    :param count: an integer for the amount of requested colors
+    :return: a list of colors in #hex format
+
+    Function from antismash:
+    https://github.com/antismash/antismash/blob/98eabb4f0597e51608b49ba270af3a7b23bd5b4e/antismash/modules/clusterblast/svg_builder.py#L512
+    """
+    # make sure that random processes are consistent to allow reproducible colors
+    random.seed(1)
+    rgbs = [colorsys.hsv_to_rgb(i/count, .9, .85) for i in range(count)]
+    colours = []
+    for rgb in rgbs:
+        red, green, blue = [str(hex(int(i*255)))[2:] for i in rgb]  # [2:] strips the 0x
+        colours.append("#{}{}{}".format(red, green, blue))
+    random.shuffle(colours)
+    return colours
 
 def runmuscle(args):
     os.system("muscle " + args)
@@ -1375,6 +1335,7 @@ def align_muscle(include_muscle, colorschemedict, seqdict):
                     break
     return musclegroups
 
+#### MOVE OUTPUT FILES ####
 def move_outputfiles(outdir, pages):
     """
     Delete temporary folders and move files to the output folder
@@ -1443,7 +1404,6 @@ def main():
     """
     Starting point of the program
     """
-    #if the GUI is active or not.
 
     #set the current directory to the temporary directory
     setup_temp_folder()
@@ -1474,7 +1434,7 @@ def main():
     logging.info("Step 5/11: Finished parsing database blast")
 
     #Step 6: Load genomic databases into memory
-    database = load_databases(query_proteins, blast_dict, user_options)
+    database = load_databases(blast_dict, user_options)
     logging.info("Step 6/11: Finished loading the relevant parts of the database.")
 
     #Step 7: Locate blast hits in genome and find clusters
