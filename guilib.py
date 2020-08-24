@@ -14,11 +14,6 @@ from tkinter.ttk import Frame, Label, Scale, Style
 from tkinter import Tk, BOTH, IntVar, Checkbutton, Spinbox, Listbox, StringVar, Entry, Button, Toplevel, TOP, RIGHT, LEFT, BOTTOM, Y, END, EXTENDED, Scrollbar, Text, NORMAL, INSERT, DISABLED, SINGLE, S, N, W, TclError
 import os
 import urllib.request, urllib.error, urllib.parse
-import smtplib
-from email.mime.application import MIMEApplication
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.utils import formatdate
 
 from utilities import ILLEGAL_CHARACTERS
 from constants import APPDATA, GENBANK_EXTENSIONS, EMBL_EXTENSIONS, get_mgb_path, CHUNK, OUT_FOLDER_NAME
@@ -364,7 +359,6 @@ class GenBankFileDownload(Frame):
         self.modalPane.transient(self.master)
         self.modalPane.grab_set()
 
-        self.modalPane.bind("<Return>", self._download)
         self.modalPane.bind("<Escape>", self._cancel)
 
         self.modalPane.title("Search GenBank")
@@ -554,7 +548,6 @@ class MakeDatabase(Frame):
         self.modal_pane.transient(self.master)
         self.modal_pane.grab_set()
 
-        self.modal_pane.bind("<Return>", self.make_database)
         self.modal_pane.bind("<Escape>", self._cancel)
 
         self.modal_pane.title("Make MGB database from file")
@@ -753,7 +746,6 @@ class MakeOnlineDatabase(Frame):
         self.modal_pane.transient(self.master)
         self.modal_pane.grab_set()
 
-        self.modal_pane.bind("<Return>", self.download_make_database)
         self.modal_pane.bind("<Escape>", self._cancel)
 
         self.modal_pane.title("Search GenBank")
@@ -1000,6 +992,8 @@ class MakeOnlineDatabase(Frame):
                             self.modal_pane.update()
         except Exception as error:
             outbox.text_insert("Failed to download files with the following error: {}\n".format(error))
+            outbox.add_ok_button()
+            outbox.add_error_button()
             return False
 
         # Report download success

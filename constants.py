@@ -36,7 +36,7 @@ def get_mgb_path():
     for folder in pathfolders:
         try:
             # print(os.listdir(folder))
-            if "guilib.py" in os.listdir(folder) and "multigeneblast.py" in os.listdir(folder) and "mgb_gui.py" in os.listdir(folder):
+            if "guilib.py" in os.listdir(folder) and "multigeneblast.py" in os.listdir(folder) and "multigeneblast_gui.py" in os.listdir(folder):
                 mgb_path = folder
                 break
         except:

@@ -18,7 +18,7 @@ CURRENTDIR = os.getcwd()
 MGBPATH = ""
 for folder in pathfolders:
   try:
-    if "read_input_gui.py" in os.listdir(folder) and "guilib.py" in os.listdir(folder) and "empty.xhtml" in os.listdir(folder) and "multigeneblast.py" in os.listdir(folder) and "mgb_gui.py" in os.listdir(folder):
+    if "read_input_gui.py" in os.listdir(folder) and "guilib.py" in os.listdir(folder) and "empty.xhtml" in os.listdir(folder) and "multigeneblast.py" in os.listdir(folder) and "multigeneblast_gui.py" in os.listdir(folder):
       MGBPATH = folder
       break
   except:
