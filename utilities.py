@@ -55,7 +55,7 @@ def setup_logger(outdir, starttime, level="basic"):
     try:
         os.mkdir(outdir)
     except FileExistsError:
-        dir_exists = True
+        pass
 
     log_file_loc = "{}{}{}".format(outdir, os.sep, 'run.log')
     #make sure that a potentially existing logfile is emptied
@@ -73,9 +73,6 @@ def setup_logger(outdir, starttime, level="basic"):
     logging.getLogger().addHandler(handler)
 
     logging.debug('Logger created')
-
-    if dir_exists:
-        logging.warning("The output directory already exists. Files may be overwritten.")
 
 
 class MyFormatter(logging.Formatter):

@@ -16,6 +16,7 @@ from guilib import *
 from databases import GenbankFile, embl_to_genbank
 from constants import *
 from utilities import determine_cpu_nr
+from gui_utility import *
 
 MGBPATH = get_mgb_path()
 
@@ -397,24 +398,13 @@ class MainMultiGeneBlastGui(Frame):
         """
         Select the output directory.
         """
-        selected = tkinter.filedialog.askdirectory(mustexist=False)
-        if selected == "":
+        path = select_out_directory()
+        if path == None:
             return
-        #if not files are present test if you can write in the folder
-        #easier to ask forgiveniss then permission
-        try:
-            with open(selected + os.sep + "test.txt", "w") as f:
-                f.write("test")
-            os.remove(selected + os.sep + "test.txt")
-        except PermissionError:
-            showerror("Error", "No permission to write to this folder. "
-                "Please choose a directory in which you have writing permissions.")
-            self.select_out_directory()
-        display_selected = selected
-        if len(selected) > 50:
-            display_selected = "{}...".format(selected[:47])
+        if len(path) > 50:
+            display_selected = "{}...".format(path[:47])
         self.__outdir_label.set(display_selected)
-        self.outdir_path = selected.replace("/", os.sep)
+        self.outdir_path = path.replace("/", os.sep)
 
     def run_multigeneblast(self):
         """
@@ -510,44 +500,16 @@ class MainMultiGeneBlastGui(Frame):
         :param command: a string that represents a valid mgb command
         :return: the exitcode of running multigeneblast. An exitcode other then 0 means an error
         """
-        #create a place to push messages to
-        outbox = MessageBox(frame=self, title="Running MultiGeneBlast...", outdir=self.outdir_path)
-        self.update()
-        popen = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-        lines_iterator = iter(popen.stdout.readline, b"")
-        while popen.poll() is None:
-            for line in lines_iterator:
-                outbox.text_insert(line)
-                self.update()
-        #check exit message
-        output, error = popen.communicate()
-        if error != b'':
-            string_error = error.decode('utf-8')
-            error_lines = string_error.split("\n")
-
-            #expected error dont show the error message
-            if "raise MultiGeneBlastException" in error_lines[-1] or "raise MultiGeneBlastException" in error_lines[-2]\
-                    or "raise MultiGeneBlastException" in error_lines[-3]:
-                outbox.text_insert("\nMultigeneblast exitied because an input variable was not complete. Make sure to fix it "
-                                   "and run Multigeneblast again OR if you think this is not a problem with the input "
-                                   "please click the button below to send an error report.")
-            else:
-                outbox.text_insert(string_error + "\n")
-                outbox.text_insert("MultiGeneBlast experienced a problem. Please click"
-                    " the button below to send an error report, so we can solve the underlying problem.\n")
-            outbox.change_errormessage(error)
-            outbox.add_ok_button()
-            outbox.add_error_button()
-            self.update()
-            return popen.returncode
-        else:
+        outbox = MessageBox(frame=self, title="Running MultiGeneBlast...")
+        exit_code, expected = run_extrenal_command(command, outbox, self)
+        if exit_code == 0:
             outbox.text_insert('\nVisual output can be accessed by opening: '
-                '"file://' + self.outdir_path + os.sep + OUT_FOLDER_NAME + os.sep + 'visual' + os.sep +
+                               '"file://' + self.outdir_path + os.sep + OUT_FOLDER_NAME + os.sep + 'visual' + os.sep +
                                'displaypage1.xhtml" with a web browser\n')
-            outbox.add_ok_button()
-            self.update()
-            return popen.returncode
+        elif not expected:
+            outbox.text_insert("MultiGeneBlast experienced a problem. Please click"
+                " the button below to send an error report, so we can solve the underlying problem.\n")
+        return exit_code
 
     def open_final_webpage(self):
         """

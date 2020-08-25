@@ -641,7 +641,8 @@ def parse_db_blast(user_options, query_proteins, blast_output):
                      "minimum_sequence_coverage ({})"
                      " Extiting...".format(user_options.minpercid,
                                            user_options.minseqcov))
-        sys.exit(0)
+        #make sure to exit with a non zero code for when using the gui
+        sys.exit(1)
     return blast_dict
 
 #### STEP 6: LOAD RELEVANT PARTS OF THE DATABASE ####
