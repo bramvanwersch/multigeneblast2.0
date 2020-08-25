@@ -5,12 +5,8 @@
 ## License: GNU General Public License v3 or later
 ## A copy of GNU GPL v3 should have been included in this software package in LICENSE.txt.
 
-import sys
-import os
 from multiprocessing import freeze_support
-import subprocess
 from tkinter import *
-import webbrowser
 
 from guilib import *
 from databases import GenbankFile, embl_to_genbank
@@ -237,17 +233,20 @@ class MainMultiGeneBlastGui(Frame):
         # Genes selection
         self.gene_selection_lbl = Label(self.homology_frame, text="Genes to search (locus tags / accession numbers):")
         self.gene_selection_lbl.grid(row=10, column=0, sticky=W, pady=5)
-        self.selectedgenes = GeneSelectionFrame(self.homology_frame, self, [10, 1], self.geneslist)
+        self.selectedgenes = GeneSelectionFrame(self.homology_frame, self, self.geneslist)
+        self.selectedgenes.grid(row=10, column=1)
 
         # Start nt selection
         self.nuc_start_lbl = Label(self.homology_frame, text="Nucleotide start position of fragment to search:")
         self.nuc_start_lbl.grid(row=7, column=0, sticky=W, pady=5)
-        self.cstart = ScaleBar(self.homology_frame, self, [7, 1], 0, self.dnaseqlength, 0, scale_command=self.selectedgenes.clear_selection)
+        self.cstart = ScaleBar(self.homology_frame, 0, self.dnaseqlength, 0, scale_command=self.selectedgenes.clear_selection)
+        self.cstart.grid(row=7, column=1, sticky=W)
 
         # End nt selection
         self.nuc_end_lbl = Label(self.homology_frame, text="Nucleotide end position of fragment to search:")
         self.nuc_end_lbl.grid(row=8, column=0, pady=3, sticky=W)
-        self.cend = ScaleBar(self.homology_frame, self, [8, 1], 0, self.dnaseqlength, self.dnaseqlength, scale_command=self.selectedgenes.clear_selection)
+        self.cend = ScaleBar(self.homology_frame, 0, self.dnaseqlength, self.dnaseqlength, scale_command=self.selectedgenes.clear_selection)
+        self.cend.grid(row=8, column=1, sticky=W)
 
         or_label = Label(self.homology_frame, text = "OR")
         or_label.grid(row=9, column=1, pady=3)
@@ -260,42 +259,50 @@ class MainMultiGeneBlastGui(Frame):
         # Number of cores to use
         nr_cores_lbl = Label(general_widgets_frame, text="Number of CPU cores to be used:")
         nr_cores_lbl.grid(row=11, column=0, sticky=W, pady=5)
-        self.cores = ScaleBar(general_widgets_frame, self, [11, 1], 1, determine_cpu_nr("all"), determine_cpu_nr("all"))
+        self.cores = ScaleBar(general_widgets_frame, 1, determine_cpu_nr("all"), determine_cpu_nr("all"))
+        self.cores.grid(row=11, column=1, sticky=W)
 
         # Minimal sequence coverage of Blast hit
         hitspergene_lbl = Label(general_widgets_frame, text="Number of Blast hits per gene to be mapped:")
         hitspergene_lbl.grid(row=12, column=0, sticky=W, pady=5)
-        self.hitspergene = ScaleBar(general_widgets_frame, self, [12, 1], 50, 1000, 250)
+        self.hitspergene = ScaleBar(general_widgets_frame, 50, 1000, 250)
+        self.hitspergene.grid(row=12, column=1, sticky=W)
 
         # Weight of synteny conservation score
         syntentwheight_lbl = Label(general_widgets_frame, text="Weight of synteny conservation in hit sorting:")
         syntentwheight_lbl.grid(row=13, column=0, sticky=W, pady=5)
-        self.syntenyweight = ScaleBar(general_widgets_frame, self, [13, 1], 0.0, 2.0, 0.5, input_type="float")
+        self.syntenyweight = ScaleBar(general_widgets_frame, 0.0, 2.0, 0.5, input_type="float")
+        self.syntenyweight.grid(row=13, column=1, sticky=W)
 
         # Minimal sequence coverage of Blast hit
         seqcov_lbl = Label(general_widgets_frame, text="Minimal sequence coverage of BLAST hits:")
         seqcov_lbl.grid(row=14, column=0, sticky=W, pady=5)
-        self.seqcov = ScaleBar(general_widgets_frame, self, [14, 1], 0, 100, 25)
+        self.seqcov = ScaleBar(general_widgets_frame, 0, 100, 25)
+        self.seqcov.grid(row=14, column=1, sticky=W)
 
         # Minimal % ID of Blast hit
         percid_lbl = Label(general_widgets_frame, text="Minimal % identity of BLAST hits:")
         percid_lbl.grid(row=15, column=0, sticky=W, pady=5)
-        self.percid = ScaleBar(general_widgets_frame, self, [15, 1], 0, 100, 30)
+        self.percid = ScaleBar(general_widgets_frame, 0, 100, 30)
+        self.percid.grid(row=15, column=1, sticky=W)
 
         # Maximum allowed distance between hits in locus
         distancekb_lbl = Label(general_widgets_frame, text="Maximum distance between genes in locus (kb):")
         distancekb_lbl.grid(row=16, column=0, sticky=W, pady=5)
-        self.distancekb = ScaleBar(general_widgets_frame, self, [16, 1], 1, 100, 20)
+        self.distancekb = ScaleBar(general_widgets_frame, 1, 100, 20)
+        self.distancekb.grid(row=16, column=1, sticky=W)
 
         # Number of hit loci to show
         hitsperloci_lbl = Label(general_widgets_frame, text="Number of hit loci to display:")
         hitsperloci_lbl.grid(row=17, column=0, sticky=W, pady=5)
-        self.hitsperloci = SpinBox(general_widgets_frame, [17, 1], 0, 500, 50, 250)
+        self.hitsperloci = CustomSpinBox(general_widgets_frame, 0, 500, 50, 250)
+        self.hitsperloci.grid(row=17, column=1, sticky=W)
 
         # Generate Muscle alignments
         muscle_lbl = Label(general_widgets_frame, text="Muscle alignment of homologs with queries:")
         muscle_lbl.grid(row=18, column=0, sticky=W, pady=5)
-        self.muscle = CheckBox(general_widgets_frame, [18, 1], "")
+        self.muscle = CheckBox(general_widgets_frame, "")
+        self.muscle.grid(row=18, column=1)
 
         button_frame = Frame(self)
         button_frame.grid(row=3, column=0)
@@ -500,7 +507,7 @@ class MainMultiGeneBlastGui(Frame):
         :param command: a string that represents a valid mgb command
         :return: the exitcode of running multigeneblast. An exitcode other then 0 means an error
         """
-        outbox = MessageBox(frame=self, title="Running MultiGeneBlast...")
+        outbox = MessageBox(master=self, title="Running MultiGeneBlast...")
         exit_code, expected = run_extrenal_command(command, outbox, self)
         if exit_code == 0:
             outbox.text_insert('\nVisual output can be accessed by opening: '

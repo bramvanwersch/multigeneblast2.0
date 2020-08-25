@@ -5,242 +5,38 @@
 ## License: GNU General Public License v3 or later
 ## A copy of GNU GPL v3 should have been included in this software package in LICENSE.txt.
 
-import subprocess
-import webbrowser
 import time
 import tkinter.filedialog
-from tkinter.messagebox import askyesno, showerror, showwarning, showinfo
-from tkinter.ttk import Frame, Label, Scale, Style
-from tkinter import Tk, BOTH, IntVar, Checkbutton, Spinbox, Listbox, StringVar, Entry, Button, Toplevel, TOP, RIGHT, LEFT, BOTTOM, Y, END, EXTENDED, Scrollbar, Text, NORMAL, INSERT, DISABLED, SINGLE, S, N, W, TclError
-import os
+from tkinter.messagebox import askyesno, showinfo
+from tkinter import SINGLE, S, W
 import urllib.request, urllib.error, urllib.parse
 
 from utilities import ILLEGAL_CHARACTERS
-from constants import APPDATA, GENBANK_EXTENSIONS, EMBL_EXTENSIONS, get_mgb_path, CHUNK, OUT_FOLDER_NAME
+from constants import APPDATA, GENBANK_EXTENSIONS, EMBL_EXTENSIONS, get_mgb_path, CHUNK
 from gui_utility import *
 
 MGBPATH = get_mgb_path()
 
 
-def about():
-    webbrowser.open('http://multigeneblast.sourceforge.net/')
-
-
-class ScaleBar(Frame):
-  
-    def __init__(self, parent, SpObj, positions, minimum, maximum, default="0", scale_command=None, input_type="int"):
-        Frame.__init__(self, parent)   
-         
-        self.parent = parent
-        self.SpObj = SpObj
-        self.positions = positions
-        self.minimum = minimum
-        self.maximum = maximum
-        self.default = default
-        self.command = scale_command
-        self.input_type = input_type
-        self.initUI()
-        
-    def initUI(self):
-      
-        #self.parent.title("Scale")
-        #self.style = Style()
-        #self.style.theme_use("default")
-        
-        #self.pack(fill=BOTH, expand=1)
-        
-        self.grid(row=self.positions[0],column=self.positions[1], sticky=W)
-        
-        scale = Scale(self, from_=self.minimum, to=self.maximum, 
-            command=self.onScale, length=200)
-        scale.grid(row=0,column=1)
-        self.scale = scale
-        self.var = StringVar()
-        self.var.set(self.default)
-        self.lastvar = StringVar()
-        self.lastvar.set(self.var.get())
-        scale.set(self.default)
-        self.entry = Entry(self, textvariable=self.var, width=8)
-        self.entry.bind("<FocusOut>", self.OnValidate)
-        self.entry.bind("<Return>", self.OnValidate)
-        self.entry.grid(row=0,column=0)
-
-    def set_scale(self, start, end, value):
-        self.scale.configure(from_=start)
-        self.scale.configure(to=end)
-        self.var.set(str(value))
-        self.scale.set(value)
-        
-    def OnValidate(self, val):
-        if "-" in self.var.get():
-          self.var.set(self.minimum)
-        if not str(self.var.get()).isdigit():
-          self.var.set(self.lastvar.get())
-        if int(self.var.get()) <= int(self.minimum):
-          self.var.set(self.minimum)
-        if int(self.maximum) - int(self.var.get()) < 0:
-          self.var.set(self.maximum)
-        self.onScale(self.var.get())
-        self.scale.set(self.var.get())
-        self.lastvar.set(str(self.var.get()))
-
-    def onScale(self, val):
-        if self.input_type == "int":
-          v = int(float(val))
-        else:
-          v = float("".join(str(val).partition(".")[0:2]) + str(val).partition(".")[2][:2])
-        self.var.set(str(v))
-        if self.command != None:
-            self.command()
-        
-    def setval(self, val):
-        self.var.set(val)
-        self.scale.set(val)
-
-    def getval(self):
-        return self.var.get()
-        
-class CheckBox(Frame):
-  
-    def __init__(self, parent, positions, description):
-        Frame.__init__(self, parent)   
-         
-        self.parent = parent
-        self.positions = positions
-        self.description = description
-        self.initUI()
-        self.var.set(0)
-        
-    def initUI(self):
-      
-        #self.parent.title("Checkbutton")
-
-        self.grid(row=self.positions[0],column=self.positions[1], sticky=W, padx=25)
-        self.var = IntVar()
-        
-        cb = Checkbutton(self, text=self.description,
-            variable=self.var)
-        cb.select()
-        cb.grid(row=0,column=0)
-            
-    def getval(self):
-        return self.var.get()
-        
-        
-class SpinBox(Frame):
-  
-    def __init__(self, parent, positions, minimum, maximum, incrval, default=0):
-        Frame.__init__(self, parent)   
-         
-        self.parent = parent
-        self.positions = positions
-        self.minimum = minimum
-        self.maximum = maximum
-        self.incrval = incrval
-        self.default = default
-        self.initUI()
-        
-    def initUI(self):
-      
-        #self.parent.title("Checkbutton")
-
-        self.grid(row=self.positions[0],column=self.positions[1], sticky=W)
-        self.var = IntVar()
-        self.var.set(self.default)
-        
-        cb = Spinbox(self, from_=self.minimum, to=self.maximum, increment=self.incrval,
-            textvariable=self.var)
-        cb.grid(row=0,column=0)
-            
-    def getval(self):
-        return self.var.get()
-        
-class ListBoxChoice(object):
-    def __init__(self, master=None, title=None, message=None, list=[]):
-        self.master = master
-        self.value = None
-        self.list = list[:]
-        
-        self.modalPane = Toplevel(self.master)
-
-        self.modalPane.transient(self.master)
-        self.modalPane.grab_set()
-
-        self.modalPane.bind("<Return>", self._choose)
-        self.modalPane.bind("<Escape>", self._cancel)
-
-        if title:
-            self.modalPane.title(title)
-
-        if message:
-            Label(self.modalPane, text=message).pack(padx=5, pady=5)
-
-        listFrame = Frame(self.modalPane)
-        listFrame.pack(side=TOP, padx=5, pady=5)
-        
-        scrollBar = Scrollbar(listFrame)
-        scrollBar.pack(side=RIGHT, fill=Y)
-        self.listBox = Listbox(listFrame, selectmode=EXTENDED)
-        self.listBox.pack(side=LEFT, fill=Y)
-        scrollBar.config(command=self.listBox.yview)
-        self.listBox.config(yscrollcommand=scrollBar.set)
-        self.list.sort()
-        for item in self.list:
-            self.listBox.insert(END, item)
-
-        buttonFrame = Frame(self.modalPane)
-        buttonFrame.pack(side=BOTTOM)
-
-        chooseButton = Button(buttonFrame, text="Choose", command=self._choose)
-        chooseButton.pack()
-
-        cancelButton = Button(buttonFrame, text="Cancel", command=self._cancel)
-        cancelButton.pack(side=RIGHT)
-
-    def _choose(self, event=None):
-        try:
-            if len(self.listBox.curselection()) == 1:
-              Selected = self.listBox.curselection()[0]
-              self.value = self.list[int(Selected)]
-            else:
-              Selected = self.listBox.curselection()
-              self.value = ";".join([self.list[int(idx)] for idx in Selected])
-        except IndexError:
-            self.value = None
-        self.modalPane.destroy()
-
-    def _cancel(self, event=None):
-        self.modalPane.destroy()
-        
-    def returnValue(self):
-        self.master.wait_window(self.modalPane)
-        return self.value
-
-
 class GeneSelectionFrame(Frame):
-  
-    def __init__(self, master, SpObj, positions, entrieslist):
-        Frame.__init__(self, master)   
-         
-        self.master = master
+    """
+    Widget combination of button and entry to allow the user to select a collection of genes from an input query file
+    """
+    def __init__(self, master, SpObj, entrieslist):
+        """
+        :param master: the master object
+        :param SpObj: multigeneblast_gui instance
+        :param entrieslist:
+        """
+        Frame.__init__(self, master)
         self.SpObj = SpObj
-        self.positions = positions
         self.entrieslist = entrieslist
-        self.initUI()
-      
-    def select(self):
-        selectedgenes = ListBoxChoice(self, "Select genes", "Select query genes:", self.entrieslist).returnValue()
-        if selectedgenes != None:
-          self.SpObj.cstart.setval(0)
-          self.SpObj.cend.setval(0)
-          self.selected.set(selectedgenes)
+        self.init_widgets()
 
-    def set_selectable_genes(self, genes):
-        self.entrieslist = genes
-        self.clear_selection()
-
-    def initUI(self):
-        self.grid(row=self.positions[0],column=self.positions[1], sticky=W)
+    def init_widgets(self):
+        """
+        Innitialize the widgets
+        """
         self.selected = StringVar()
         self.selected.set("<Select genes>")
         self.genes_entry = Entry(self, textvariable=self.selected, width=25)
@@ -249,8 +45,32 @@ class GeneSelectionFrame(Frame):
         self.genes_entry.bind("<Return>", self.OnValidate)
         selectionBox = Button(self, text="Select genes", command=self.select)
         selectionBox.grid(row=0,column=1, padx=10)
+      
+    def select(self):
+        """
+        Open a ListBoxChoice object to select a number of genes
+        """
+        selectedgenes = ListBoxChoice(self, "Select genes", "Select query genes:", self.entrieslist).returnValue()
+        if selectedgenes != None:
+          self.SpObj.cstart.setval(0)
+          self.SpObj.cend.setval(0)
+          self.selected.set(selectedgenes)
+
+    def set_selectable_genes(self, genes):
+        """
+        Change the self.entrielist property
+
+        :param genes: a list of strings
+        """
+        self.entrieslist = genes
+        self.clear_selection()
         
     def OnValidate(self, val):
+        """
+        Called when finished text to the entry widget
+
+        :param val: the string that was eneterd by the user
+        """
         if self.selected.get() != None and self.selected.get() != "<Select genes>" and len(self.selected.get().split(";")) > 1:
             selectedgenes = self.selected.get()
             self.SpObj.cstart.setval(0)
@@ -260,90 +80,18 @@ class GeneSelectionFrame(Frame):
             self.selected.set("<Select genes>")
 
     def clear_selection(self):
+        """
+        Clear the text in the entry widget
+        """
         self.selected.set("<Select genes>")
 
     def getval(self):
+        """
+        Get the text in the entry widget
+
+        :return: String text in the entry widget
+        """
         return self.selected.get()
-
-class MessageBox:
-    def __init__(self, frame=None, master=None, title=None, message=None, list=[]):
-        self.frame = frame
-        self.master = master
-        self.value = None
-        self.errormessage = ""
-        self.list = list[:]
-
-        self.modalPane = Toplevel(self.frame, height=800, width=300)
-
-        self.modalPane.transient(self.frame)
-        self.modalPane.grab_set()
-
-        self.modalPane.bind("<Escape>", self._ok)
-        self.modalPane.protocol('WM_DELETE_WINDOW', self._ok)
-
-        if title:
-            self.modalPane.title(title)
-
-        #define a new frame and put a text area in it
-        self.messageFrame = Frame(self.modalPane)
-        self.messageFrame.pack(side=TOP)
-        self.messageFrame.text = Text(self.messageFrame,height=40,width=100,background='white',state=DISABLED)
-        self.messageFrame.text.tag_config('Error', foreground="red")
-        self.messageFrame.text.tag_config('Warning', foreground="blue")
-
-        # put a scroll bar in the frame
-        self.messageFrame.scroll = Scrollbar(self.messageFrame)
-        self.messageFrame.text.configure(yscrollcommand=self.messageFrame.scroll.set)
-
-        #pack everything
-        self.messageFrame.text.pack(side=LEFT)
-        self.messageFrame.scroll.pack(side=RIGHT,fill=Y)
-
-    def text_insert(self, text, tag=None):
-        if isinstance(text, bytes):
-            text = text.decode("utf8")
-        self.messageFrame.text.see(END)
-        self.messageFrame.text.config(state=NORMAL)
-        if tag != None:
-            self.messageFrame.text.insert(INSERT, text, tag)
-        elif "WARNING" in text:
-            self.messageFrame.text.insert(INSERT, text, "Warning")
-        elif "ERROR" in text:
-            self.messageFrame.text.insert(INSERT, text, "Error")
-        else:
-            self.messageFrame.text.insert(INSERT, text)
-        self.messageFrame.text.config(state=DISABLED)
-        
-    def add_ok_button(self):
-        self.buttonFrame = Frame(self.modalPane)
-        self.buttonFrame.pack(side=BOTTOM)
-
-        self.okButton = Button(self.buttonFrame, text="OK", command=self._ok, width=10)
-        self.okButton.pack()
-
-    def add_error_button(self):
-        self.buttonFrame = Frame(self.modalPane)
-        self.buttonFrame.pack(side=BOTTOM)
-
-        self.errorButton = Button(self.buttonFrame, text="Send Error Report",
-                                  command=self.sendreport, width=20)
-        self.errorButton.pack()
-
-    def change_errormessage(self, errormessage):
-        self.errormessage = errormessage
-
-    def sendreport(self, event=None):
-        #TODO make this more proper by sending automatically and add a log file. Logging module offers options to
-        # automatically send on error
-        try:
-            webbrowser.open("mailto:multigeneblast@gmail.com?SUBJECT=ErrorReport&BODY=" + urllib.parse.quote(self.errormessage.encode("utf8")))
-        except:
-            webbrowser.open("sourceforge.net/tracker/?func=add&group_id=565495&atid=2293721")
-        else:
-            pass
-
-    def _ok(self, event=None):
-        self.modalPane.destroy()
 
 
 class SearchFrame(Frame):
@@ -351,6 +99,9 @@ class SearchFrame(Frame):
     Implements a Text widget and some entries to search the NCBI database for genbank files
     """
     def __init__(self, master):
+        """
+        :param master: Tk or Frame object that is the master window of this TopLevel
+        """
         super().__init__(master)
         self.descriptions = []
         self.keyword = StringVar()
@@ -361,9 +112,12 @@ class SearchFrame(Frame):
         self.accession.set("")
 
         self.__search_warning = StringVar()
-        self.initUI()
+        self.init_widgets()
 
-    def initUI(self):
+    def init_widgets(self):
+        """
+        Innitialize the widgets
+        """
         searchFrame = Frame(self.master)
         searchFrame.grid(row=0)
         Label(searchFrame, text="Keyword: ").grid(row=0, column=0, pady=3)
@@ -390,6 +144,9 @@ class SearchFrame(Frame):
         self.search_listbox.config(yscrollcommand=scrollBar.set)
 
     def _search(self):
+        """
+        Function for searching the NCBI database for genbank files using species, keywords and organisms
+        """
         self.__search_warning.set("")
         if self.organism.get() == "" and self.keyword.get() == "" and self.accession.get() == "":
             showerror("Input error", "Please specify a search term first.")
@@ -453,9 +210,17 @@ class SearchFrame(Frame):
         self._insert_search_results(descriptions)
 
     def _clear(self):
+        """
+        Clear the list_box with search results
+        """
         self.search_listbox.delete(0, END)
 
     def _insert_search_results(self, descriptions):
+        """
+        Insert a list of descriptions that are search results
+
+        :param descriptions: a list of strings
+        """
         #make sure to delete contents before putting new in
         self.search_listbox.delete(0, END)
         self.descriptions = []
@@ -464,15 +229,31 @@ class SearchFrame(Frame):
             self.descriptions.append(desc)
 
     def get_selected_ids(self):
+        """
+        Get the IDs of all search results that are selected in the list_box
+
+        :return: a list of string IDs
+        """
         return [self.ids[indx] for indx in self.search_listbox.curselection()]
 
     def get_selected_descriptions(self):
+        """
+        Get the descriptions of all search results that are selected in the list_box
+
+        :return: a list of string descriptions
+        """
         return [self.descriptions[indx] for indx in self.search_listbox.curselection()]
 
 
 class GenBankFileDownload(Toplevel):
+    """
+    TopLevel window for downloading one or more genbank files
+    """
 
     def __init__(self, master):
+        """
+        :param master: Tk or Frame object that is the master window of this TopLevel
+        """
         super().__init__(master)
         self.grid()
         self.transient(self.master)
@@ -482,9 +263,12 @@ class GenBankFileDownload(Toplevel):
         self.title("Search GenBank")
 
         self.search_frame = None
-        self.initUI()
+        self.init_widgets()
 
-    def initUI(self):
+    def init_widgets(self):
+        """
+        innitialize the widgets
+        """
         self.search_frame = SearchFrame(self)
         self.search_frame.grid(row=0)
 
@@ -497,7 +281,10 @@ class GenBankFileDownload(Toplevel):
         cancelButton = Button(buttonFrame, text="Cancel", command=self._cancel)
         cancelButton.pack(side=RIGHT)
 
-    def one_by_one_download(self, event=None):
+    def one_by_one_download(self):
+        """
+        Download all selected genbank files into separate files.
+        """
         ids = self.search_frame.get_selected_ids()
         outdir = tkinter.filedialog.askdirectory(mustexist=False)
         if outdir == "":
@@ -554,6 +341,11 @@ class GenBankFileDownload(Toplevel):
         showinfo("Download finished", message)
 
     def _cancel(self, event=None):
+        """
+        Called when escape is pressed to kill the toplevel window
+
+        :param event: an optional argument
+        """
         self.destroy()
 
 class MakeDatabase(Toplevel):
@@ -604,18 +396,18 @@ class MakeDatabase(Toplevel):
         outdir_button = Button(searchFrame, text="Select the output folder", command=self.select_out_directory)
         outdir_button.grid(row=1, column=2, sticky=W)
 
-        searchButton = Button(searchFrame, text="Add files", command=self._addfile)
+        searchButton = Button(searchFrame, text="Add files", command=self._add_files)
         searchButton.grid(row=2,column=1)
 
         listFrame = Frame(self)
         listFrame.grid(row=1, pady=10, padx=20)
         scrollBar = Scrollbar(listFrame)
         scrollBar.pack(side=RIGHT, fill=Y)
-        self.listBox = Listbox(listFrame, selectmode=SINGLE, width=100, height=10)
-        self.listBox.pack(side=LEFT, fill=Y)
-        scrollBar.config(command=self.listBox.yview)
-        self.listBox.config(yscrollcommand=scrollBar.set)
-        self.listBox.bind("<Delete>", self._remove)
+        self.file_list_box = Listbox(listFrame, selectmode=SINGLE, width=100, height=10)
+        self.file_list_box.pack(side=LEFT, fill=Y)
+        scrollBar.config(command=self.file_list_box.yview)
+        self.file_list_box.config(yscrollcommand=scrollBar.set)
+        self.file_list_box.bind("<Delete>", self._remove)
 
         buttonFrame = Frame(self)
         buttonFrame.grid(row=2, pady=10)
@@ -623,8 +415,8 @@ class MakeDatabase(Toplevel):
         clearButton.grid(column=0, row=0, padx=5)
         clear_selected_button = Button(buttonFrame, text="Clear selected", command=self._remove)
         clear_selected_button.grid(column=1, row=0, padx=5)
-        chooseButton = Button(buttonFrame, text="Make database", command=self.make_database)
-        chooseButton.grid(column=2,row=0, padx=5)
+        make_database_button = Button(buttonFrame, text="Make database", command=self.make_database)
+        make_database_button.grid(column=2,row=0, padx=5)
         cancelButton = Button(buttonFrame, text="Cancel", command=self._cancel)
         cancelButton.grid(column=3, row=0, padx=5)
 
@@ -644,8 +436,7 @@ class MakeDatabase(Toplevel):
         """
         Called when leaving the entry widget
 
-        :param val: a
-        :return:
+        :param val: the value entered by the user in the entry widget
         """
         for char in ILLEGAL_CHARACTERS:
             if self.dbname.get() != "<Enter a name for your database>":
@@ -654,7 +445,10 @@ class MakeDatabase(Toplevel):
                     self.dbname.set("<Enter a name for your database>")
                     return
 
-    def _addfile(self):
+    def _add_files(self):
+        """
+        Add one or more files to the self.file_list_box ListBox object
+        """
         #returns a tuple of names
         filenames = tkinter.filedialog.askopenfilename(multiple=True, filetypes=(("GenBank files",('*.gbk','*.gb','*.genbank')),("EMBL files",('*.embl','*.emb'))), title="Select files")
         # else:
@@ -672,19 +466,36 @@ class MakeDatabase(Toplevel):
                 self._insert(filename)
 
     def _clear(self):
-        self.listBox.delete(0, END)
+        """
+        Clear the the complete file_list_box
+        """
+        self.file_list_box.delete(0, END)
         self.files = []
 
     def _insert(self, item):
-        self.listBox.insert(END, item)
+        """
+        Insert a file into the file_list_box
+
+        :param item: string file_path
+        :return:
+        """
+        self.file_list_box.insert(END, item)
 
     def _remove(self, args=None):
-        pos = self.listBox.curselection()
+        """
+        Remove a single entry from the list box
+
+        :param args: optional argument
+        """
+        pos = self.file_list_box.curselection()
         if pos:
             del self.files[int(pos[0])]
-            self.listBox.delete(pos, pos)
+            self.file_list_box.delete(pos, pos)
 
     def make_database(self):
+        """
+        Function called when the make_database_button is pressed
+        """
         if self.dbname.get() + ".pal" in os.listdir(self.__outdir_path):
             answer = askyesno('Database name exists',
                               'A database with this name already exists. Overwrite?')
@@ -695,6 +506,11 @@ class MakeDatabase(Toplevel):
             self.__run_db_command(command)
 
     def __make_db_command(self):
+        """
+        Constructs a command line command to run make_database.py
+
+        :return: None or the command as a string
+        """
         if len(self.files) == 0:
             showerror("Invalid input Error", "No files where submitted to create a database.")
             return None
@@ -703,13 +519,20 @@ class MakeDatabase(Toplevel):
                 showerror("Input Error", "Database name contains illegal character. {} is not allowed".format(char))
                 return None
         base_command = "{}{}make_database.py ".format(MGBPATH, os.sep)
+        #make sure to place '"' around inputs that can contain spaces
         required_information = '-o "{}" -n "{}" -i {} '.format(self.__outdir_path, self.dbname.get(), " ".join(['"{}"'.format(f) for f in self.files]))
         full_command = base_command + required_information
         return full_command
 
     def __run_db_command(self, command):
+        """
+        Run the command on the command line using the run_external_command function. This function simply
+        adds some additional information depending on the finishing error code
+
+        :param command: a command as string
+        """
         #create a place to push messages to
-        outbox = MessageBox(frame=self.master, title="Creating database...")
+        outbox = MessageBox(master=self.master, title="Creating database...")
         exit_code, expected = run_extrenal_command(command, outbox, self)
         if exit_code == 0:
             outbox.text_insert("Database created.\nYou can now use this database "
@@ -718,14 +541,21 @@ class MakeDatabase(Toplevel):
             outbox.text_insert("MultiGeneBlast experienced a problem while creating the database. Please click"
                 " the button below to send an error report, so we can solve the underlying problem.\n")
 
-
     def _cancel(self, event=None):
+        """
+        Called when escape is pressed to kill the toplevel window
+
+        :param event: an optional argument
+        """
         self.destroy()
 
 
 class MakeOnlineDatabase(Toplevel):
   
     def __init__(self, master):
+        """
+        :param master: Tk or Frame object that is the master window of this TopLevel
+        """
         super().__init__(master)
         self.transient(self.master)
         self.grab_set()
@@ -743,9 +573,12 @@ class MakeOnlineDatabase(Toplevel):
         self.__outdir_label.set(APPDATA)
         self.__outdir_path = APPDATA
 
-        self.initUI()
+        self.init_widgets()
 
-    def initUI(self):
+    def init_widgets(self):
+        """
+        Innitialize the widgets
+        """
         Label(self, text="Find GenBank entries on NCBI server").grid(row=0, column=0)
 
         self.search_frame = SearchFrame(self)
@@ -798,6 +631,11 @@ class MakeOnlineDatabase(Toplevel):
         cancelButton.grid(row=0, column=2, padx=3, pady=5)
 
     def OnValidate(self, val):
+        """
+        Called when leaving the entry widgets
+
+        :param val: the value entered by the user in the entry widget
+        """
         for char in ILLEGAL_CHARACTERS:
             if self.dbname.get() != "<Enter a name for your database>":
                 if char in self.dbname.get():
@@ -818,16 +656,27 @@ class MakeOnlineDatabase(Toplevel):
         self.outdir_path = path.replace("/", os.sep)
 
     def _clear_selected(self):
+        """
+        Clear all values in the select_listbox
+        """
         self.selected = []
         self.select_listbox.delete(0, END)
 
     def _remove_selected(self, idx):
+        """
+        Remove the specifucally selected entry in the select_listbox
+
+        :param idx: the index that is selected
+        """
         pos = self.select_listbox.curselection()
         self.select_listbox.delete(pos, pos)
         ID = self.ids[int(pos)]
         del self.selected[self.selected.index(ID)]
 
     def _insert_selected(self):
+        """
+        Insert the selected lines from the searchframe listbox into the select_listbox
+        """
         descriptions = self.search_frame.get_selected_descriptions()
         ids = self.search_frame.get_selected_ids()
         for index, id in enumerate(ids):
@@ -836,6 +685,9 @@ class MakeOnlineDatabase(Toplevel):
                 self.selected.append(id)
 
     def download_make_database(self):
+        """
+        Function called when the button download and create database is pressed
+        """
         if len(self.selected) == 0:
             showerror("Input Error", "No Entries selected.")
             return
@@ -845,7 +697,7 @@ class MakeOnlineDatabase(Toplevel):
                 showerror("Input Error","Database name contains illegal character. {} is not allowed".format(char))
                 return
         # create a place to push messages to
-        outbox = MessageBox(frame=self.master, title="Creating database...")
+        outbox = MessageBox(master=self.master, title="Creating database...")
         #if downloading was a succes proceed with creating the database
         if self.download_database(outbox):
             command = self.__make_db_command()
@@ -853,7 +705,11 @@ class MakeOnlineDatabase(Toplevel):
             self.__run_db_command(command, outbox)
 
     def download_database(self, outbox):
+        """
+        Download all the entries in the select_listbox into one genbank file
 
+        :return a boolean that tells if the download was a succes or not
+        """
         ids = self.selected
 
         outbox.text_insert("Downloading {} files. This can take a while..\n".format(len(ids)))
@@ -878,7 +734,7 @@ class MakeOnlineDatabase(Toplevel):
         except Exception as error:
             outbox.text_insert("Failed to download files with the following error: {}\n".format(error))
             outbox.add_ok_button()
-            outbox.add_error_button()
+            outbox.add_report_button()
             return False
 
         # Report download success
@@ -886,12 +742,23 @@ class MakeOnlineDatabase(Toplevel):
         return True
 
     def __make_db_command(self):
+        """
+        Create the command to run make_database.py to create a database from the downloaded genbank file
+
+        :return: a string that is the full command to run make_database.py
+        """
         base_command = "{}{}make_database.py ".format(MGBPATH, os.sep)
         required_information = "-o {} -n {} -i {} ".format(self.__outdir_path, self.dbname.get(),self.__outdir_path + os.sep + self.dbname.get() + ".gbk")
         full_command = base_command + required_information
         return full_command
 
     def __run_db_command(self, command, outbox):
+        """
+        Run the database making command. Use a MessageBox object to notify the user what is happening
+
+        :param command: a string that is a command to run make_database.py
+        :param outbox: a MessageBox where messages are pushed to giving feedback to the user
+        """
         # create a place to push messages to
         self.update()
         exit_code, expected = run_extrenal_command(command, outbox, self.master)
@@ -903,4 +770,9 @@ class MakeOnlineDatabase(Toplevel):
                                " the button below to send an error report, so we can solve the underlying problem.\n")
         
     def _cancel(self, event=None):
+        """
+        Called when escape the window is close
+
+        :param event: an optional argument
+        """
         self.destroy()
