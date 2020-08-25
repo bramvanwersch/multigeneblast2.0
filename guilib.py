@@ -138,7 +138,7 @@ class SearchFrame(Frame):
 
         scrollBar = Scrollbar(listFrame)
         scrollBar.pack(side=RIGHT, fill=Y)
-        self.search_listbox = Listbox(listFrame, selectmode="multiple", width=100, height=20)
+        self.search_listbox = Listbox(listFrame, selectmode="multiple", width=100, height=12)
         self.search_listbox.pack(side=LEFT, fill=Y)
         scrollBar.config(command=self.search_listbox.yview)
         self.search_listbox.config(yscrollcommand=scrollBar.set)
@@ -596,7 +596,7 @@ class MakeOnlineDatabase(Toplevel):
         listFrame2.grid(row=6, column=0, padx=20, pady=5)
         scrollBar2 = Scrollbar(listFrame2)
         scrollBar2.pack(side=RIGHT, fill=Y)
-        self.select_listbox = Listbox(listFrame2, selectmode="multiple", width=100, height=8)
+        self.select_listbox = Listbox(listFrame2, selectmode="multiple", width=100, height=12)
         self.select_listbox.pack(side=LEFT, fill=Y)
         scrollBar2.config(command=self.select_listbox.yview)
         self.select_listbox.config(yscrollcommand=scrollBar2.set)
@@ -621,14 +621,17 @@ class MakeOnlineDatabase(Toplevel):
         buttonFrame2 = Frame(self)
         buttonFrame2.grid(row=9, column=0)
 
-        clearButton = Button(buttonFrame2, text="Clear selection", command=self._clear_selected)
-        clearButton.grid(row=0, column=0, padx=3, pady=5)
+        clear_all_button = Button(buttonFrame2, text="Clear all", command=self._clear_all)
+        clear_all_button.grid(row=0, column=0, padx=3, pady=5)
+
+        clear_selected_button = Button(buttonFrame2, text="Clear selected", command=self._remove_selected)
+        clear_selected_button.grid(row=0, column=1, padx=3, pady=5)
 
         chooseButton = Button(buttonFrame2, text="Download and create database", command=self.download_make_database)
-        chooseButton.grid(row=0, column=1, padx=3, pady=5)
+        chooseButton.grid(row=0, column=2, padx=3, pady=5)
 
         cancelButton = Button(buttonFrame2, text="Cancel", command=self._cancel)
-        cancelButton.grid(row=0, column=2, padx=3, pady=5)
+        cancelButton.grid(row=0, column=3, padx=3, pady=5)
 
     def OnValidate(self, val):
         """
@@ -655,16 +658,16 @@ class MakeOnlineDatabase(Toplevel):
         self.__outdir_label.set(display_selected)
         self.outdir_path = path.replace("/", os.sep)
 
-    def _clear_selected(self):
+    def _clear_all(self):
         """
         Clear all values in the select_listbox
         """
         self.selected = []
         self.select_listbox.delete(0, END)
 
-    def _remove_selected(self, idx):
+    def _remove_selected(self, idx=None):
         """
-        Remove the specifucally selected entry in the select_listbox
+        Remove the specifically selected entry in the select_listbox
 
         :param idx: the index that is selected
         """
