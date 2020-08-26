@@ -34,21 +34,21 @@ if __name__ == "__main__":
 
     #command using gb query
     print("Starting run with genbank file:")
-    command1 = "..\\multigeneblast.py -in test_querys\\V_maris_query.gb -from 0 -to 59320 -out tests\\test_run_gbk -db test_data_base\\v_maris.pal -c 4 -hpg 200 -msc 25 -mpi 30 -dkb 20 -sw 0.5 -m y -op 3 -inf all"
+    command1 = "..\\multigeneblast.py -in test_querys\\V_maris_query.gb -from 0 -to 59320 -out tests\\test_run_gbk -db test_data_base\\v_maris.pal -c 4 -hpg 200 -msc 25 -mpi 30 -dkb 20 -sw 0.5 -m n -op 3 -inf all"
     test_multigeneblast(command1, "test_run_gbk")
     print("Finished running gb query test...")
     print()
 
     #command using embl query
     print("Starting run with embl file:")
-    command2 = "..\\multigeneblast.py -in test_querys\\V_maris_query.embl -from 0 -to 59320 -out tests\\test_run_embl -db test_data_base\\v_maris.pal -c 4 -hpg 200 -msc 25 -mpi 30 -dkb 20 -sw 0.5 -m y -op 3 -inf all"
+    command2 = "..\\multigeneblast.py -in test_querys\\V_maris_query.embl -from 0 -to 59320 -out tests\\test_run_embl -db test_data_base\\v_maris.pal -c 4 -hpg 200 -msc 25 -mpi 30 -dkb 20 -sw 0.5 -m n -op 3 -inf all"
     test_multigeneblast(command2, "test_run_embl")
     print("Finished running embl query test...")
     print()
 
     #command using architecture search fasta
     print("Starting run with architecture mode(fasta file):")
-    command3 = "..\\multigeneblast.py -in test_querys\\V_maris_query_partial.fasta -out tests\\test_run_fasta -db test_data_base\\v_maris.pal -c 4 -hpg 200 -msc 25 -mpi 30 -dkb 20 -sw 0.5 -m y -op 3 -inf all"
+    command3 = "..\\multigeneblast.py -in test_querys\\V_maris_query_partial.fasta -out tests\\test_run_fasta -db test_data_base\\v_maris.pal -c 4 -hpg 200 -msc 25 -mpi 30 -dkb 20 -sw 0.5 -m n -op 3 -inf all"
     test_multigeneblast(command3, "test_run_fasta")
     print("Finished running architecture mode test...")
     print()
