@@ -115,7 +115,24 @@ def get_temp_data():
     #return a unique folder name to make sure that no unwanted files are deleted when cleaning the folder
     return temp + os.sep + "mgb_temp"
 
+def get_muscle_prog_name():
+    if platform.system() == "Windows":
+        return "muscle3.8.31_i86win32.exe"
+    bit64_mode = sys.maxsize > 2**32
+    if bit64_mode:
+        if platform.system() == "Darwin":
+            return "muscle3.8.31_i86darwin64"
+        else:
+            return "muscle3.8.31_i86linux64"
+    else:
+        if platform.system() == "Darwin":
+            return "muscle3.8.31_i86darwin32"
+        else:
+            return "muscle3.8.31_i86linux32"
+
+
 #path constants
 CURRENTDIR = os.getcwd()
 APPDATA = get_appdata_path()
 TEMP = get_temp_data()
+MUSCLE_PROG_NAME = get_muscle_prog_name()

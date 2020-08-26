@@ -22,12 +22,14 @@ from collections import OrderedDict
 import pickle as pickle
 import shutil
 import colorsys
+import urllib
+import http
 
 #own imports
 from databases import GenbankFile, embl_to_genbank, Protein
 from visualisation import ClusterCollectionSvg, create_xhtml_file
 from utilities import MultiGeneBlastException, setup_logger, run_commandline_command, remove_illegal_characters,\
-    setup_temp_folder, determine_cpu_nr
+    setup_temp_folder, determine_cpu_nr, is_valid_accession
 from constants import *
 
 #constant specifically required for mbg
@@ -153,7 +155,7 @@ def get_arguments():
     parser.add_argument("-m", "-muscle", help="Generate a Muscle multiple sequence"
                                         " alignments of all hits of each input"
                                         " gene (default: n)", default="n",
-                        choices=["y","n"])
+                        choices=["y","n","Y","N"])
     parser.add_argument("-op", "-outpages", help="Maximum number of output pages"
                                           " (with 50 hits each) to be generated"
                                           " (default: 5)", type=int, default=5,
@@ -320,7 +322,7 @@ class Options:
         self.minpercid = arguments.mpi
         self.hitspergene = arguments.hpg
         self.distancekb = int(arguments.dkb * 1000)
-        self.muscle = arguments.m
+        self.muscle = arguments.m.lower()
         self.pages = arguments.op
         self.syntenyweight = arguments.sw
 
@@ -605,9 +607,9 @@ def db_blast(query_proteins, user_options):
     last_message_time = start_time
     while db_blast_process.is_alive():
         time_passed = time.time() - last_message_time
-        if time_passed > 5:
+        if time_passed > 60:
             last_message_time = time.time()
-            logging.info("{:.1f} seconds passed. Blasting still in progress.".format(last_message_time - start_time))
+            logging.info("{:.1f} minutes passed. Blasting still in progress.".format((last_message_time - start_time) / 60))
     #when the process exits with an error
     if db_blast_process.exitcode != 0:
         raise MultiGeneBlastException("Blasting against the provided database returns multiple errors.")
@@ -1161,14 +1163,74 @@ def write_txt_output(query_proteins, clusters, blast_output, user_options):
         out_file.write("{}\n".format(cluster.summary()))
     out_file.close()
 
-#### STEP 10/11: CREATE SVG VISUAL OUTPUT ####
-def write_svg_files(clusters, user_options, query_cluster, blast_dict, page_nr):
+#### STEP 10: alligning muscle ####
+def align_muscle(gene_color_dict, database, query_proteins, outdir):
+    """
+    Create multiple sequence allignments for all blast hits against all query proteins that have blast htis
+
+    :param gene_color_dict: a dictionary linking protein names to rgb colors
+    :param database: a GenbankFile object containing all relevant data
+    :param query_proteins: a dictionary of Protein objects with all the query proteins
+    :param outdir: the output directorty specified by the user
+    """
+    #Create Muscle alignments of colourgroups
+    musclegroups = []
+    #create folder to store resutls
+    logging.info("Started to allign with muscle. This will take a while...")
+    try:
+        os.mkdir("muscle_info")
+    except(IOError,OSError):
+        pass
+    try:
+        os.mkdir(outdir + os.sep + "muscle_info")
+    except(IOError,OSError):
+        pass
+    color_per_genes = {}
+    for gene, color in gene_color_dict.items():
+        if color in color_per_genes:
+            color_per_genes[color].append(gene)
+        else:
+            color_per_genes[color] = [gene]
+    start_time = time.time()
+    last_message_time = start_time
+    count = 1
+    total = len(color_per_genes)
+    for color, color_group in color_per_genes.items():
+        color = color.replace("#","")
+        file_name = "muscle_info" + os.sep + "group{}.fasta".format(color)
+        with open(file_name, "w") as f:
+            for prot in color_group:
+                try:
+                    sequence = database.proteins[prot].sequence
+                except KeyError:
+                    sequence = query_proteins[prot].sequence
+                f.write(">{}\n".format(prot))
+                f.write(sequence + "\n")
+
+        complete_command = "{}{}exec_new{}{} -quiet -in {}{}{} -out {}{}muscle_info{}group{}_muscle.fasta".\
+            format(MGBPATH, os.sep, os.sep, MUSCLE_PROG_NAME, TEMP, os.sep, file_name, outdir, os.sep, os.sep, color)
+        muscle_process = Process(target=run_commandline_command, args=[complete_command, 0])
+        muscle_process.start()
+        while muscle_process.is_alive():
+            time_passed = time.time() - last_message_time
+            if time_passed > 60:
+                last_message_time = time.time()
+                logging.info("{:.1f} minutes passed. Muscle alligning still in process.".format((last_message_time - start_time)/60))
+        # when the process exits with an error
+        if muscle_process.exitcode != 0:
+            logging.warning("Running Muscle returns multiple errors. Muscle output cannot be generated as a result.")
+        logging.debug("Finished making muscle allignment {}/{}".format(count, total))
+        count += 1
+
+#### STEP 11: CREATE SVG VISUAL OUTPUT ####
+def write_svg_files(clusters, gene_color_dict, user_options, query_cluster, blast_dict, page_nr):
     """
     Write clusters into svgs of comparissons between the query and each
     individual cluster as well as an svg as a complete overview of all clusters
     on a page
 
     :param clusters: a list of Cluster objects
+    :param gene_color_dict: a dictionary linking protein names to rgb colors
     :param user_options: an option object with user defined options
     :param query_cluster: a Cluster ibject with the user defined query
     :param blast_dict: a dictionary that contains a key for every query that
@@ -1179,8 +1241,6 @@ def write_svg_files(clusters, user_options, query_cluster, blast_dict, page_nr):
     tooltips in the right place
     """
     logging.debug("Writing visualization SVGs and XHTML...")
-
-    gene_color_dict = calculate_colorgroups(blast_dict, query_cluster)
 
     svg_images = {}
     for index, cluster in enumerate(clusters):
@@ -1242,7 +1302,7 @@ def calculate_colorgroups(blast_dict, query_cluster):
     rgb_color_scheme = generate_distinct_colours(len(color_groups))
 
     #generate a dictionary linking all proteins with blast hits to colors
-    gene_color_dict = {}
+    gene_color_dict = OrderedDict()
     for gr_indx, group in enumerate(color_groups):
         for protein_name in group:
             gene_color_dict[protein_name] = rgb_color_scheme[gr_indx]
@@ -1267,74 +1327,6 @@ def generate_distinct_colours(count):
         colours.append("#{}{}{}".format(red, green, blue))
     random.shuffle(colours)
     return colours
-
-def runmuscle(args):
-    os.system("muscle " + args)
-
-def align_muscle(include_muscle, colorschemedict, seqdict):
-    #Create Muscle alignments of colourgroups
-    musclegroups = []
-    if include_muscle == "y":
-        log("Aligning homologous sequences with Muscle")
-        try:
-            os.mkdir("fasta")
-        except(IOError,OSError):
-            pass
-        orthogroupsdup = list(colorschemedict.values())
-        orthogroups = list(dict.fromkeys(orthogroupsdup).keys())
-        for k in orthogroups:
-            frame_update()
-            accessions = []
-            for l in list(colorschemedict.keys()):
-                if colorschemedict[l] == k:
-                    accessions.append(l)
-            seqdict2 = {}
-            for key in list(seqdict.keys()):
-                seqdict2[key.split("|")[-1]] = seqdict[key]
-            queryseqs = [">" + acc + "\n" + seqdict2[acc] + "\n" for acc in accessions if acc in seqdict2]
-            accessions = [acc for acc in accessions if testaccession(acc) == "y"]
-            if len(queryseqs) + len(accessions) < 2:
-                continue
-            musclegroups.append(k)
-            url = 'http://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=protein&tool="multigeneblast"&ID=' + ",".join(accessions) + "&rettype=fasta&retmode=text"
-            urltry = "n"
-            tries = 0
-            while urltry == "n":
-                try:
-                    time.sleep(3)
-                    req = urllib.request.Request(url)
-                    response = urllib.request.urlopen(req)
-                    output = response.read()
-                    if len(output) > 5:
-                        urltry = "y"
-                    if ">" not in output:
-                        log("Downloading of FASTA sequences failed")
-                        break
-                except (IOError,http.client.BadStatusLine,URLError,http.client.HTTPException):
-                    tries += 1
-                    if tries == 5:
-                        break
-                    log("Waiting for connection... (4)")
-                    time.sleep(60)
-            outfile = open("fasta" + os.sep + "orthogroup" + str(k) + ".fasta","w")
-            for seq in queryseqs:
-                outfile.write(seq)
-            outfile.write(output)
-            outfile.close()
-            args = "-quiet -in fasta" + os.sep + "orthogroup" + str(k) + ".fasta -out fasta" + os.sep + "orthogroup" + str(k) + "_muscle.fasta"
-            muscleprocess = Process(target=runmuscle, args=[args])
-            muscleprocess.start()
-            while True:
-                processrunning = "n"
-                if muscleprocess.is_alive():
-                    processrunning = "y"
-                if processrunning == "y":
-                    frame_update()
-                elif processrunning == "y":
-                    pass
-                else:
-                    break
-    return musclegroups
 
 #### MOVE OUTPUT FILES ####
 def move_outputfiles(outdir, pages):
@@ -1419,57 +1411,60 @@ def main():
     #configure a logger to track what is happening over multiple files, make sure to do this after the
     #option parsing to save the log at the appropriate place(outdir)
     setup_logger(user_options.outdir, starttime, user_options.log_level)
-    logging.info("Step 1/11: Input has been parsed")
+    logging.info("Step 1/12: Input has been parsed")
 
     #Step 2: Read GBK / EMBL file, select genes from requested region and output FASTA file
     query_proteins = read_query_file(user_options)
-    logging.info("Step 2/11: Query input file has been read and parsed")
+    logging.info("Step 2/12: Query input file has been read and parsed")
 
     #Step 3: Run internal BLAST
     query_cluster = internal_blast(user_options, query_proteins)
-    logging.info("Step 3/11: Finished running internal blast")
+    logging.info("Step 3/12: Finished running internal blast")
 
     #Step 4: Run BLAST on genbank_mf database
     blast_output = db_blast(query_proteins, user_options)
-    logging.info("Step 4/11: Finished running blast on the specified database.")
+    logging.info("Step 4/12: Finished running blast on the specified database.")
 
     #Step 5: Parse BLAST output
     blast_dict = parse_db_blast(user_options, query_proteins, blast_output)
-    logging.info("Step 5/11: Finished parsing database blast")
+    logging.info("Step 5/12: Finished parsing database blast")
 
     #Step 6: Load genomic databases into memory
     database = load_databases(blast_dict, user_options)
-    logging.info("Step 6/11: Finished loading the relevant parts of the database.")
+    logging.info("Step 6/12: Finished loading the relevant parts of the database.")
 
     #Step 7: Locate blast hits in genome and find clusters
     clusters = find_gene_clusters(blast_dict, user_options, database)
-    logging.info("Step 7/11: Finished finding clusters. {} clusters found in total".format(len(clusters)))
+    logging.info("Step 7/12: Finished finding clusters. {} clusters found in total".format(len(clusters)))
 
     #Step 8: Score Blast output on all loci
     score_clusters(clusters, query_proteins, user_options)
-    logging.info("Step 8/11: All clusters have been scored.")
+    logging.info("Step 8/12: All clusters have been scored.")
 
     #step 9: write the results to a text file
     write_txt_output(query_proteins, clusters, blast_output, user_options)
-    logging.info("Step 9/11: Results have been written to the mgb file.")
+    logging.info("Step 9/12: Results have been written to the mgb file.")
 
     logging.info("Creating visual output...")
     page_sizes = get_page_sizes(len(clusters), user_options.pages)
+
+    #get the gene color dict neccesairy for all svgs and potential muscle allignments
+    gene_color_dict = calculate_colorgroups(blast_dict, query_cluster)
+
+    if user_options.muscle == "y":
+        musclegroups = align_muscle(gene_color_dict, database, query_proteins, user_options.outdir)
+    logging.info("Step 10/12: Muscle allignments created (if -muscle 'y')")
+
     for page_indx, page_size in enumerate(page_sizes):
         logging.debug("Creating visual information for cluster {} to {}".format(page_indx * HITS_PER_PAGE + 1,  min((page_indx + 1) * HITS_PER_PAGE, len(clusters))))
         page_clusters = clusters[page_indx * HITS_PER_PAGE: min((page_indx + 1) * HITS_PER_PAGE, len(clusters))]
 
-        svg_images = write_svg_files(page_clusters, user_options, query_cluster, blast_dict, page_indx + 1)
-        logging.info("Step 10/11: Visual images {}/{} created.".format(page_indx + 1, len(page_sizes)))
-
-        #TODO look into implementing this or maybe dropping depending
-        # #Step 10: Create muscle alignments
-        # musclegroups = align_muscle(opts.muscle, colorschemedict, seqdict)
-        # print(("Step 10/11, page " + str(page) + ": Time since start: " + str((time.time() - starttime))))
+        svg_images = write_svg_files(page_clusters, gene_color_dict, user_options, query_cluster, blast_dict, page_indx + 1)
+        logging.info("Step 11/12: Visual images {}/{} created.".format(page_indx + 1, len(page_sizes)))
 
         #Step 11: Create XHTML output file
-        create_xhtml_file(page_clusters, query_cluster, user_options, svg_images, page_sizes, page_indx)
-        logging.info("Step 11/11: XHTML page {}/{} created.".format(page_indx + 1, len(page_sizes)))
+        create_xhtml_file(page_clusters, query_cluster, user_options, svg_images, page_sizes, page_indx, gene_color_dict)
+        logging.info("Step 12/12: XHTML page {}/{} created.".format(page_indx + 1, len(page_sizes)))
 
 
     #Move all files to specified output folder

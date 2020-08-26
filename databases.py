@@ -620,13 +620,13 @@ class GenbankEntry:
             elif line.lower().startswith("product="):
                 self.annotation = self.__clean_line(line)
 
-        #configure the genename with this order, locus tag, gene_name protein_id auto generated name
+        #configure the genename with this order, locus tag, protein_id, gene_name auto generated name
         if self.locus_tag:
             self.gene_name = self.locus_tag
-        elif self.gene_name:
-            pass
         elif self.protein_id:
             self.gene_name = self.protein_id
+        elif self.gene_name:
+            pass
         else:
             self.gene_name = "orf {}".format(nr)
 

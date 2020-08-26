@@ -383,7 +383,7 @@ def create_xhtml_template(html_parts, page_indx, page_sizes):
     html_outfile.write(html_parts[4])
     return html_outfile
 
-def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_size, user_options, svg_images):
+def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_size, user_options, svg_images, gene_color_dict):
     """
     Write ClusterBlast divs with pictures and description pop-up tags
 
@@ -395,6 +395,7 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
     :param page_size: the size of the current page (max = HITS_PER_PAGE)
     :param user_options: an Option object containing user defined options
     :param svg_images: A dictionary with classes containing information for
+    :param gene_color_dict: a dictionary linking protein names to rgb colors
     creating all the svg images needed for the visual output.
     """
     screenwidth = SCREENWIDTH
@@ -509,8 +510,12 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
                     html_outfile.write("<br/>E-value: {}\n<br/>".format(blast_result.evalue))
             if is_valid_accession(protein.protein_id) and user_options.dbtype != "nucl":
                 html_outfile.write('<br/><a href="{}" target="_blank"> NCBI BlastP on this gene </a>\n'.format(link))
-            # if j in colorschemedict and colorschemedict[j] in musclegroups:
-            #     html_outfile.write("<br/><a href=\"fasta" + os.sep + "orthogroup" + str(colorschemedict[j]) + "_muscle.fasta\" target=\"_blank\"> Muscle alignment of this gene with homologs </a>\n")
+            #muscle allignment
+            if protein.name in gene_color_dict:
+                color = gene_color_dict[protein.name].replace("#","")
+                path = "{}{}muscle_info{}group{}_muscle.fasta".format(user_options.outdir, os.sep, os.sep, color)
+                if os.path.exists(path):
+                    html_outfile.write("<br/><a href=\"{}\" target=\"_blank\"> Muscle alignment of this gene with homologs </a>\n".format(path))
             html_outfile.write("</div>\n\n")
             html_outfile.write('<div id="h{}_{}_{}_divtext" class="hidden genenames" style="position:absolute; top:126px; left:'
                                '{}px;">\n'.format(page_nr, page_indx * HITS_PER_PAGE + index + 1 ,pindex,((prot_starts[pindex] + prot_ends[pindex]) / 2) * 0.9375))
@@ -609,8 +614,11 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
                     html_outfile.write("<br/>E-value: {}\n<br/>".format(blast_result.evalue))
             if is_valid_accession(protein.protein_id) and user_options.dbtype != "nucl":
                 html_outfile.write('<br/><a href="{}" target="_blank"> NCBI BlastP on this gene </a>\n'.format(link))
-            # if j in colorschemedict and colorschemedict[j] in musclegroups:
-            #     html_outfile.write("<br/><a href=\"fasta" + os.sep + "orthogroup" + str(colorschemedict[j]) + "_muscle.fasta\" target=\"_blank\"> Muscle alignment of this gene with homologs </a>\n")
+            if protein.name in gene_color_dict:
+                color = gene_color_dict[protein.name].replace("#","")
+                path = "{}{}muscle_info{}group{}_muscle.fasta".format(user_options.outdir, os.sep, os.sep, color)
+                if os.path.exists(path):
+                    html_outfile.write("<br/><a href=\"{}\" target=\"_blank\"> Muscle alignment of this gene with homologs </a>\n".format(path))
             html_outfile.write("</div>\n\n")
             html_outfile.write('<div id="all_{}_{}_{}_divtext" class="hidden genenames" style="position:absolute; top:{}px; left:{}px;">\n'.format(page_nr, index + 1 + page_indx * HITS_PER_PAGE ,pindex, int(75 + (51.7 * (index + 1))), ((prot_starts[pindex]+prot_ends[pindex])/2)*0.9375))
             if protein.locus_tag != "":
@@ -624,7 +632,7 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
     html_outfile.write('<div id="creditsbar{}" class="banner" style="position:absolute; width:{}px; align:\'left\'; height:75; top:2750px; left:0px; color:#000066; z-index:-1;">'.format(index, int(0.98 * screenwidth)))
     html_outfile.write('<div style="float:center; font-size:0.9em;">\n<div style="position:absolute; top:0px; left:30px;">\n<img src="images/ruglogo.gif" border="0"/>&nbsp;&nbsp;&nbsp;&nbsp;\n<img src="images/gbblogo.gif" border="0"/>&nbsp;&nbsp;&nbsp;&nbsp;\n</div>\n<div style="position:absolute; top:10px; left:340px;">\nDetecting sequence homology at the gene cluster level with MultiGeneBlast.\n<br/>Marnix H. Medema, Rainer Breitling &amp; Eriko Takano (2013)\n<br/><i>Molecular Biology and Evolution</i> , 30: 1218-1223.\n</div>\n</div>\n</div>')
 
-def create_xhtml_file(clusters, query_cluster, user_options, svg_images, page_sizes, page_indx):
+def create_xhtml_file(clusters, query_cluster, user_options, svg_images, page_sizes, page_indx, gene_color_dict):
     """
     Create an XHTML file for a set of clusters.
 
@@ -635,6 +643,7 @@ def create_xhtml_file(clusters, query_cluster, user_options, svg_images, page_si
     information to create the svg images
     :param page_sizes: a list of integers with the size of all pages
     :param page_indx: the index of the current page in the page_sizes list
+    :param gene_color_dict: a dictionary linking protein names to rgb colors
     """
 
     #Create HTML file with gene cluster info in hidden div tags for all pages
@@ -651,7 +660,7 @@ def create_xhtml_file(clusters, query_cluster, user_options, svg_images, page_si
             "the full html page.".format(MGBPATH + os.sep + "visual_copys"))
     #note this returns an open file stream. Take care addign code in this loop
     html_outfile = create_xhtml_template(html_parts, page_indx, page_sizes)
-    write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_sizes[page_indx], user_options, svg_images)
+    write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_sizes[page_indx], user_options, svg_images, gene_color_dict)
 
     html_outfile.write(html_parts[-1])
     html_outfile.close()
