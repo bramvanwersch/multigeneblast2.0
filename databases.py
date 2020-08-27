@@ -7,6 +7,7 @@ import os
 import shutil
 from string import ascii_letters
 from collections import OrderedDict
+from abc import ABC, abstractmethod
 
 import urllib.request, urllib.error, urllib.parse
 from urllib.request import Request, urlopen
@@ -15,7 +16,7 @@ import http.client
 from http.client import BadStatusLine,HTTPException
 
 from utilities import *
-from constants import GENBANK_EXTENSIONS, EMBL_EXTENSIONS, TEMP
+from constants import GENBANK_EXTENSIONS, EMBL_EXTENSIONS, TEMP, FASTA_EXTENSIONS
 
 
 def clean_dna_sequence(dna_seq):
@@ -91,8 +92,7 @@ def embl_to_genbank(embl_filepath):
     logging.debug("Embl file {} made readable for genbank file object.".format(embl_filepath))
     return "\n".join(text_lines)
 
-
-class DataBase:
+class Database(ABC):
     """
     Tracks multiple genbank and embl files and can write the output into a format
     that can be used by MultiGeneBlast
@@ -100,102 +100,31 @@ class DataBase:
     def __init__(self, base_path, paths):
         logging.info("Started creating database...")
         #care this is a generator object not a list
-        self.__gb_files = self.__read_files(base_path, paths)
-        if len(self.__gb_files) == 0:
+        self._files = self._read_files(base_path, paths)
+        if len(self._files) == 0:
             logging.critical("Failed to load any of the provided database files.")
             raise MultiGeneBlastException("Failed to load any of the provided database files.")
 
+    @abstractmethod
+    def _read_files(self, base_path, paths):
+        return []
+
+    @abstractmethod
+    def get_fasta(self):
+        return ""
+
     def create(self, outdir, dbname):
         """
-        Create the files for the database using the self.__gb_files genbank
+        Create the files for the database using the self.files genbank
         objects
 
         :param outdir: an output directory for the database
         :param dbname: the name of all files in the output directory
         """
-        self.__write_files(outdir, dbname)
+        self._write_files(outdir, dbname)
         self.__create_tar_file(outdir, dbname)
 
-    def get_fasta(self):
-        """
-        Convenience method for getting the fasta strings from all Genbank Objects
-        :return: a String
-        """
-        full_fasta = ""
-        for gb_file in self.__gb_files:
-            full_fasta += gb_file.fasta_text()
-        return full_fasta
-
-    def __read_files(self, base_path, paths):
-        """
-        Read a list of files, either genbank or embl and make them into Genbnak
-        objects
-
-        :param base_path: an absolute path to the directory make_database.py was
-        executed from
-        :param paths: a absolute or relative path to all the database files from
-        the make_database.py directory
-        :return: a list of Genbnak objects
-        """
-        files = []
-        while len(paths) > 0:
-            path = paths.pop()
-            #allow relative paths to b
-            path = os.path.join(base_path, path)
-            root, ext = os.path.splitext(path)
-            file = None
-            if ext in GENBANK_EXTENSIONS:
-                file_text, new_paths = self.__read_genbank_file(path)
-                paths.extend(new_paths)
-            elif ext in EMBL_EXTENSIONS:
-                file_text = embl_to_genbank(path)
-            else:
-                logging.warning("Invalid extension {}. Skipping file {}.".format(ext, path))
-                continue
-            try:
-                if file_text:
-                    file = GenbankFile(file_text=file_text)
-            except MultiGeneBlastException as error:
-                print(error)
-                logging.debug(error)
-                logging.warning("Failed to process the file {}. Skipping...".format(path))
-            else:
-                if file:
-                    files.append(file)
-        return files
-
-    def __read_genbank_file(self, file):
-        """
-        Read a genbank file and check preemptively for invalid files
-
-        :param file: a file path
-        :return: a large string that is the text in the geanbank file
-        """
-        try:
-            with open(file, "r") as f:
-                file_text = f.read()
-        except Exception as e:
-            logging.critical("Invalid genbank file {}. Exiting...".format(file))
-            raise MultiGeneBlastException("Invalid genbank file {}.".format(file))
-
-        new_file_paths = []
-        # make sure to remove potential old occurances of \r. Acts like a \n
-        file_text = file_text.replace("\r", "\n")
-        #if the file is a WGS master file disect it
-        #TODO consider checking if the user has an internet connection
-        if "WGS_SCAFLD  " in file_text or "WGS         " in file_text:
-            logging.debug("Encountered WGS master file. Extracting all contigs...")
-            root, file_name = os.path.split(file)
-            new_file_paths = self.__convert_wgs_master_record(file_text, file_name.rsplit(".", 1)[0])
-            logging.debug("{} new genbank file(s) where added containing the contigs.".format(len(new_file_paths)))
-            file_text = ""
-        #TODO hadle supercontig records. At the moment i lack an example to try
-        #do a basic check to see if the genbank file is valid
-        elif "     CDS             " not in file_text or "\nORIGIN" not in file_text:
-            logging.warning("Genbank file {} is not properly formatted or contains no sequences. Skipping...".format(file))
-        return file_text, new_file_paths
-
-    def __write_files(self, outdir, dbname):
+    def _write_files(self, outdir, dbname):
         """
         Write the contigs of the genbank objects to pickle files.
 
@@ -214,7 +143,7 @@ class DataBase:
 
         #pickle each contig
         total_pickles = 0
-        for gb_file in self.__gb_files:
+        for gb_file in self._files:
             for index, contig in enumerate(gb_file.contigs):
                 with open("{}{}pickles{}{}.pickle".format(TEMP, os.sep, os.sep, index), "wb") as f:
                     pickle.dump(gb_file.contigs[contig], f)
@@ -237,7 +166,7 @@ class DataBase:
         with tarfile.open("{}{}{}_contigs.tar.gz".format(outdir, os.sep, dbname), "w:gz") as tar:
             tar.add("{}{}pickles".format(TEMP, os.sep), arcname=os.path.basename(dbname))
 
-    def __convert_wgs_master_record(self, text, file_name):
+    def _convert_wgs_master_record(self, text, file_name):
         """
         Convert WGS master record file into multiple files containing contigs
 
@@ -347,6 +276,186 @@ class DataBase:
         return new_files
 
 
+class NucleotideDataBase(Database):
+    #TODO make sure that input fasta files are dna sequences
+    def _read_files(self, base_path, paths):
+        contigs = []
+        while len(paths) > 0:
+            path = paths.pop()
+            # allow relative paths to b
+            path = os.path.join(base_path, path)
+            root, ext = os.path.splitext(path)
+            file = None
+            if ext in GENBANK_EXTENSIONS:
+                new_contigs, new_paths = self.__read_genbank_file(path)
+
+                paths.extend(new_paths)
+            elif ext in EMBL_EXTENSIONS:
+                new_contigs = self.__read_embl_file(path)
+            elif ext in FASTA_EXTENSIONS:
+                new_contigs = self.__read_fasta_file(path)
+            else:
+                logging.warning("Invalid extension {}. Skipping file {}.".format(ext, path))
+                continue
+            contigs.extend(new_contigs)
+        return contigs
+
+    def get_fasta(self):
+        fasta_text = ""
+        for contig in self._files:
+            fasta_text += ">{}\n".format(contig.accession)
+            fasta_text += "{}\n".format(contig.dna_sequence)
+        return fasta_text
+
+    def __read_fasta_file(self, file):
+        fasta_dict = fasta_to_dict(file)
+        contigs = []
+        for key in fasta_dict:
+            contigs.append(NucleotideContig("", sequence=fasta_dict[key], accession=key, definition="From fasta"))
+        return contigs
+
+    def __read_embl_file(self, file):
+        file_text = embl_to_genbank(file)
+        contigs_text = file_text.split("//\n")[:-1]
+        contigs = []
+        for contig_text in contigs_text:
+            contigs.append(NucleotideContig(contig_text))
+        return contigs
+
+    def __read_genbank_file(self, file):
+        try:
+            with open(file, "r") as f:
+                file_text = f.read()
+        except Exception as e:
+            logging.critical("Invalid genbank file {}. Exiting...".format(file))
+            raise MultiGeneBlastException("Invalid genbank file {}.".format(file))
+
+        if "WGS_SCAFLD  " in file_text or "WGS         " in file_text:
+            logging.debug("Encountered WGS master file. Extracting all contigs...")
+            root, file_name = os.path.split(file)
+            new_file_paths = self._convert_wgs_master_record(file_text, file_name.rsplit(".", 1)[0])
+            logging.debug("{} new genbank file(s) where added containing the contigs.".format(len(new_file_paths)))
+            return [], new_file_paths
+        else:
+            contigs_text = file_text.split("//\n")[:-1]
+            contigs = []
+            for contig_text in contigs_text:
+                contigs.append(NucleotideContig(contig_text))
+            return contigs, []
+
+    def _write_files(self, outdir, dbname):
+        """
+        Write the contigs of the genbank objects to pickle files.
+
+        :param outdir: an output directory for the database
+        :param dbname: the name of all files in the output directory
+        """
+        #TODO think about handling double contigs. I would think not to relevant
+        index_list = []
+
+        #create a directory for the pickle files, if the directory is there clean it
+        try:
+            os.mkdir(TEMP + os.sep + "pickles")
+        except FileExistsError:
+            shutil.rmtree(TEMP + os.sep + "pickles")
+            os.mkdir(TEMP + os.sep + "pickles")
+
+        #pickle each contig
+        total_pickles = 0
+        for index, contig in enumerate(self._files):
+            with open("{}{}pickles{}{}.pickle".format(TEMP, os.sep, os.sep, index), "wb") as f:
+                pickle.dump(contig, f)
+                total_pickles += 1
+            index_list.append(contig.accession)
+        logging.debug("Created {} contig pickles in total.".format(total_pickles))
+
+        #write pickle index file
+        with open("{}{}{}_database_index.pickle".format(outdir, os.sep, dbname), "wb") as f:
+            pickle.dump(index_list, f)
+
+
+class ProteinDataBase(Database):
+
+    def get_fasta(self):
+        """
+        Convenience method for getting the fasta strings from all Genbank Objects
+
+        :return: a String
+        """
+        full_fasta = ""
+        for gb_file in self._files:
+            full_fasta += gb_file.fasta_text()
+        return full_fasta
+
+    def _read_files(self, base_path, paths):
+        """
+        Read a list of files, either genbank or embl and make them into Genbnak
+        objects
+
+        :param base_path: an absolute path to the directory make_database.py was
+        executed from
+        :param paths: a absolute or relative path to all the database files from
+        the make_database.py directory
+        :return: a list of Genbnak objects
+        """
+        files = []
+        while len(paths) > 0:
+            path = paths.pop()
+            #allow relative paths to b
+            path = os.path.join(base_path, path)
+            root, ext = os.path.splitext(path)
+            file = None
+            if ext in GENBANK_EXTENSIONS:
+                file_text, new_paths = self.__read_genbank_file(path)
+                paths.extend(new_paths)
+            elif ext in EMBL_EXTENSIONS:
+                file_text = embl_to_genbank(path)
+            else:
+                logging.warning("Invalid extension {}. Skipping file {}.".format(ext, path))
+                continue
+            try:
+                if file_text:
+                    file = GenbankFile(file_text=file_text)
+            except MultiGeneBlastException as error:
+                logging.debug(error)
+                logging.warning("Failed to process the file {}. Skipping...".format(path))
+            else:
+                if file:
+                    files.append(file)
+        return files
+
+    def __read_genbank_file(self, file):
+        """
+        Read a genbank file and check preemptively for invalid files
+
+        :param file: a file path
+        :return: a large string that is the text in the geanbank file
+        """
+        try:
+            with open(file, "r") as f:
+                file_text = f.read()
+        except Exception as e:
+            logging.critical("Invalid genbank file {}. Exiting...".format(file))
+            raise MultiGeneBlastException("Invalid genbank file {}.".format(file))
+
+        new_file_paths = []
+        # make sure to remove potential old occurances of \r. Acts like a \n
+        file_text = file_text.replace("\r", "\n")
+        #if the file is a WGS master file disect it
+        #TODO consider checking if the user has an internet connection
+        if "WGS_SCAFLD  " in file_text or "WGS         " in file_text:
+            logging.debug("Encountered WGS master file. Extracting all contigs...")
+            root, file_name = os.path.split(file)
+            new_file_paths = self._convert_wgs_master_record(file_text, file_name.rsplit(".", 1)[0])
+            logging.debug("{} new genbank file(s) where added containing the contigs.".format(len(new_file_paths)))
+            file_text = ""
+        #TODO hadle supercontig records. At the moment i lack an example to try
+        #do a basic check to see if the genbank file is valid
+        elif "     CDS             " not in file_text or "\nORIGIN" not in file_text:
+            logging.warning("Genbank file {} is not properly formatted or contains no sequences. Skipping...".format(file))
+        return file_text, new_file_paths
+
+
 class GenbankFile:
     """
     An Object for easily disecting a genbank file into the individual proteins
@@ -434,31 +543,27 @@ class GenbankFile:
 
     def __create_contigs(self, text, protein_range, allowed_proteins):
         """
-        Create an unordered dictionary of Contig objects
+        Create an unordered dictionary of ProteinContig objects
 
         :param text: Text that contains one contig
         :param protein_range: an optional range in which proteins can be selected
         from the file instead of all proteins
         :param allowed_proteins: a list of protein IDs that can be selected from
         the genbank file instead of all proteins
-        :return: a dictionary of Contig objects
+        :return: a dictionary of ProteinContig objects
         """
         contigs = {}
         for cont in text.split("//\n")[:-1]:
-            contig = Contig(cont, protein_range, allowed_proteins)
+            contig = ProteinContig(cont, protein_range, allowed_proteins)
             contigs[contig.accession] = contig
         return contigs
 
+class Contig(ABC):
 
-class Contig:
-    """
-    Acts as abstraction for a contig present in a genbank file
-    """
-    def __init__(self, file_text, protein_range=None, allowed_proteins=None):
+    def __init__(self, file_text):
         gene_defenitions, dna_sequence = file_text.split("\nORIGIN")
         # Extract DNA sequence and calculate complement of it
         dna_sequence = clean_dna_sequence(dna_sequence)
-        c_dna_sequence = complement(dna_sequence)
 
         self.lenght = len(dna_sequence)
 
@@ -469,6 +574,56 @@ class Contig:
         self.accession = ""
         self.definition = ""
         self.__extract_header(gene_information[0])
+        return dna_sequence, gene_information
+
+    def __extract_header(self, header):
+        """
+        Disect the header of the contig and extract the accesion and
+        definition
+
+        :param header: a string that contains all the information in the header
+        of the genbank file
+        """
+        header_lines = header.split("\n")
+        for index, line in enumerate(header_lines):
+            if line.lower().startswith("accession"):
+                # extract the accesion
+                self.accession = remove_illegal_characters(line.replace("ACCESSION   ",""))
+            if line.lower().startswith("definition"):
+                self.definition += line.replace("DEFINITION  ", "").strip()
+                for def_line in header_lines[index + 1:]:
+                    #end of definition line
+                    if not def_line.startswith("    "):
+                        break
+                    self.definition += def_line.strip()
+        # Test if accession number is probably real GenBank/RefSeq acc nr
+        if not is_valid_accession(self.accession):
+            logging.debug("Probably invalid GenBank/Refseq accesion {} found.".format(self.accession))
+            self.accession = ""
+        if self.accession == "":
+            logging.debug("No valid accesion found for contig {}".format(self.accession))
+        if self.definition == "":
+            logging.debug("No definition found for contig {}".format(self.accession))
+
+
+class NucleotideContig(Contig):
+    def __init__(self, file_text, sequence=None, accession=None, definition=None):
+        if sequence == None:
+            self.dna_sequence, _ = super().__init__(file_text)
+        else:
+            self.dna_sequence = sequence
+            self.accession = accession
+            self.definition = definition
+
+
+class ProteinContig(Contig):
+    """
+    Acts as abstraction for a contig present in a genbank file
+    """
+    def __init__(self, file_text, protein_range=None, allowed_proteins=None):
+        dna_sequence, gene_information = super().__init__(file_text)
+
+        c_dna_sequence = complement(dna_sequence)
 
         #exract all the entries from the genbank file
         self.entries = self.__extract_entries(gene_information[1:], dna_sequence, c_dna_sequence, protein_range, allowed_proteins)
@@ -486,7 +641,7 @@ class Contig:
         protein_dict = OrderedDict()
         for entry in self.entries:
             if entry.protein.name in protein_dict:
-                logging.warning("Double fasta entry '{}' for contig '{}'. Skipping...".format(entry.protein.name, self.accession))
+                logging.warning("Double protein entry '{}' for contig '{}'. Skipping...".format(entry.protein.name, self.accession))
             elif len(entry.protein.sequence) == 0:
                 logging.warning("Cannot find or reconstruct sequence for entry {}. Skipping...".format(entry.protein.name))
             else:
@@ -528,35 +683,6 @@ class Contig:
             elif allowed_proteins == None and protein_range[0] == None:
                 genbank_entries.append(g)
         return genbank_entries
-
-    def __extract_header(self, header):
-        """
-        Disect the header of the contig and extract the accesion and
-        definition
-
-        :param header: a string that contains all the information in the header
-        of the genbank file
-        """
-        header_lines = header.split("\n")
-        for index, line in enumerate(header_lines):
-            if line.lower().startswith("accession"):
-                # extract the accesion
-                self.accession = line.replace("ACCESSION   ","")
-            if line.lower().startswith("definition"):
-                self.definition += line.replace("DEFINITION  ", "").strip()
-                for def_line in header_lines[index + 1:]:
-                    #end of definition line
-                    if not def_line.startswith("    "):
-                        break
-                    self.definition += def_line.strip()
-        # Test if accession number is probably real GenBank/RefSeq acc nr
-        if not is_valid_accession(self.accession):
-            logging.debug("Probably invalid GenBank/Refseq accesion {} found.".format(self.accession))
-            self.accession = ""
-        if self.accession == "":
-            logging.debug("No valid accesion found forcontig {}".format(self.accession))
-        if self.definition == "":
-            logging.debug("No definition found for contig {}".format(self.accession))
 
 
 class GenbankEntry:

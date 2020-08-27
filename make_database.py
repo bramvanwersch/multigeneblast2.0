@@ -13,7 +13,7 @@ import logging
 import time
 from shutil import rmtree
 
-from databases import DataBase
+from databases import ProteinDataBase, NucleotideDataBase
 from constants import *
 from utilities import MultiGeneBlastException, remove_illegal_characters, setup_logger, run_commandline_command, setup_temp_folder
 
@@ -36,13 +36,16 @@ def get_arguments():
     parser.add_argument("-o", "-out", help="Optional output folder for the "
                                            "database files.", type=check_out_folder,
                         default=CURRENTDIR + os.sep + "database")
+    parser.add_argument("-t", "-dbtype", help="The type of the database, protein or"
+                                              "nucleotide", choices=["prot", "nucl"],
+                        default="prot")
     parser.add_argument("-inf", "-information", help="What level of information"
                                                      "should be printed while"
                                                      "running the program "
                                                      "(default: basic).",
                         choices=("none", "basic", "all"), default="basic")
     name_space = parser.parse_args()
-    return name_space.n, name_space.o, name_space.i, name_space.inf
+    return name_space.n, name_space.o, name_space.i, name_space.t, name_space.inf
 
 def check_in_file(in_file):
     """
@@ -60,7 +63,7 @@ def check_in_file(in_file):
         raise argparse.ArgumentTypeError("No valid path provided for {}".format(in_file))
     elif not os.path.isfile(in_file):
         raise argparse.ArgumentTypeError("{} is not a file".format(in_file))
-    elif ext.lower() not in EMBL_EXTENSIONS + GENBANK_EXTENSIONS:
+    elif ext.lower() not in EMBL_EXTENSIONS + GENBANK_EXTENSIONS + FASTA_EXTENSIONS:
         raise argparse.ArgumentTypeError("No correct extension, {}, for input file {}.".format(ext, root))
     return in_file
 
@@ -100,7 +103,7 @@ def clean_outdir(dbname, outdir, dbtype="prot"):
         database_alias_file = dbname + ".pal"
     else:
         database_alias_file = dbname + ".nal"
-    remove_files = [dbname + ext for ext in DATABASE_EXTENSIONS]
+    remove_files = [dbname + ext for ext in PROT_DATABASE_EXTENSIONS]
     remove_files.append(database_alias_file)
     for file in files:
         if file in remove_files:
@@ -108,7 +111,7 @@ def clean_outdir(dbname, outdir, dbtype="prot"):
             logging.debug("Removed {} because it is going to be created.".format(file))
 
 
-def write_nal_pal_file(dbname, outdir, dbtype = "prot"):
+def write_nal_pal_file(dbname, outdir, dbtype):
     """
     Write a database alias file so Blast+ programs can acces it.
 
@@ -132,7 +135,7 @@ def main():
     setup_temp_folder()
 
     #parse options
-    dbname, outdir, inputfiles, log_level = get_arguments()
+    dbname, outdir, inputfiles, db_type, log_level = get_arguments()
 
     #setup a logger
     setup_logger(outdir, starttime, level=log_level)
@@ -145,7 +148,10 @@ def main():
 
     #create a database object
     base_path = os.path.abspath(os.path.dirname(__file__))
-    db = DataBase(base_path, inputfiles)
+    if db_type == "prot":
+        db = ProteinDataBase(base_path, inputfiles)
+    else:
+        db = NucleotideDataBase(base_path, inputfiles)
     db.create(outdir, dbname)
     logging.info("Step 3/6: Created the MultiGeneBlast database")
 
@@ -160,12 +166,13 @@ def main():
 
     #make sure to change the working directory for the makeblastdb files to edn up in the right place
     os.chdir(outdir)
-    command = "{}\\exec_new\\makeblastdb.exe -dbtype prot -out {} -in {}{}{}_dbbuild.fasta".format(MGBPATH, dbname, TEMP, os.sep, dbname)
+    command = "{}\\exec_new\\makeblastdb.exe -dbtype {} -out {} -in {}{}{}_dbbuild.fasta".format(MGBPATH, db_type, dbname, TEMP, os.sep, dbname)
+
     run_commandline_command(command, max_retries=0)
     logging.info("Step 5/6: Blast+ database created.")
 
     #write nal/pal file as main entry for the database
-    write_nal_pal_file(dbname, outdir)
+    write_nal_pal_file(dbname, outdir, db_type)
     logging.info("Step 6/6: Created nal/pal file.")
 
     logging.info("Database was succesfully created at {}.".format(outdir))

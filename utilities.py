@@ -235,3 +235,44 @@ def translate(sequence):
     if  len(protseq) > 0 and protseq[-1] == "*":
         protseq = protseq[:-1]
     return protseq
+
+def fasta_to_dict(file_name, check_headers = True):
+    """
+    Creates a dictionary containing the name of the fasta sequence as key
+    and the sequence as value.
+
+    :param file_name: A string that represents a file path towards a fasta
+    file containing one or more sequences
+    :param check_headers: Boolean if the headers should be filtered for illegal
+    characters. Default is True
+    :return: a dictionary with sequence names as keys and the sequence
+    itself as values.
+    """
+    try:
+        with open(file_name, "r") as f:
+            text = f.read()
+    except Exception:
+        logging.critical("Could not read file {}. Exiting...".format(file_name))
+        raise MultiGeneBlastException("The file {} does not exist anymore or cannot be read.".format(file))
+    sequences = {}
+    # do not include the first empty match that results from the split
+    fasta_entries = text.split(">")[1:]
+    if len(fasta_entries) == 0:
+        logging.critical("Invalid fasta format for file '{}'. Exiting...".format(file_name))
+        raise MultiGeneBlastException("Fasta file '{}' does not contain any sequences.".format(file_name))
+    for entry in fasta_entries:
+        lines = entry.split("\n")
+
+        #make sure that names do not contain illegal characters. This makes sure no strange results are retrieved from
+        #blast+ tools
+        name = remove_illegal_characters(lines[0])
+        #make sure no trailing newlines
+        sequence = "".join(lines[1:]).strip()
+        #skip incomplete entries
+        if len(sequence) == 0:
+            logging.warning("Invalid fasta format for entry '{}' in file '{}'. Skipping...".format(name, file_name))
+        elif name in sequences:
+            logging.warning("Double fasta entry '{}' in file '{}'. Skipping...".format(name, file_name))
+        else:
+            sequences[name] = sequence
+    return sequences

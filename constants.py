@@ -10,7 +10,8 @@ FASTA_EXTENSIONS = (".fasta",".fas",".fa",".fna")
 EMBL_EXTENSIONS = (".embl",".emb")
 GENBANK_EXTENSIONS = (".gbk",".gb",".genbank", ".gbff")
 SVG_CORE_EXTENSION = 5000
-DATABASE_EXTENSIONS = ["_database_index.pickle","_contigs.tar.gz",".psq",".psi",".psd",".pin",".phr"]
+PROT_DATABASE_EXTENSIONS = ["_database_index.pickle", "_contigs.tar.gz", ".psq", ".psi", ".psd", ".pin", ".phr"]
+NUC_DATABASE_EXTENSIONS = ["_database_index.pickle", "_contigs.tar.gz", ".nsq", ".nsi", ".nsd", ".nin", ".nhr"]
 CHUNK = 256 * 1024
 
 #name of the folder containing the final results

@@ -388,7 +388,7 @@ class MainMultiGeneBlastGui(Frame):
 
         # make sure the db folder contains all files required
         db_folder = os.listdir(to_path)
-        expected_files = [dbname + ext for ext in DATABASE_EXTENSIONS]
+        expected_files = [dbname + ext for ext in PROT_DATABASE_EXTENSIONS]
         for file in expected_files:
             if file not in db_folder:
                 showerror("Missing database file", "The following file {} is missing"

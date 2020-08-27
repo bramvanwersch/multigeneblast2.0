@@ -28,8 +28,7 @@ import http
 #own imports
 from databases import GenbankFile, embl_to_genbank, Protein
 from visualisation import ClusterCollectionSvg, create_xhtml_file
-from utilities import MultiGeneBlastException, setup_logger, run_commandline_command, remove_illegal_characters,\
-    setup_temp_folder, determine_cpu_nr, is_valid_accession
+from utilities import *
 from constants import *
 
 #constant specifically required for mbg
@@ -50,48 +49,6 @@ def write_fasta(protein_list, file):
         logging.critical("No fasta file created for sequences with file name {}".format(file))
         raise MultiGeneBlastException("Cannot open file {}".format(file))
     logging.debug("Saved file {} at {}.".format(file, os.getcwd()))
-
-def fasta_to_dict(file_name, check_headers = True):
-    """
-    Creates a dictionary containing the name of the fasta sequence as key
-    and the sequence as value.
-
-    :param file_name: A string that represents a file path towards a fasta
-    file containing one or more sequences
-    :param check_headers: Boolean if the headers should be filtered for illegal
-    characters. Default is True
-    :return: a dictionary with sequence names as keys and the sequence
-    itself as values.
-    """
-    try:
-        with open(file_name, "r") as f:
-            text = f.read()
-    except Exception:
-        logging.critical("Could not read file {}. Exiting...".format(file_name))
-        raise MultiGeneBlastException("The file {} does not exist anymore or cannot be read.".format(file))
-    sequences = {}
-    # do not include the first empty match that results from the split
-    fasta_entries = text.split(">")[1:]
-    if len(fasta_entries) == 0:
-        logging.critical("Invalid fasta format for file '{}'. Exiting...".format(file_name))
-        raise MultiGeneBlastException("Fasta file '{}' does not contain any sequences.".format(file_name))
-    for entry in fasta_entries:
-        lines = entry.split("\n")
-
-        #make sure that names do not contain illegal characters. This makes sure no strange results are retrieved from
-        #blast+ tools
-        name = remove_illegal_characters(lines[0])
-        #make sure no trailing newlines
-        sequence = "".join(lines[1:]).strip()
-        #skip incomplete entries
-        if len(sequence) == 0:
-            logging.warning("Invalid fasta format for entry '{}' in file '{}'. Skipping...".format(name, file_name))
-        elif name in sequences:
-            logging.warning("Double fasta entry '{}' in file '{}'. Skipping...".format(name, file_name))
-        else:
-            sequences[name] = sequence
-    return sequences
-
 
 #### STEP 1: PARSE OPTIONS ####
 def get_arguments():
@@ -258,13 +215,17 @@ def check_db_folder(path):
     #make sure the databae file is of the correct file type
     root, ext = os.path.splitext(path)
     dbname = root.split(os.sep)[-1]
-    if not ext in (".pal", ".nal"):
+    if ext == ".pal":
+        expected_extensions = PROT_DATABASE_EXTENSIONS
+    elif ext == ".nal":
+        expected_extensions = NUC_DATABASE_EXTENSIONS
+    else:
         raise argparse.ArgumentTypeError("Incorrect extension {} for database file."
                                          "Should be .pal or .nal".format(ext))
 
     #make sure the db folder contains all files required
     db_folder = os.listdir(to_path)
-    expected_files = [dbname + ext for ext in DATABASE_EXTENSIONS]
+    expected_files = [dbname + ext for ext in expected_extensions]
     for file in expected_files:
         if file not in db_folder:
             raise argparse.ArgumentTypeError("Expected a file named {} in "
@@ -356,10 +317,10 @@ class Options:
         os.environ['BLASTDB'] = to_path
 
         # make sure the databae file is of the correct file type
-        dbname, ext = db_file.split(".")
-        if ext == "pal":
+        dbname, ext = os.path.splitext(db_file)
+        if ext == ".pal":
             return "prot", dbname
-        elif ext == "nal":
+        elif ext == ".nal":
             return "nucl", dbname
 
 
@@ -471,9 +432,9 @@ def internal_blast(user_options, query_proteins):
     except Exception:
         logging.critical("Something went wrong reading the blast output file. Exiting...")
         raise MultiGeneBlastException("Something went wrong reading the blast output file.")
-
     #extract blast hits into a dictionary
-    blast_dict = blast_parse(user_options, query_proteins, blastoutput)
+    blast_lines = blastoutput.split("\n")[:-1]
+    blast_dict = blast_parse(user_options, query_proteins, blast_lines)
 
     #because query proteins are sorted this is fine
     first_protein = list(query_proteins.values())[0]
@@ -536,24 +497,22 @@ class BlastResult:
         return "\t".join(self.line)
 
 
-def blast_parse(user_options, query_proteins, blast_output):
+def blast_parse(user_options, query_proteins, blast_lines):
     """
     Parse the output of a blast search using BlastResult objects.
 
     :param user_options: a Option object containing the options supplied by the user
     :param query_proteins: a dictionary that links gene_names against Protein objects
-    :param blast_output: the output produced by NCBI BLAST+ blastp algorithm version
-    2.2.18
+    :param blast_lines: the output produced by NCBI BLAST+ blastp algorithm version
+    2.2.18 split on newlines
     :return: a dictionary that contains a key for every query that had a siginificant
     blast result with the values being BlastResult objects that have the key as
     query and are above user defined treshholds.
     """
     logging.debug("Started parsing blast output...")
-    #remove the last split. It is an empty line
-    blast_lines = blast_output.split("\n")[:-1]
 
     #Filter for unique blast comparissons
-    query_subject_combinations = []
+    query_subject_combinations = set()
     unique_blast_results = {}
     for line in blast_lines:
         tabs = line.split("\t")
@@ -561,7 +520,7 @@ def blast_parse(user_options, query_proteins, blast_output):
         subject = tabs[1]
         query_subject_combination = query + subject
         if not (query_subject_combination in query_subject_combinations):
-            query_subject_combinations.append(query_subject_combination)
+            query_subject_combinations.add(query_subject_combination)
             blast_result = BlastResult(tabs, query_proteins[query])
             unique_blast_results[blast_result.query + blast_result.subject] = blast_result
 
@@ -592,12 +551,14 @@ def db_blast(query_proteins, user_options):
     logging.info("Running NCBI BLAST+ searches on the provided database {}..".format(user_options.db))
     if user_options.dbtype == "prot":
         command_start = "{}\\exec_new\\blastp.exe".format(MGBPATH)
+        outfm = "6"
     else:
         command_start = "{}\\exec_new\\tblastn.exe".format(MGBPATH)
+        outfm = "\"6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore sframe\""
 
-    complete_command = "{} -db {} -query {}\\query.fasta -outfmt 6 -max_target_seqs" \
+    complete_command = "{} -db {} -query {}\\query.fasta -outfmt {} -max_target_seqs" \
                        " {} -evalue 1e-05 -out {}\\input.out -num_threads {}"\
-        .format(command_start, user_options.db, os.getcwd(), user_options.hitspergene,
+        .format(command_start, user_options.db, os.getcwd(), outfm, user_options.hitspergene,
                 os.getcwd(), user_options.cores)
 
     logging.debug("Started blasting against the provided database...")
@@ -636,7 +597,11 @@ def parse_db_blast(user_options, query_proteins, blast_output):
     blast result with the values being BlastResult objects that have the key as
     query and are above user defined treshholds.
     """
-    blast_dict = blast_parse(user_options, query_proteins, blast_output)
+    if user_options.dbtype == "nucl":
+        blast_lines = filter_nuc_output(blast_output)
+    else:
+        blast_lines = blast_output.split("\n")[:-1]
+    blast_dict = blast_parse(user_options, query_proteins, blast_lines)
     if len(blast_dict) == 0:
         logging.info("No blast hits encountered against the provided database."
                      " Maybe try and lower min_percentage_identity ({}) or "
@@ -647,8 +612,30 @@ def parse_db_blast(user_options, query_proteins, blast_output):
         sys.exit(1)
     return blast_dict
 
+def filter_nuc_output(blast_output):
+    blast_lines = blast_output.split("\n")[:-1]
+    starts = {}
+    stops = {}
+    for index, line in enumerate(blast_lines):
+        tabs = line.split("\t")
+        accession = tabs[1].split("|")[1]
+        subject = "{}_{}".format(accession, index)
+        tabs[1] = subject
+        blast_lines[index] = "\t".join(tabs)
+    return blast_lines
+
+
 #### STEP 6: LOAD RELEVANT PARTS OF THE DATABASE ####
-def load_databases(blast_dict, user_options):
+def load_database(blast_dict, user_options):
+    logging.info("Loading GenBank positional info into memory...")
+
+    if user_options.dbtype == "nucl":
+        database = load_nucleotide_database(blast_dict, user_options)
+    else:
+        database = load_protein_database(blast_dict, user_options)
+    return database
+
+def load_protein_database(blast_dict, user_options):
     """
     Load each contig that has at least one blast hit.
 
@@ -657,8 +644,6 @@ def load_databases(blast_dict, user_options):
     :param user_options: Option object of user specified options
     :return: a GenbankFile object containing all the contigs with blast hits.
     """
-
-    logging.info("Loading GenBank positional info into memory...")
     db_path = os.environ["BLASTDB"]
 
     covered_contigs = set()
@@ -672,8 +657,8 @@ def load_databases(blast_dict, user_options):
                     continue
                 if protein in contig:
                     covered_contigs.add(contig_nr)
+            # all contigs have been selected
             if len(covered_contigs) == len(list_of_contig_proteins):
-                #all contigs have been selected
                 break
     contigs = []
     with tarfile.open("{}{}{}_contigs.tar.gz".format(db_path, os.sep, user_options.db), "r:gz") as tf:
@@ -685,6 +670,49 @@ def load_databases(blast_dict, user_options):
 
     gb_collection = GenbankFile(contigs=contigs)
     return gb_collection
+
+def load_nucleotide_database(blast_dict, user_options):
+    db_path = os.environ["BLASTDB"]
+
+    with open("{}{}{}_database_index.pickle".format(db_path, os.sep, user_options.db), "rb") as index_file:
+        list_of_contig_accessions = pickle.load(index_file)
+
+    hits_per_contig = {}
+    for results in blast_dict.values():
+        for result in results:
+            accession = result.subject.rsplit("_", 1)[0]
+            if accession in hits_per_contig:
+                hits_per_contig[accession].append(result)
+            else:
+                hits_per_contig[accession] = [result]
+    contigs = []
+    with tarfile.open("{}{}{}_contigs.tar.gz".format(db_path, os.sep, user_options.db), "r:gz") as tf:
+        for accession in hits_per_contig:
+            accession_index = list_of_contig_accessions.index(accession)
+            for entry in tf:
+                if "{}/{}.pickle".format(user_options.db, accession_index) == entry.name:
+                    file_obj = tf.extractfile(entry)
+                    contigs.append(pickle.load(file_obj))
+    file_text = make_genbank_from_nuc_contigs(contigs, hits_per_contig)
+    gb_collection = GenbankFile(file_text=file_text)
+    return gb_collection
+
+def make_genbank_from_nuc_contigs(contigs, hits_per_contig):
+    file_text = ""
+    for contig in contigs:
+        file_text += "DEFINITION  {}\nACCESSION   {}\n".format(contig.definition.replace("\n", ""), contig.accession)
+        for hit in hits_per_contig[contig.accession]:
+            if hit.subject_start > hit.subject_stop:
+                file_text += "     CDS             complement({}..{})\n".format(hit.subject_stop, hit.subject_start)
+            else:
+                file_text += "     CDS             {}..{}\n".format(hit.subject_start, hit.subject_stop)
+            file_text += '                     /protein_id="{}"\n'.format(hit.subject)
+            file_text += '                     /codon_start=1\n'
+        file_text += "\nORIGIN      \n"
+        file_text += contig.dna_sequence
+        file_text += "\n//\n"
+    return file_text
+
 
 #### STEP 7: FIND GENE CLUSTERS ####
 def find_gene_clusters(blast_dict, user_options, database):
@@ -1430,7 +1458,7 @@ def main():
     logging.info("Step 5/12: Finished parsing database blast")
 
     #Step 6: Load genomic databases into memory
-    database = load_databases(blast_dict, user_options)
+    database = load_database(blast_dict, user_options)
     logging.info("Step 6/12: Finished loading the relevant parts of the database.")
 
     #Step 7: Locate blast hits in genome and find clusters
