@@ -95,7 +95,7 @@ class MainMultiGeneBlastGui(Frame):
         self.input_file_path = ""
 
         self.__outdir_label = StringVar()
-        self.outdir_path = MGBPATH
+        self.__outdir_path = MGBPATH
 
         self.searchtype = StringVar()
         self.searchtype.set("homology")
@@ -384,16 +384,21 @@ class MainMultiGeneBlastGui(Frame):
             return
         root, ext = os.path.splitext(location)
         to_path, db_file = os.path.split(location)
-        dbname = db_file.split(".")[0]
+        dbname, ext = os.path.splitext(db_file)
 
         # make sure the db folder contains all files required
         db_folder = os.listdir(to_path)
-        expected_files = [dbname + ext for ext in PROT_DATABASE_EXTENSIONS]
+
+        if ext == '.nal':
+            expected_files = [dbname + ext for ext in NUC_DATABASE_EXTENSIONS]
+        else:
+            expected_files = [dbname + ext for ext in PROT_DATABASE_EXTENSIONS]
         for file in expected_files:
             if file not in db_folder:
                 showerror("Missing database file", "The following file {} is missing"
                         " for the database with alias file {}".format(file, db_file))
                 location = "<No database selected>"
+                return
 
         display_location = location
         if len(location) > 50:
@@ -408,10 +413,11 @@ class MainMultiGeneBlastGui(Frame):
         path = select_out_directory()
         if path == None:
             return
+        display_selected = path
         if len(path) > 50:
             display_selected = "{}...".format(path[:47])
         self.__outdir_label.set(display_selected)
-        self.outdir_path = path.replace("/", os.sep)
+        self.__outdir_path = path.replace("/", os.sep)
 
     def run_multigeneblast(self):
         """
@@ -430,7 +436,7 @@ class MainMultiGeneBlastGui(Frame):
         :return: a string that is the full command using the options of the user
         """
         #first check if in database and out are defined
-        if self.input_file_path == "" or self.database_file_path == "" or self.outdir_path == "":
+        if self.input_file_path == "" or self.database_file_path == "" or self.__outdir_path == "":
             showerror("Input incomplete Error", "Please fill in the input query file, the database file and the output directory")
             return None
 
@@ -473,8 +479,8 @@ class MainMultiGeneBlastGui(Frame):
             nr_pages = int(nr_pages) + 1
 
         general_options = '-in "{}" -db "{}" -out "{}" -c {} -hpg {} -msc {} -dkb {} -mpi {} -m {} -sw {} -op {}'.format(self.input_file_path,
-                self.database_file_path, self.outdir_path + os.sep + OUT_FOLDER_NAME, self.cores.getval(), self.hitspergene.getval(), self.seqcov.getval(),
-                self.distancekb.getval(), self.percid.getval(), muscle_val, self.syntenyweight.getval(), nr_pages)
+                                                                                                                         self.database_file_path, self.__outdir_path + os.sep + OUT_FOLDER_NAME, self.cores.getval(), self.hitspergene.getval(), self.seqcov.getval(),
+                                                                                                                         self.distancekb.getval(), self.percid.getval(), muscle_val, self.syntenyweight.getval(), nr_pages)
         full_command = base_command + filter_options + general_options
         return full_command
 
@@ -486,11 +492,11 @@ class MainMultiGeneBlastGui(Frame):
         """
 
         try:
-            os.mkdir(self.outdir_path + os.sep + OUT_FOLDER_NAME)
+            os.mkdir(self.__outdir_path + os.sep + OUT_FOLDER_NAME)
         except:
             pass
         try:
-            dir_files = os.listdir(self.outdir_path + os.sep + OUT_FOLDER_NAME)
+            dir_files = os.listdir(self.__outdir_path + os.sep + OUT_FOLDER_NAME)
         except FileNotFoundError:
             showerror("Outdir Error", "Outir does not exist anymore. Please select a different one.")
             return False
@@ -511,7 +517,7 @@ class MainMultiGeneBlastGui(Frame):
         exit_code, expected = run_extrenal_command(command, outbox, self)
         if exit_code == 0:
             outbox.text_insert('\nVisual output can be accessed by opening: '
-                               '"file://' + self.outdir_path + os.sep + OUT_FOLDER_NAME + os.sep + 'visual' + os.sep +
+                               '"file://' + self.__outdir_path + os.sep + OUT_FOLDER_NAME + os.sep + 'visual' + os.sep +
                                'displaypage1.xhtml" with a web browser\n')
         elif not expected:
             outbox.text_insert("MultiGeneBlast experienced a problem. Please click"
@@ -522,7 +528,7 @@ class MainMultiGeneBlastGui(Frame):
         """
         Try to open an xhtml file in a browser
         """
-        display_page_1 = self.outdir_path + os.sep + OUT_FOLDER_NAME + os.sep + 'visual' + os.sep + 'displaypage1.xhtml'
+        display_page_1 = self.__outdir_path + os.sep + OUT_FOLDER_NAME + os.sep + 'visual' + os.sep + 'displaypage1.xhtml'
         if sys.platform == ('win32'):
             try:
                 os.startfile(display_page_1)

@@ -12,7 +12,7 @@ from tkinter import SINGLE, S, W
 import urllib.request, urllib.error, urllib.parse
 
 from utilities import ILLEGAL_CHARACTERS
-from constants import APPDATA, GENBANK_EXTENSIONS, EMBL_EXTENSIONS, get_mgb_path, CHUNK
+from constants import APPDATA, GENBANK_EXTENSIONS, EMBL_EXTENSIONS, get_mgb_path, CHUNK, FASTA_EXTENSIONS
 from gui_utility import *
 
 MGBPATH = get_mgb_path()
@@ -383,11 +383,6 @@ class MakeDatabase(Toplevel):
         self.dbname_entry.bind("<FocusOut>", self.OnValidate)
         self.dbname_entry.bind("<Return>", self.OnValidate)
 
-        # TODO: see if this feature is wanted and realistic considereing the new database
-        #text = Label(searchFrame, text="\nMake raw nucleotide database for tblastn-searching:")
-        # text.grid(row=1,column=0, pady=5)
-        # self.dbtype = CheckBox(searchFrame, [1,1], "")
-
         self.__outdir_label.set(self.__outdir_path)
         outdir_lbl = Label(searchFrame, text="Output folder name:")
         outdir_lbl.grid(row=1, column=0, sticky=W, padx=5)
@@ -396,14 +391,19 @@ class MakeDatabase(Toplevel):
         outdir_button = Button(searchFrame, text="Select the output folder", command=self.select_out_directory)
         outdir_button.grid(row=1, column=2, sticky=W)
 
+        text = Label(searchFrame, text="Make raw nucleotide database for tblastn-searching:")
+        text.grid(row=2,column=0, padx=5, sticky=W)
+        self.dbtype = CheckBox(searchFrame, "")
+        self.dbtype.grid(row=2, column=1)
+
         searchButton = Button(searchFrame, text="Add files", command=self._add_files)
-        searchButton.grid(row=2,column=1)
+        searchButton.grid(row=3,column=1)
 
         listFrame = Frame(self)
         listFrame.grid(row=1, pady=10, padx=20)
         scrollBar = Scrollbar(listFrame)
         scrollBar.pack(side=RIGHT, fill=Y)
-        self.file_list_box = Listbox(listFrame, selectmode=SINGLE, width=100, height=10)
+        self.file_list_box = Listbox(listFrame, selectmode=SINGLE, width=120, height=10)
         self.file_list_box.pack(side=LEFT, fill=Y)
         scrollBar.config(command=self.file_list_box.yview)
         self.file_list_box.config(yscrollcommand=scrollBar.set)
@@ -427,10 +427,11 @@ class MakeDatabase(Toplevel):
         path = select_out_directory()
         if path == None:
             return
+        display_selected = path
         if len(path) > 50:
             display_selected = "{}...".format(path[:47])
         self.__outdir_label.set(display_selected)
-        self.outdir_path = path.replace("/", os.sep)
+        self.__outdir_path = path.replace("/", os.sep)
 
     def OnValidate(self, val):
         """
@@ -450,16 +451,22 @@ class MakeDatabase(Toplevel):
         Add one or more files to the self.file_list_box ListBox object
         """
         #returns a tuple of names
-        filenames = tkinter.filedialog.askopenfilename(multiple=True, filetypes=(("GenBank files",('*.gbk','*.gb','*.genbank')),("EMBL files",('*.embl','*.emb'))), title="Select files")
-        # else:
-        #     filenames = tkinter.filedialog.askopenfilename(multiple=True, filetypes=(("FASTA files",('*.fasta','*.fa','*.fas')), ("GenBank files",('*.gbk','*.gb','*.genbank')),("EMBL files",('*.embl','*.emb'))), title="Select files", initialdir=self.directory)
+        dbtype = self.dbtype.getval()
+        if dbtype == 0:
+            filenames = tkinter.filedialog.askopenfilename(multiple=True, filetypes=(("GenBank files",('*.gbk','*.gb','*.genbank')),("EMBL files",('*.embl','*.emb'))), title="Select files")
+        else:
+            filenames = tkinter.filedialog.askopenfilename(multiple=True, filetypes=(("FASTA files",('*.fasta','*.fa','*.fas')), ("GenBank files",('*.gbk','*.gb','*.genbank')),("EMBL files",('*.embl','*.emb'))), title="Select files")
         filenames = list(filenames)
+        if dbtype == 0:
+            allowed_extensions = GENBANK_EXTENSIONS + EMBL_EXTENSIONS
+        else:
+            allowed_extensions = GENBANK_EXTENSIONS + EMBL_EXTENSIONS + FASTA_EXTENSIONS
         for filename in filenames:
             #when clicking cancel
             if filename == "":
                 return
             root, ext = os.path.splitext(filename)
-            if ext.lower() not in GENBANK_EXTENSIONS + EMBL_EXTENSIONS:
+            if ext.lower() not in allowed_extensions:
                 showerror("Error", filename + " not added, as it does not have a GenBank or EMBL file extension.")
             if filename not in self.files:
                 self.files.append(filename)
@@ -496,7 +503,8 @@ class MakeDatabase(Toplevel):
         """
         Function called when the make_database_button is pressed
         """
-        if self.dbname.get() + ".pal" in os.listdir(self.__outdir_path):
+        if self.dbname.get() + ".pal" in os.listdir(self.__outdir_path) or\
+                self.dbname.get() + ".nal" in os.listdir(self.__outdir_path):
             answer = askyesno('Database name exists',
                               'A database with this name already exists. Overwrite?')
             if not answer:
@@ -519,8 +527,12 @@ class MakeDatabase(Toplevel):
                 showerror("Input Error", "Database name contains illegal character. {} is not allowed".format(char))
                 return None
         base_command = "{}{}make_database.py ".format(MGBPATH, os.sep)
+        if self.dbtype.getval() == 0:
+            dbtype = "prot"
+        else:
+            dbtype = "nucl"
         #make sure to place '"' around inputs that can contain spaces
-        required_information = '-o "{}" -n "{}" -i {} '.format(self.__outdir_path, self.dbname.get(), " ".join(['"{}"'.format(f) for f in self.files]))
+        required_information = '-o "{}" -n "{}" -i {} -t {}'.format(self.__outdir_path, self.dbname.get(), " ".join(['"{}"'.format(f) for f in self.files]), dbtype)
         full_command = base_command + required_information
         return full_command
 
@@ -535,8 +547,12 @@ class MakeDatabase(Toplevel):
         outbox = MessageBox(master=self.master, title="Creating database...")
         exit_code, expected = run_extrenal_command(command, outbox, self)
         if exit_code == 0:
-            outbox.text_insert("Database created.\nYou can now use this database "
-                "by selecting '{}.pal' by clicking 'open database file' in the main window.\n".format(self.dbname.get()))
+            if self.dbtype.getval() == 0:
+                outbox.text_insert("Database created. You can now use this database "
+                    "by selecting '{}.pal' by clicking 'open database file' in the main window.\n".format(self.dbname.get()))
+            else:
+                outbox.text_insert("Database created. You can now use this database "
+                    "by selecting '{}.nal' by clicking 'open database file' in the main window.\n".format(self.dbname.get()))
         elif not expected:
             outbox.text_insert("MultiGeneBlast experienced a problem while creating the database. Please click"
                 " the button below to send an error report, so we can solve the underlying problem.\n")
@@ -653,10 +669,11 @@ class MakeOnlineDatabase(Toplevel):
         path = select_out_directory()
         if path == None:
             return
+        display_selected = path
         if len(path) > 50:
             display_selected = "{}...".format(path[:47])
         self.__outdir_label.set(display_selected)
-        self.outdir_path = path.replace("/", os.sep)
+        self.__outdir_path = path.replace("/", os.sep)
 
     def _clear_all(self):
         """

@@ -200,8 +200,7 @@ class CheckBox(Frame):
         """
         self.var = IntVar()
 
-        cb = Checkbutton(self, text=self.description,
-            variable=self.var)
+        cb = Checkbutton(self, text=self.description, variable=self.var)
         cb.select()
         cb.grid(row=0,column=0)
 
