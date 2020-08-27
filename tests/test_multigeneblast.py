@@ -71,5 +71,11 @@ if __name__ == "__main__":
     print("Finished running architecture mode test...")
     print()
 
+    #command testing on a raw nucleotide database made from fasta embl and genbank files
+    print("Starting run with raw nucleotide database made from fasta embl and genbank files:")
+    command7 = "..\\multigeneblast.py -in test_querys\\V_maris_query.gb -out tests\\test_run_fasta -from 0 -to 59320 -db test_data_base\\mix.nal -c 4 -hpg 200 -msc 25 -mpi 30 -dkb 20 -sw 0.5 -m n -op 3 -inf all"
+    test_multigeneblast(command7, "test_run_fasta")
+    print("Finished mixed test...")
+    print()
 
-    print("6/6 tests succesfully finished.")
+    print("7/7 tests succesfully finished.")
