@@ -276,3 +276,16 @@ def fasta_to_dict(file_name, check_headers = True):
         else:
             sequences[name] = sequence
     return sequences
+
+def is_dna(sequence):
+    """
+    Determine is a sequence is most likely a DNA strand or not.
+    Note is unreliable for sequences that are to short < 10bp
+
+    :param sequence: a sequence as string
+    :return: a boolean
+    """
+    sequence = sequence.lower()
+    if sequence.count("a") + sequence.count("g") + sequence.count("t") + sequence.count("c") < 0.5 * len(sequence):
+        return False
+    return True

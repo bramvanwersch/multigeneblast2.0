@@ -614,11 +614,13 @@ def parse_db_blast(user_options, query_proteins, blast_output):
 
 def filter_nuc_output(blast_output):
     blast_lines = blast_output.split("\n")[:-1]
-    starts = {}
-    stops = {}
     for index, line in enumerate(blast_lines):
         tabs = line.split("\t")
-        accession = tabs[1].split("|")[1]
+        #when a name contains invalid characters it is packed in these brackets
+        if "|" in tabs[1]:
+            accession = tabs[1].split("|")[1]
+        else:
+            accession= tabs[1]
         subject = "{}_{}".format(accession, index)
         tabs[1] = subject
         blast_lines[index] = "\t".join(tabs)
@@ -680,7 +682,7 @@ def load_nucleotide_database(blast_dict, user_options):
     hits_per_contig = {}
     for results in blast_dict.values():
         for result in results:
-            accession = result.subject.rsplit("_", 1)[0]
+            accession = result.subject.split("_")[0]
             if accession in hits_per_contig:
                 hits_per_contig[accession].append(result)
             else:

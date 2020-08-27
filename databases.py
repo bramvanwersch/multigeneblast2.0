@@ -101,6 +101,8 @@ class Database(ABC):
         logging.info("Started creating database...")
         #care this is a generator object not a list
         self._files = self._read_files(base_path, paths)
+        #TODO make sure that a user is notified when double accessions are introduced. This makes it so certain acessions
+        # are ignored
         if len(self._files) == 0:
             logging.critical("Failed to load any of the provided database files.")
             raise MultiGeneBlastException("Failed to load any of the provided database files.")
@@ -311,6 +313,9 @@ class NucleotideDataBase(Database):
         fasta_dict = fasta_to_dict(file)
         contigs = []
         for key in fasta_dict:
+            if not is_dna(fasta_dict[key]):
+                logging.warning("Ignoring fasta entry {} from {}, because it does not contain a DNA sequence.".format(key, file))
+                continue
             contigs.append(NucleotideContig("", sequence=fasta_dict[key], accession=key, definition="From fasta"))
         return contigs
 
@@ -483,7 +488,6 @@ class GenbankFile:
                                           " or contigs need to be selected")
         self.proteins = self.__list_proteins() #an OrderedDict.
         self.lenght = sum(con.lenght for con in self.contigs.values())
-
 
     def fasta_text(self):
         """
@@ -882,9 +886,9 @@ class GenbankEntry:
             for loc in locations:
                 start, end = loc
                 if reverse_complement:
-                    nc_seq = c_dna_seq[(start - 1) - self.__codon_start - 1 : end]
+                    nc_seq = c_dna_seq[max(0, (start - 1) - self.__codon_start - 1) : end]
                 else:
-                    nc_seq = dna_seq[(start - 1) - self.__codon_start - 1 : end]
+                    nc_seq = dna_seq[max(0, (start - 1) - self.__codon_start - 1): end]
                 sequence += nc_seq
             sequence = translate(sequence)
 
