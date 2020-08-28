@@ -155,7 +155,7 @@ def main():
 
     #write the database to fasta for makeblastdb
     logging.info("Writing MultiGeneBlast database to fasta...")
-    with open(dbname + "_dbbuild.fasta", "w") as f:
+    with open("{}{}{}_dbbuild.fasta".format(TEMP, os.sep, dbname), "w") as f:
         f.write(db.get_fasta())
     logging.info("Step 4/6: Written MultiGeneBlast database to fasta format.")
 

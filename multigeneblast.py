@@ -422,7 +422,7 @@ def internal_blast(user_options, query_proteins):
     logging.debug("Finished running internal blastp.")
 
     try:
-        with open("internal_input.out","r") as f:
+        with open("{}{}internal_input.out".format(TEMP, os.sep),"r") as f:
             blastoutput = f.read()
     except Exception:
         logging.critical("Something went wrong reading the blast output file. Exiting...")
@@ -573,7 +573,7 @@ def db_blast(query_proteins, user_options):
     logging.debug("Finished blasting")
 
     try:
-        with open("input.out","r") as f:
+        with open("{}{}input.out".format(TEMP, os.sep),"r") as f:
             blastoutput = f.read()
     except:
         logging.critical("Cannot open the file that contains the database blast output. Exiting...")
@@ -1301,7 +1301,7 @@ def align_muscle(gene_color_dict, database, query_proteins, outdir):
     total = len(color_per_genes)
     for color, color_group in color_per_genes.items():
         color = color.replace("#","")
-        file_name = "muscle_info" + os.sep + "group{}.fasta".format(color)
+        file_name = "{}{}muscle_info" + os.sep + "group{}.fasta".format(TEMP, os.sep, color)
         with open(file_name, "w") as f:
             for prot in color_group:
                 try:
