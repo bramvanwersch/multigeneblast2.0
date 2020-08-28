@@ -1,9 +1,4 @@
 #!/usr/bin/env python
-## Copyright (c) 2012 Marnix H. Medema
-## University of Groningen
-## Department of Microbial Physiology / Groningen Bioinformatics Centre
-## License: GNU General Public License v3 or later
-## A copy of GNU GPL v3 should have been included in this software package in LICENSE.txt.
 
 import os
 import sys

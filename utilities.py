@@ -1,4 +1,4 @@
-
+#!/usr/bin/env python
 
 # imports
 from string import ascii_letters

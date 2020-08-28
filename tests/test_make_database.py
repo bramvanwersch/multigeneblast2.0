@@ -1,5 +1,4 @@
-#Basic test for the databse creation. Passing these tests means that all files
-#are correctly created. This does not guarantee correct creation
+#!/usr/bin/env python
 
 import os
 import shutil
