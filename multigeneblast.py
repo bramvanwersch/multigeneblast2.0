@@ -613,18 +613,41 @@ def parse_db_blast(user_options, query_proteins, blast_output):
     return blast_dict
 
 def filter_nuc_output(blast_output):
+    logging.debug("Removing overlapping hits in big nucleotide contigs...")
     blast_lines = blast_output.split("\n")[:-1]
-    for index, line in enumerate(blast_lines):
-        tabs = line.split("\t")
-        #when a name contains invalid characters it is packed in these brackets
-        if "|" in tabs[1]:
-            accession = tabs[1].split("|")[1]
+    new_blast_lines = []
+    count = 0
+    while len(blast_lines) > 0:
+        compare_line = blast_lines.pop()
+        c_tabs = compare_line.split("\t")
+        c_start, c_stop = int(c_tabs[8]), int(c_tabs[9])
+        if c_start > c_stop:
+            c_stop, c_start = int(c_tabs[8]), int(c_tabs[9])
+        for line_index in range(len(blast_lines) -1, -1, -1):
+            line = blast_lines[line_index]
+            tabs = line.split("\t")
+            start, stop = int(tabs[8]), int(tabs[9])
+            if start > stop:
+                stop, start = int(tabs[8]), int(tabs[9])
+            #no overlap skip
+            if stop - ALLOWED_OVERLAP < c_start or start + ALLOWED_OVERLAP > c_stop:
+                continue
+            #there is overlap and the the size of the line is bigger replace it
+            elif stop - start > c_stop - c_start:
+                c_tabs = tabs
+                c_start, c_stop = start, stop
+            #overlapping but not bigger remove
+            else:
+                blast_lines.pop(line_index)
+        if "|" in c_tabs[1]:
+            accession = c_tabs[1].split("|")[1]
         else:
-            accession= tabs[1]
-        subject = "{}_{}".format(accession, index)
-        tabs[1] = subject
-        blast_lines[index] = "\t".join(tabs)
-    return blast_lines
+            accession= c_tabs[1]
+        subject = "{}_{}".format(accession, count)
+        count += 1
+        c_tabs[1] = subject
+        new_blast_lines.append("\t".join(c_tabs))
+    return new_blast_lines
 
 
 #### STEP 6: LOAD RELEVANT PARTS OF THE DATABASE ####

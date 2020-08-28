@@ -14,6 +14,9 @@ PROT_DATABASE_EXTENSIONS = ["_database_index.pickle", "_contigs.tar.gz", ".psq",
 NUC_DATABASE_EXTENSIONS = ["_database_index.pickle", "_contigs.tar.gz", ".nsq", ".nsi", ".nsd", ".nin", ".nhr"]
 CHUNK = 256 * 1024
 
+#smoothing paramater that allows slight overlap between genes when filtering redundant blast hits
+ALLOWED_OVERLAP = 500
+
 #name of the folder containing the final results
 OUT_FOLDER_NAME = "multigeneblast_result"
 #last part of the name of the text output
