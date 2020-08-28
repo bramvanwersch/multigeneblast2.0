@@ -145,4 +145,4 @@ def get_muscle_prog_name():
 CURRENTDIR = os.getcwd()
 APPDATA = get_appdata_path()
 TEMP = get_temp_data()
-MUSCLE_PROG_NAME = get_muscle_prog_name()
+MUSCLE_PROG_NAME = get_muscle_prog_name()s
