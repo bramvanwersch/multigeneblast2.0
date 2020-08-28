@@ -128,6 +128,9 @@ def write_nal_pal_file(dbname, outdir, dbtype):
 
 
 def main():
+    """
+    Main function called when running the program
+    """
 
     starttime = time.time()
 

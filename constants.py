@@ -120,6 +120,12 @@ def get_temp_data():
     return temp + os.sep + "mgb_temp"
 
 def get_muscle_prog_name():
+    """
+    Get the correct name of the muscle program based on the operating system
+    and the bitmode python is running in.
+
+    :return: a string that is the correct name of the muscle instalation
+    """
     if platform.system() == "Windows":
         return "muscle3.8.31_i86win32.exe"
     bit64_mode = sys.maxsize > 2**32

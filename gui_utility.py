@@ -73,6 +73,9 @@ def select_out_directory():
 
 
 def about():
+    """
+    Open a webpage that displayes information about how to use MultiGeneBlast
+    """
     webbrowser.open('http://multigeneblast.sourceforge.net/')
 
 

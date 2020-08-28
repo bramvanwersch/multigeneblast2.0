@@ -94,8 +94,8 @@ def embl_to_genbank(embl_filepath):
 
 class Database(ABC):
     """
-    Tracks multiple genbank and embl files and can write the output into a format
-    that can be used by MultiGeneBlast
+    Abstraction level for tracking multiple genbank and embl files and writing
+    the output into a format that can be used by MultiGeneBlast
     """
     def __init__(self, base_path, paths):
         logging.info("Started creating database...")
@@ -109,16 +109,31 @@ class Database(ABC):
 
     @abstractmethod
     def _read_files(self, base_path, paths):
+        """
+        Method for reading input files, each subclass of Database should have
+        this method
+
+        :param base_path: an absolute path to the directory make_database.py was
+        executed from
+        :param paths: a absolute or relative path to all the database files from
+        the make_database.py directory
+        :return: a list
+        """
         return []
 
     @abstractmethod
     def get_fasta(self):
+        """
+        Return a fasta of the files in the database. This method is required
+        to make Blast+ databases
+
+        :return: a string in fasta format
+        """
         return ""
 
     def create(self, outdir, dbname):
         """
-        Create the files for the database using the self.files genbank
-        objects
+        Create the files for the database using the self._files property
 
         :param outdir: an output directory for the database
         :param dbname: the name of all files in the output directory
@@ -126,36 +141,15 @@ class Database(ABC):
         self._write_files(outdir, dbname)
         self.__create_tar_file(outdir, dbname)
 
+    @abstractmethod
     def _write_files(self, outdir, dbname):
         """
-        Write the contigs of the genbank objects to pickle files.
+        Write the contigs in self._files as pickled objects.
 
         :param outdir: an output directory for the database
         :param dbname: the name of all files in the output directory
         """
-        #TODO think about handling double contigs. I would think not to relevant
-        index_list = []
-
-        #create a directory for the pickle files, if the directory is there clean it
-        try:
-            os.mkdir(TEMP + os.sep + "pickles")
-        except FileExistsError:
-            shutil.rmtree(TEMP + os.sep + "pickles")
-            os.mkdir(TEMP + os.sep + "pickles")
-
-        #pickle each contig
-        total_pickles = 0
-        for gb_file in self._files:
-            for index, contig in enumerate(gb_file.contigs):
-                with open("{}{}pickles{}{}.pickle".format(TEMP, os.sep, os.sep, index), "wb") as f:
-                    pickle.dump(gb_file.contigs[contig], f)
-                    total_pickles += 1
-                index_list.append(set(gb_file.contigs[contig].proteins.keys()))
-        logging.debug("Created {} contig pickles in total.".format(total_pickles))
-
-        #write pickle index file
-        with open("{}{}{}_database_index.pickle".format(outdir, os.sep, dbname), "wb") as f:
-            pickle.dump(index_list, f)
+        pass
 
     def __create_tar_file(self, outdir, dbname):
         """
@@ -244,8 +238,7 @@ class Database(ABC):
         get read into unique files
         :return: a list of file names that contain the requested queries.
         """
-        #TODO request are allowed to be fatster and bigger but to be safe 1 per
-        # second
+
         new_files = []
         for index, contig_group in enumerate(contig_groups):
             logging.debug("Fetching url information {}/{}".format(index + 1, len(contig_groups)))
@@ -259,6 +252,7 @@ class Database(ABC):
             while not url_finished or nrtries < 4:
                 try:
                     nrtries += 1
+                    # TODO request are allowed to be fatster and bigger but to be safe 1 per second
                     time.sleep(1)
                     with urllib.request.urlopen(efetch_url) as response:
                         output = response.read()
@@ -279,8 +273,18 @@ class Database(ABC):
 
 
 class NucleotideDataBase(Database):
-    #TODO make sure that input fasta files are dna sequences
+    """
+    Raw nucleotide database implementation
+    """
+
     def _read_files(self, base_path, paths):
+        """
+        Read all files into NucleotideContigs. These are contigs with minimal
+        information on sequence and a accession number
+
+        :See super._read_files()
+        :return a list of NucleotideContig objects
+        """
         contigs = []
         while len(paths) > 0:
             path = paths.pop()
@@ -290,7 +294,6 @@ class NucleotideDataBase(Database):
             file = None
             if ext in GENBANK_EXTENSIONS:
                 new_contigs, new_paths = self.__read_genbank_file(path)
-
                 paths.extend(new_paths)
             elif ext in EMBL_EXTENSIONS:
                 new_contigs = self.__read_embl_file(path)
@@ -303,6 +306,9 @@ class NucleotideDataBase(Database):
         return contigs
 
     def get_fasta(self):
+        """
+        :See super.get_fasta()
+        """
         fasta_text = ""
         for contig in self._files:
             fasta_text += ">{}\n".format(contig.accession)
@@ -310,16 +316,29 @@ class NucleotideDataBase(Database):
         return fasta_text
 
     def __read_fasta_file(self, file):
+        """
+        Read the sequence(s) from a fasta file and make sure that the file
+        contains DNA code.
+
+        :param file: a string that is the path to a fasta file
+        :return: a list of NucleotideContig objects
+        """
         fasta_dict = fasta_to_dict(file)
         contigs = []
         for key in fasta_dict:
             if not is_dna(fasta_dict[key]):
                 logging.warning("Ignoring fasta entry {} from {}, because it does not contain a DNA sequence.".format(key, file))
                 continue
-            contigs.append(NucleotideContig("", sequence=fasta_dict[key], accession=key, definition="From fasta"))
+            contigs.append(NucleotideContig(sequence=fasta_dict[key], accession=key, definition="From fasta"))
         return contigs
 
     def __read_embl_file(self, file):
+        """
+        Read the sequence(s) from a embl file.
+
+        :param file: a string that is the path to a fasta file
+        :return: a list of NucleotideContig objects
+        """
         file_text = embl_to_genbank(file)
         contigs_text = file_text.split("//\n")[:-1]
         contigs = []
@@ -328,6 +347,14 @@ class NucleotideDataBase(Database):
         return contigs
 
     def __read_genbank_file(self, file):
+        """
+        Read the sequence(s) from a genbank file. Take into account certain
+        parts of the file that can contain references to other records
+
+        :param file: a string that is the path to a fasta file
+        :return: a list of NucleotideContig objects and an optional list of
+        additional files to be read.
+        """
         try:
             with open(file, "r") as f:
                 file_text = f.read()
@@ -341,6 +368,10 @@ class NucleotideDataBase(Database):
             new_file_paths = self._convert_wgs_master_record(file_text, file_name.rsplit(".", 1)[0])
             logging.debug("{} new genbank file(s) where added containing the contigs.".format(len(new_file_paths)))
             return [], new_file_paths
+        # TODO handle supercontig records. Example of how to handle can be found in the old parse_gbk.py file in dblib folder
+        elif "CONTIG      " in file_text:
+            logging.warning("Supercontig files are not supported at the moment. Skipping...")
+            return [], []
         else:
             contigs_text = file_text.split("//\n")[:-1]
             contigs = []
@@ -355,7 +386,6 @@ class NucleotideDataBase(Database):
         :param outdir: an output directory for the database
         :param dbname: the name of all files in the output directory
         """
-        #TODO think about handling double contigs. I would think not to relevant
         index_list = []
 
         #create a directory for the pickle files, if the directory is there clean it
@@ -366,13 +396,18 @@ class NucleotideDataBase(Database):
             os.mkdir(TEMP + os.sep + "pickles")
 
         #pickle each contig
-        total_pickles = 0
+        total_contigs = 0
+        covered_accessions = set()
         for index, contig in enumerate(self._files):
+            if contig.accession in covered_accessions:
+                logging.warning("Double accession {} encountered. This is not "
+                                "allowed. Skipping writing the second file...".format(contig_name))
+                continue
             with open("{}{}pickles{}{}.pickle".format(TEMP, os.sep, os.sep, index), "wb") as f:
                 pickle.dump(contig, f)
-                total_pickles += 1
+            total_contigs += 1
             index_list.append(contig.accession)
-        logging.debug("Created {} contig pickles in total.".format(total_pickles))
+        logging.debug("Created {} contig pickles in total.".format(total_contigs))
 
         #write pickle index file
         with open("{}{}{}_database_index.pickle".format(outdir, os.sep, dbname), "wb") as f:
@@ -380,12 +415,13 @@ class NucleotideDataBase(Database):
 
 
 class ProteinDataBase(Database):
+    """
+    Protein database implementation
+    """
 
     def get_fasta(self):
         """
-        Convenience method for getting the fasta strings from all Genbank Objects
-
-        :return: a String
+        :See super.get_fasta()
         """
         full_fasta = ""
         for gb_file in self._files:
@@ -397,11 +433,8 @@ class ProteinDataBase(Database):
         Read a list of files, either genbank or embl and make them into Genbnak
         objects
 
-        :param base_path: an absolute path to the directory make_database.py was
-        executed from
-        :param paths: a absolute or relative path to all the database files from
-        the make_database.py directory
-        :return: a list of Genbnak objects
+        :See super._read_files()
+        :return: a list of GenbankFile objects
         """
         files = []
         while len(paths) > 0:
@@ -419,7 +452,7 @@ class ProteinDataBase(Database):
                 logging.warning("Invalid extension {}. Skipping file {}.".format(ext, path))
                 continue
             try:
-                if file_text:
+                if file_text != "":
                     file = GenbankFile(file_text=file_text)
             except MultiGeneBlastException as error:
                 logging.debug(error)
@@ -454,11 +487,47 @@ class ProteinDataBase(Database):
             new_file_paths = self._convert_wgs_master_record(file_text, file_name.rsplit(".", 1)[0])
             logging.debug("{} new genbank file(s) where added containing the contigs.".format(len(new_file_paths)))
             file_text = ""
-        #TODO hadle supercontig records. At the moment i lack an example to try
+        #TODO handle supercontig records. Example of how to handle can be found in the old parse_gbk.py file in dblib folder
+        elif "CONTIG      " in file_text:
+            file_text = ""
+            logging.warning("Supercontig files are not supported at the moment. Skipping...")
         #do a basic check to see if the genbank file is valid
         elif "     CDS             " not in file_text or "\nORIGIN" not in file_text:
             logging.warning("Genbank file {} is not properly formatted or contains no sequences. Skipping...".format(file))
         return file_text, new_file_paths
+
+    def _write_files(self, outdir, dbname):
+        """
+        :See super._write_files
+        """
+        index_list = []
+
+        # create a directory for the pickle files, if the directory is there clean it
+        try:
+            os.mkdir(TEMP + os.sep + "pickles")
+        except FileExistsError:
+            shutil.rmtree(TEMP + os.sep + "pickles")
+            os.mkdir(TEMP + os.sep + "pickles")
+
+        # pickle each contig
+        contig_count = 0
+        covered_accessions = set()
+        for gb_file in self._files:
+            for contig_name in gb_file.contigs:
+                if contig_name in covered_accessions:
+                    logging.warning("Double accession {} encountered. This is not "
+                                    "allowed. Skipping writing the second file...".format(contig_name))
+                    continue
+                with open("{}{}pickles{}{}.pickle".format(TEMP, os.sep, os.sep, contig_count), "wb") as f:
+                    pickle.dump(gb_file.contigs[contig_name], f)
+                contig_count += 1
+                covered_accessions.add(contig_name)
+                index_list.append(set(gb_file.contigs[contig_name].proteins.keys()))
+        logging.debug("Created {} contig pickles in total.".format(contig_count))
+
+        # write pickle index file
+        with open("{}{}{}_database_index.pickle".format(outdir, os.sep, dbname), "wb") as f:
+            pickle.dump(index_list, f)
 
 
 class GenbankFile:
@@ -563,8 +632,14 @@ class GenbankFile:
         return contigs
 
 class Contig(ABC):
-
+    """
+    Base abstraction class for contigs. Reads the header.
+    """
+    COUNTER = 0
     def __init__(self, file_text):
+        """
+        :param file_text: string to be read.
+        """
         gene_defenitions, dna_sequence = file_text.split("\nORIGIN")
         # Extract DNA sequence and calculate complement of it
         dna_sequence = clean_dna_sequence(dna_sequence)
@@ -604,20 +679,40 @@ class Contig(ABC):
         if not is_valid_accession(self.accession):
             logging.debug("Probably invalid GenBank/Refseq accesion {} found.".format(self.accession))
             self.accession = ""
+        #auto generate a unique accession when no valid one is found
         if self.accession == "":
-            logging.debug("No valid accesion found for contig {}".format(self.accession))
+            self.accession = "accession{}".format(self.COUNTER)
+            Contig.COUNTER += 1
+            logging.debug("The following accession was auto generated: {}. Because no valid accession was found."\
+                          .format(self.accession))
         if self.definition == "":
             logging.debug("No definition found for contig {}".format(self.accession))
 
 
 class NucleotideContig(Contig):
-    def __init__(self, file_text, sequence=None, accession=None, definition=None):
-        if sequence == None:
+    """
+    Abstraction for nucleotide contigs, saves a sequence and header information
+    """
+    def __init__(self, file_text=None, sequence=None, accession="", definition=""):
+        """
+        :param file_text: string to be read.
+        :param sequence: Instead of providing a file_text
+        :param accession: Optional name of an accession. If no name is provided the accession is auto generated
+        :param definition: Optional definition to give some extra information
+        """
+        if file_text != None:
             self.dna_sequence, _ = super().__init__(file_text)
-        else:
+        elif sequence != None:
             self.dna_sequence = sequence
-            self.accession = accession
+            if accession == "":
+                self.accession = "accession{}".format(self.COUNTER)
+                Contig.COUNTER += 1
+            else:
+                self.accession = accession
             self.definition = definition
+        else:
+            raise MultiGeneBlastException("When creating a NucleotideContig you either have to supply a "
+                                          "file text or sequence.")
 
 
 class ProteinContig(Contig):
@@ -625,6 +720,17 @@ class ProteinContig(Contig):
     Acts as abstraction for a contig present in a genbank file
     """
     def __init__(self, file_text, protein_range=None, allowed_proteins=None):
+        """
+        :param file_text: string to be read.
+
+        These last 2 options are mainly here for allowing filtering of the
+        query contig.
+
+        :param protein_range: a range of nucleotides wherein proteins are
+        considered part of the contig to read.
+        :param allowed_proteins: a list of protein names that are allowed
+         to be in the contig
+        """
         dna_sequence, gene_information = super().__init__(file_text)
 
         c_dna_sequence = complement(dna_sequence)
@@ -921,8 +1027,6 @@ class Protein:
         :param contig_description: the description of the contig as defined in
         the genbank file
         :param protein_id: an optional id of the protein
-        :param start_header: the start of the fasta header. This can be used in
-        the case of query proteins to allow certain identifyers
         """
         self.sequence = sequence
         self.strand = strand

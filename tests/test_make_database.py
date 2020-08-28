@@ -74,8 +74,9 @@ if __name__ == "__main__":
     print("Finished running rare case test...")
     print()
 
-    #command for testign nucleotide database creation
+    #command for testing raw nucleotide database creation
     print("Starting Makedatabase with raw nucleotide data file:")
+    #note this takes longer because of the large sequence present. This will always be the case for large sequences in files.
     command6 = "..\\make_database.py -o tests\\test_data_base -n test -i tests\\rare_case_test.embl tests\\nucleotide_db_test.fasta tests\\GCA_000204155.1_ASM20415v1_genomic.gbk -inf all -t nucl"
     test_nucleotide_database(command6)
     print("Finished running nucleotide database test...")
