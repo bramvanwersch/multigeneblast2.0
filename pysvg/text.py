@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # -*- coding: iso-8859-1 -*-
 '''
 (C) 2008, 2009 Kerim Mansour

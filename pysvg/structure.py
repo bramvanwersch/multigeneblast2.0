@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # -*- coding: iso-8859-1 -*-
 '''
 This module includes the elements found in http://www.w3.org/TR/SVG/struct.html
