@@ -112,7 +112,7 @@ def run_commandline_command(command, max_retries = 5):
     command_stdout = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=new_env)
     command_stdout = command_stdout.stdout.read()
     retries = 0
-    while "error" in str(command_stdout.lower()):
+    while "error" in str(command_stdout.lower()) or "not found" in str(command_stdout.lower()):
         logging.debug("The following command {} returned the following error {}. Retrying: {}/{}".format(command, command_stdout, retries, max_retries))
         if max_retries <= retries:
             logging.critical("Command {} keeps returing an error. Exiting...".format(command))

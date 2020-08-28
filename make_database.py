@@ -164,7 +164,7 @@ def main():
 
     #make sure to change the working directory for the makeblastdb files to edn up in the right place
     os.chdir(outdir)
-    command = "{}\\exec_new\\makeblastdb.exe -dbtype {} -out {} -in {}{}{}_dbbuild.fasta".format(MGBPATH, db_type, dbname, TEMP, os.sep, dbname)
+    command = "{}{}exec_new{}makeblastdb.exe -dbtype {} -out {} -in {}{}{}_dbbuild.fasta".format(MGBPATH, os.sep, os.sep, db_type, dbname, TEMP, os.sep, dbname)
 
     run_commandline_command(command, max_retries=0)
     logging.info("Step 5/6: Blast+ database created.")
