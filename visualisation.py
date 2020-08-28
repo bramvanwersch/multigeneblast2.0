@@ -308,9 +308,8 @@ class GeneArrow:
 
         :param start_height:
         :param height: height of the arrow
-        :return:
+        :return: an svg polygon object
         """
-        # TODO look to clean up this function if there is time left
         halfheight = height / 2
         if self.start > self.stop:
             start2 = self.stop

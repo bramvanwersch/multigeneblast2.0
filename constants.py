@@ -140,9 +140,8 @@ def get_muscle_prog_name():
         else:
             return "muscle3.8.31_i86linux32"
 
-
 #path constants
 CURRENTDIR = os.getcwd()
 APPDATA = get_appdata_path()
 TEMP = get_temp_data()
-MUSCLE_PROG_NAME = get_muscle_prog_name()s
+MUSCLE_PROG_NAME = get_muscle_prog_name()
