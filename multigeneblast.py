@@ -780,14 +780,15 @@ def make_genbank_from_nuc_contigs(contigs, hits_per_contig):
     file_text = ""
     for contig in contigs:
         file_text += "DEFINITION  {}\nACCESSION   {}\n".format(contig.definition.replace("\n", ""), contig.accession)
-        for hit in hits_per_contig[contig.accession]:
+        for index, hit in enumerate(hits_per_contig[contig.accession]):
             if hit.subject_start > hit.subject_stop:
                 file_text += "     CDS             complement({}..{})\n".format(hit.subject_stop, hit.subject_start)
             else:
                 file_text += "     CDS             {}..{}\n".format(hit.subject_start, hit.subject_stop)
-            file_text += '                     /protein_id="{}"\n'.format(hit.subject)
+            file_text += '                     /locus_tag="{}"\n'.format(hit.subject)
             file_text += '                     /codon_start=1\n'
             file_text += '                     /product=tBlastn hit on {}."\n'.format(contig.accession)
+            file_text += '                     /protein_id=tBlastn_hit_{}"\n'.format(index)
         file_text += "\nORIGIN      \n"
         file_text += contig.dna_sequence
         file_text += "\n//\n"

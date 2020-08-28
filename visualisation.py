@@ -478,6 +478,8 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
             if protein.protein_id != "" and is_valid_accession(protein.protein_id):
                 html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}" target="_blank">{}</a>\n'.format(protein.protein_id, protein.protein_id))
             html_outfile.write("<br/>Location:{}-{}\n".format(protein.start, protein.stop))
+
+            html_outfile.write("<br/>Size: {} bp\n".format(int(protein.stop - protein.start)))
             html_outfile.write("</div>\n\n")
             html_outfile.write('<div id="q{}_{}_{}_divtext" class="hidden genenames" style="position:absolute; top:75px; left:'
                                '{}px;">\n'.format(page_nr, page_indx * HITS_PER_PAGE + index + 1 ,pindex, ((query_starts[pindex] + query_ends[pindex]) / 2) * 0.9375))
@@ -497,10 +499,11 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
             html_outfile.write("{}\n".format(protein.annotation.replace("_"," ")))
             link = "http://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE=Proteins&amp;PROGRAM=blastp&amp;BLAST_PROGRAMS=blastp&amp;QUERY={}&amp;LINK_LOC=protein&amp;PAGE_TYPE=BlastSearch".format(protein.protein_id)
             if user_options.dbtype == "nucl":
-                html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/nuccore/{}" target="_blank">{}</a>\n'.format(protein.protein_id, protein.protein_id))
+                html_outfile.write('<br/>Accession: {} \n'.format(protein.protein_id))
             elif protein.locus_tag != "" and is_valid_accession(protein.locus_tag):
                 html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}" target="_blank">{}</a>\n'.format(protein.locus_tag, protein.locus_tag))
             html_outfile.write("<br/>Location: {}-{}\n".format(protein.start, protein.stop))
+            html_outfile.write("<br/>Size: {} bp\n".format(int(protein.stop - protein.start)))
             if protein_name in cluster.blast_hit_proteins:
                 blast_list = sorted(list(cluster.blast_hit_proteins[protein_name]), key=lambda x: (x.evalue, -x.bit_score))
                 for blast_result in blast_list:
@@ -582,7 +585,8 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
                 html_outfile.write("{}\n".format(protein.annotation.replace("_", " ")))
                 if protein.protein_id != "" and is_valid_accession(protein.protein_id):html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}"'
                                                                                                      ' target="_blank">{}</a>\n'.format(protein.protein_id, protein.protein_id))
-                html_outfile.write("<br/>Location:{}-{}\n".format(protein.start,protein.stop))
+                html_outfile.write("<br/>Location:{}-{}\n".format(protein.start ,protein.stop))
+                html_outfile.write("<br/>Size: {} bp\n".format(int(protein.stop - protein.start)))
                 html_outfile.write("</div>\n\n")
                 html_outfile.write('<div id="all_{}_0_{}_divtext" class="hidden genenames" style="position:absolute; top:75px; left:''{}px;'
                                    '">\n'.format(page_nr, pindex, ((query_starts[pindex] + query_ends[pindex]) / 2) * 0.9375))
@@ -601,10 +605,11 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, page_si
             html_outfile.write("{}\n".format(protein.annotation.replace("_", " ")))
             link = "http://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE=Proteins&amp;PROGRAM=blastp&amp;BLAST_PROGRAMS=blastp&amp;QUERY={}&amp;LINK_LOC=protein&amp;PAGE_TYPE=BlastSearch".format(protein.protein_id)
             if user_options.dbtype == "nucl":
-                html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/nuccore/{}" target="_blank">{}</a>\n'.format(protein.protein_id, protein.protein_id))
+                html_outfile.write('<br/>Accession: {} \n'.format(protein.protein_id))
             elif protein.locus_tag != "" and is_valid_accession(protein.locus_tag):
                 html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}" target="_blank">{}</a>\n'.format(protein.locus_tag, protein.locus_tag))
             html_outfile.write("<br/>Location: {}-{}\n".format(protein.start, protein.stop))
+            html_outfile.write("<br/>Size: {} bp\n".format(int(protein.stop - protein.start)))
             if protein_name in cluster.blast_hit_proteins:
                 blast_list = sorted(list(cluster.blast_hit_proteins[protein_name]), key=lambda x: (x.evalue, -x.bit_score))
                 for blast_result in blast_list:
