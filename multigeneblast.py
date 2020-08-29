@@ -1236,7 +1236,7 @@ def write_txt_output(query_proteins, clusters, blast_output, user_options):
     file_name = user_options.run_name + TEXT_OUT_NAME
     logging.info("Writing .mgb output file into {}...".format(os.path.join(user_options.outdir, file_name)))
     try:
-        out_file = open("{}\{}".format(user_options.outdir, file_name),"w")
+        out_file = open("{}{}{}".format(user_options.outdir,os.sep,  file_name),"w")
     except (OSError, IOError):
         logging.critical("Writing .mgb file has failed. Can not opern file {}".format(os.path.join(user_options.outdir, file_name)))
         raise MultiGeneBlastException("Can not open the output file {}.".format(os.path.join(user_options.outdir, file_name)))

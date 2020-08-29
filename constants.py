@@ -127,7 +127,7 @@ def get_exec_folder():
     if platform.system() == "Darwin":
         return "{}{}exec{}mac_exec".format(base, os.sep, os.sep)
     if platform.system() == "Linux":
-        return "{}{}exec{}windows_exec".format(base, os.sep, os.sep)
+        return "{}{}exec{}linux_exec".format(base, os.sep, os.sep)
 
 
 def get_muscle_prog_name():
