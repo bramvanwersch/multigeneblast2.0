@@ -121,6 +121,12 @@ def get_temp_data():
     return temp + os.sep + "mgb_temp"
 
 def get_exec_folder():
+    """
+    Locate the exec folder for the current operating system
+
+    :return: string name that is an absolute path to the folder with all
+    the external program
+    """
     base = get_mgb_path()
     if platform.system() == "Windows":
         return "{}{}exec{}windows_exec".format(base, os.sep, os.sep)
