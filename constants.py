@@ -11,8 +11,8 @@ FASTA_EXTENSIONS = (".fasta",".fas",".fa",".fna")
 EMBL_EXTENSIONS = (".embl",".emb")
 GENBANK_EXTENSIONS = (".gbk",".gb",".genbank", ".gbff")
 SVG_CORE_EXTENSION = 5000
-PROT_DATABASE_EXTENSIONS = ["_database_index.pickle", "_contigs.tar.gz", ".psq", ".psi", ".psd", ".pin", ".phr"]
-NUC_DATABASE_EXTENSIONS = ["_database_index.pickle", "_contigs.tar.gz", ".nsq", ".nsi", ".nsd", ".nin", ".nhr"]
+PROT_DATABASE_EXTENSIONS = ["_database_index.pickle", "_contigs.tar.gz", ".psq", ".pin", ".phr"]
+NUC_DATABASE_EXTENSIONS = ["_database_index.pickle", "_contigs.tar.gz", ".nsq", ".nin", ".nhr"]
 CHUNK = 256 * 1024
 
 #smoothing paramater that allows slight overlap between genes when filtering redundant blast hits
@@ -119,6 +119,16 @@ def get_temp_data():
             temp = APPDATA
     #return a unique folder name to make sure that no unwanted files are deleted when cleaning the folder
     return temp + os.sep + "mgb_temp"
+
+def get_exec_folder():
+    base = get_mgb_path()
+    if platform.system() == "Windows":
+        return "{}{}exec{}windows_exec".format(base, os.sep, os.sep)
+    if platform.system() == "Darwin":
+        return "{}{}exec{}mac_exec".format(base, os.sep, os.sep)
+    if platform.system() == "Linux":
+        return "{}{}exec{}windows_exec".format(base, os.sep, os.sep)
+
 
 def get_muscle_prog_name():
     """

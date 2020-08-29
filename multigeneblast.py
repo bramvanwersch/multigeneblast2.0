@@ -28,6 +28,7 @@ from constants import *
 
 #constant specifically required for mbg
 MGBPATH = get_mgb_path()
+EXEC = get_exec_folder()
 
 def write_fasta(protein_list, file):
     """
@@ -400,7 +401,7 @@ def internal_blast(user_options, query_proteins):
     clusternumber = 1
 
     #Make Blast db for using the sequences saved in query.fasta in the previous step
-    make_blast_db_command = "{}{}exec_new{}makeblastdb.exe -in query.fasta -out query_db -dbtype prot".format(MGBPATH, os.sep, os.sep)
+    make_blast_db_command = "{}{}makeblastdb -in query.fasta -out query_db -dbtype prot".format(EXEC, os.sep)
     logging.debug("Started making internal blast database...")
     try:
         run_commandline_command(make_blast_db_command, max_retries=5)
@@ -409,9 +410,9 @@ def internal_blast(user_options, query_proteins):
     logging.debug("Finished making internal blast database.")
 
     #Run and parse BLAST search
-    blast_search_command = "{}{}exec_new{}blastp.exe  -db query_db -query query.fasta -outfmt 6" \
+    blast_search_command = "{}{}blastp -db query_db -query query.fasta -outfmt 6" \
                            " -max_target_seqs 1000 -evalue 1e-05 -out internal_input.out" \
-                           " -num_threads {}".format(MGBPATH, os.sep, os.sep, user_options.cores)
+                           " -num_threads {}".format(EXEC, os.sep, user_options.cores)
 
     logging.debug("Running internal blastp...")
     try:
@@ -545,10 +546,10 @@ def db_blast(query_proteins, user_options):
     """
     logging.info("Running NCBI BLAST+ searches on the provided database {}..".format(user_options.db))
     if user_options.dbtype == "prot":
-        command_start = "{}{}exec_new{}blastp.exe".format(MGBPATH, os.sep, os.sep)
+        command_start = "{}{}blastp".format(EXEC, os.sep)
         outfm = "6"
     else:
-        command_start = "{}{}exec_new{}tblastn.exe".format(MGBPATH, os.sep, os.sep)
+        command_start = "{}{}tblastn".format(EXEC, os.sep)
 
     complete_command = "{} -db {} -query {}{}query.fasta -outfmt 6 -max_target_seqs" \
                        " {} -evalue 1e-05 -out {}{}input.out -num_threads {}"\
@@ -1309,8 +1310,8 @@ def align_muscle(gene_color_dict, database, query_proteins, outdir):
                 f.write(">{}\n".format(prot))
                 f.write(sequence + "\n")
 
-        complete_command = "{}{}exec_new{}{} -quiet -in {}{}{} -out {}{}muscle_info{}group{}_muscle.fasta".\
-            format(MGBPATH, os.sep, os.sep, MUSCLE_PROG_NAME, TEMP, os.sep, file_name, outdir, os.sep, os.sep, color)
+        complete_command = "{}{}{} -quiet -in {}{}{} -out {}{}muscle_info{}group{}_muscle.fasta".\
+            format(EXEC, os.sep, MUSCLE_PROG_NAME, TEMP, os.sep, file_name, outdir, os.sep, os.sep, color)
         muscle_process = Process(target=run_commandline_command, args=[complete_command, 0])
         muscle_process.start()
         while muscle_process.is_alive():
