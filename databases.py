@@ -402,7 +402,7 @@ class NucleotideDataBase(Database):
         for index, contig in enumerate(self._files):
             if contig.accession in covered_accessions:
                 logging.warning("Double accession {} encountered. This is not "
-                                "allowed. Skipping writing the second file...".format(contig_name))
+                                "allowed. Skipping writing the second file...".format(contig.accession))
                 continue
             with open("{}{}pickles{}{}.pickle".format(TEMP, os.sep, os.sep, index), "wb") as f:
                 pickle.dump(contig, f)
