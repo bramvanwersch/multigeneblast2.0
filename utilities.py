@@ -254,7 +254,7 @@ def fasta_to_dict(file_name, check_headers = True):
             text = f.read()
     except Exception:
         logging.critical("Could not read file {}. Exiting...".format(file_name))
-        raise MultiGeneBlastException("The file {} does not exist anymore or cannot be read.".format(file))
+        raise MultiGeneBlastException("The file {} does not exist anymore or cannot be read.".format(file_name))
     sequences = {}
     # do not include the first empty match that results from the split
     fasta_entries = text.split(">")[1:]
