@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 # imports
+import shutil
 from string import ascii_letters
 import logging
 import subprocess
