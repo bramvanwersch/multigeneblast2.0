@@ -33,6 +33,11 @@ def check_pfam_db(path):
 
 
 def fetch_profiles(keys, db):
+    """Fetch hmm profiles from db and save in a file
+
+    :param keys: String, Path to file with accession numbers
+    :param db: String, path to Pfam db
+    """
     print("Fetching profiles from Pfam-A file")
     command_fetch_profile = "hmmfetch -o key.hmm -f {} {}".format(db, keys)
     try:
