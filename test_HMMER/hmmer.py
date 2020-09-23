@@ -14,6 +14,10 @@ from utilities import *
 
 
 def check_pfam_db(path):
+    """Check f Pfam-A db exists else download
+
+    :param path: String, path where to check
+    """
     url = "ftp://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam33.1/Pfam-A.hmm.gz"
     if os.path.exists(path):
         print("Pfam database found")
