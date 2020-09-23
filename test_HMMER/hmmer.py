@@ -2,11 +2,16 @@
 
 # import statements
 import os
-import subprocess
+import sys
 import urllib.request
 import urllib.error
-
+import argparse
 from Bio import SearchIO
+
+# needed this or else utilities import did not work
+sys.path.insert(0, "/mnt/d/Uni/Thesis_MultiGeneBlast/multigeneblast2.0")
+from utilities import *
+
 
 def check_pfam_db(path):
     url = "ftp://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam33.1/Pfam-A.hmm.gz"
@@ -22,15 +27,30 @@ def check_pfam_db(path):
         except urllib.error.URLError or urllib.error.HTTPError:
             print("Error: Internet connection problem")
 
+
+def fetch_profiles(keys, db):
+    print("Fetching profiles from Pfam-A file")
+    command_fetch_profile = "hmmfetch -o key.hmm -f {} {}".format(db, keys)
+    try:
+        run_commandline_command(command_fetch_profile, max_retries=1)
+    except MultiGeneBlastException:
+        raise MultiGeneBlastException("Key not found in file")
+    print("done fetching profiles")
+
+
 def main():
-    # this variable now for testing, change when implementing in main code #
-    file_path = "D:/Uni/Thesis_MultiGeneBlast/Pfam-A.hmm.gz"
+    # this is for testing, change when implementing in main code #
+    pfam_db = "/mnt/d/Uni/Thesis_MultiGeneBlast/Pfam-A.hmm.gz"
 
     # step 1: check if pfam db is present and if not download it
-    check_pfam_db(file_path)
+    check_pfam_db(pfam_db)
 
     # Step 2: Run hmmsearch
-    # 2a: Run with pfam accession name: use hmmfetch to get information
+    # 2a: Run with pfam accession name(s): use hmmfetch to get information from
+    # Pfam-A db.
+    key_file = "/mnt/d/Uni/Thesis_MultiGeneBlast/key_file.txt"
+    fetch_profiles(key_file, pfam_db)
+
     # 2b: Run with own created hmm profile
 
     # step 3: parse results with biopython
