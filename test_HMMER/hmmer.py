@@ -47,6 +47,18 @@ def fetch_profiles(keys, db):
     print("done fetching profiles")
 
 
+def run_hmmsearch(hmm_prof, db):
+    """Run hmmsearch of hmmer3
+
+    :param hmm_prof: String, Path to rofile to search
+    :param db: String, Path to db in fasta format
+    """
+    print("Preforming hmmsearch")
+    # -o results.txt -> add to save in file
+    command_run_hmmsearch = "hmmsearch {} {}".format(hmm_prof, db)
+    subprocess.run(command_run_hmmsearch, shell=True)
+
+
 def main():
     # this is for testing, change when implementing in main code #
     pfam_db = "/mnt/d/Uni/Thesis_MultiGeneBlast/Pfam-A.hmm.gz"
@@ -58,9 +70,12 @@ def main():
     # 2a: Run with pfam accession name(s): use hmmfetch to get information from
     # Pfam-A db.
     key_file = "/mnt/d/Uni/Thesis_MultiGeneBlast/key_file.txt"
-    fetch_profiles(key_file, pfam_db)
+    #fetch_profiles(key_file, pfam_db)
 
-    # 2b: Run with own created hmm profile
+    # 2b: Run hmmsearch
+    path_key = "/mnt/d/Uni/Thesis_MultiGeneBlast/key.hmm"
+    path_db = "/mnt/d/Uni/Thesis_MultiGeneBlast/UP000008308_263358.fasta.gz"
+    run_hmmsearch(path_key, path_db)
 
     # step 3: parse results with biopython
 
