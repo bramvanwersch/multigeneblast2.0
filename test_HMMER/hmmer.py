@@ -1,11 +1,13 @@
 #!/usr/bin/python3
 
 # import statements
+import argparse
+import gzip
 import os
 import sys
 import urllib.request
 import urllib.error
-import argparse
+
 from Bio import SearchIO
 
 # needed this or else utilities import did not work
@@ -36,15 +38,33 @@ def check_pfam_db(path, file_names):
             counter += 1
 
 
-def fetch_profiles(keys, db_path, file_names):
+def get_full_accession_number(keys_file, db_path):
+    # Read the file with incomplete acc-numbers
+    file = open(keys_file, 'r')
+    key_lines = file.readlines()
+    file.close()
+    # Read dat.gz file with complete acc-numbers
+    dat_gz_file = gzip.open(db_path + 'Pfam-A.hmm.dat.gz', 'r')
+    content = str(dat_gz_file.read()).split("\\n")
+    # Select the incomplete ones from the dat.gz info
+    # Only appends to list when it is found in dat.gz file
+    profile_ls = []
+    for text in content:
+        for key in key_lines:
+            if key.strip() in text:
+                profile_ls.append(text.split(" ")[-1])
+    return key_lines
+
+
+def fetch_profiles(keys, db_folder):
     """Fetch hmm profiles from db and save in a file
 
-    :param keys: String, Path to file with accession numbers
-    :param db: String, path to Pfam db
     """
     print("Fetching profiles from Pfam-A file")
-    command_fetch_profile = "hmmfetch -o key.hmm -f {} {}".format(db, keys)
-    subprocess.run(command_fetch_profile, shell=True)
+    get_full_accession_number(keys, db_folder)
+    #command_fetch_profile = "hmmfetch -o {}\key.hmm -f {} {}".format(db_path,
+    #                                            db_path+file_names[0], keys)
+    #subprocess.run(command_fetch_profile, shell=True)
 
 
 def run_hmmsearch(hmm_prof, db):
@@ -61,17 +81,17 @@ def run_hmmsearch(hmm_prof, db):
 
 def main():
     # this is for testing, change when implementing in main code #
-    pfam_db = "/mnt/d/Uni/Thesis_MultiGeneBlast/"
+    pfam_db_folder = "/mnt/d/Uni/Thesis_MultiGeneBlast/"
     names_file = ["Pfam-A.hmm.gz", "Pfam-A.hmm.dat.gz"]
 
     # step 1: check if pfam db is present and if not download it
-    check_pfam_db(pfam_db, names_file)
+    check_pfam_db(pfam_db_folder, names_file)
 
     # Step 2: Run hmmsearch
     # 2a: Run with pfam accession name(s): use hmmfetch to get profiles from
     # Pfam-A db.
     key_file = "/mnt/d/Uni/Thesis_MultiGeneBlast/key_file.txt"
-    fetch_profiles(key_file, pfam_db, names_file)
+    fetch_profiles(key_file, pfam_db_folder)
 
     # 2b: Run hmmsearch
     path_key = "/mnt/d/Uni/Thesis_MultiGeneBlast/key.hmm"
