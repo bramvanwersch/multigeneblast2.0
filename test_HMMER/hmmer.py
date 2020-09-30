@@ -39,6 +39,12 @@ def check_pfam_db(path, file_names):
 
 
 def get_full_accession_number(keys_file, db_path):
+    """Get full accession number of Pfam profiles
+
+    :param keys_file: String, Path to file with acc-nr
+    :param db_path: String, Path to dat.gz file with the full acc-nr
+    :return: key_lines: List, string of full acc-number
+    """
     # Read the file with incomplete acc-numbers
     file = open(keys_file, 'r')
     key_lines = file.readlines()
