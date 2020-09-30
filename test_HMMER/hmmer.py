@@ -17,6 +17,7 @@ def check_pfam_db(path, file_names):
     """Check f Pfam-A db exists else download
 
     :param path: String, path where to check
+    :param file_names: list of strings, names of file in a list
     """
     url_ls = ["ftp://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam33.1/Pfam-A.hmm.gz",
               "ftp://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam33.1/Pfam-A.hmm.dat.gz"]
@@ -35,7 +36,7 @@ def check_pfam_db(path, file_names):
             counter += 1
 
 
-def fetch_profiles(keys, db):
+def fetch_profiles(keys, db_path, file_names):
     """Fetch hmm profiles from db and save in a file
 
     :param keys: String, Path to file with accession numbers
@@ -70,7 +71,7 @@ def main():
     # 2a: Run with pfam accession name(s): use hmmfetch to get profiles from
     # Pfam-A db.
     key_file = "/mnt/d/Uni/Thesis_MultiGeneBlast/key_file.txt"
-    fetch_profiles(key_file, pfam_db)
+    fetch_profiles(key_file, pfam_db, names_file)
 
     # 2b: Run hmmsearch
     path_key = "/mnt/d/Uni/Thesis_MultiGeneBlast/key.hmm"
