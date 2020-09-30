@@ -59,18 +59,25 @@ def get_full_accession_number(keys_file, db_path):
         for key in key_lines:
             if key.strip() in text:
                 profile_ls.append(text.split(" ")[-1])
-    return key_lines
+    return profile_ls
 
 
 def fetch_profiles(keys, db_folder):
     """Fetch hmm profiles from db and save in a file
 
+    :param keys: String, Path to file with acc-nr
+    :param db_folder: String, path where db are stored
     """
     print("Fetching profiles from Pfam-A file")
-    get_full_accession_number(keys, db_folder)
-    #command_fetch_profile = "hmmfetch -o {}\key.hmm -f {} {}".format(db_path,
-    #                                            db_path+file_names[0], keys)
-    #subprocess.run(command_fetch_profile, shell=True)
+    ls_keys = get_full_accession_number(keys, db_folder)
+    if not ls_keys:
+        print("No profiles could be selected from Pfam-A")
+    else:
+        print(ls_keys)
+        for key in ls_keys:
+            command_fetch_profile = "hmmfetch -o {} {} {}".format(db_folder +
+                                    key, db_folder + "Pfam-A.hmm.gz", key)
+            subprocess.run(command_fetch_profile, shell=True)
 
 
 def run_hmmsearch(hmm_prof, db):
