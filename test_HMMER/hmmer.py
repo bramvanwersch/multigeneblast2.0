@@ -98,6 +98,12 @@ def run_hmmsearch(profile_names, path, db_name="UP000008308_263358.fasta.gz"):
 
 
 def parse_hmmer_output():
+    """Parse hmmsearch output
+
+    :return: hit_info: Nested list, information about the hit results
+                        - Hit_id, hit description, evalue, bit-score
+    """
+    hit_info = []
     for record in SearchIO.parse("PF00491.22_results.txt", 'hmmer3-text'):
         query_id = record.id
         hits = record.hits
@@ -105,10 +111,12 @@ def parse_hmmer_output():
         if num_hits > 0:
             for hit in hits:
                 hit_id = hit.id  # hit sequence ID
-                hmm_description = hit.description  # hit sequence description
+                hit_description = hit.description  # hit sequence description
                 current_evalue = hit.evalue  # hit-level e-value
                 current_bitscore = hit.bitscore # hit-level score
-                #print(hit_id,hmm_description, current_bitscore, current_evalue)
+                #print(hit_id,hit_description, current_bitscore, current_evalue)
+                hit_info.append([hit_id, hit_description, current_evalue, current_bitscore])
+    return hit_info
 
 def main():
     # All paths below are used for testing #
