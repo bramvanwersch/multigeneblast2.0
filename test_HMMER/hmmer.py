@@ -89,14 +89,26 @@ def run_hmmsearch(profile_names, path, db_name="UP000008308_263358.fasta.gz"):
     :param db_name: String, Name of used database, needs to be in fasta.gz
                     format
     """
-    print("Preforming hmmsearch")
-    # -o results.txt -> add to save in file
+    print("\nPreforming hmmsearch")
     for prof in profile_names:
         print(prof + ".hmm")
         command_run_hmmsearch = "hmmsearch -o {} {} {} ".format(prof +
                             "_results.txt", path + prof + ".hmm", path + db_name)
         subprocess.run(command_run_hmmsearch, shell=True)
 
+
+def parse_hmmer_output():
+    for record in SearchIO.parse("PF00491.22_results.txt", 'hmmer3-text'):
+        query_id = record.id
+        hits = record.hits
+        num_hits = len(hits)
+        if num_hits > 0:
+            for hit in hits:
+                hit_id = hit.id  # hit sequence ID
+                hmm_description = hit.description  # hit sequence description
+                current_evalue = hit.evalue  # hit-level e-value
+                current_bitscore = hit.bitscore # hit-level score
+                #print(hit_id,hmm_description, current_bitscore, current_evalue)
 
 def main():
     # All paths below are used for testing #
@@ -110,14 +122,14 @@ def main():
     # 2a: Run with pfam accession name(s): use hmmfetch to get profiles from
     # Pfam-A db.
     key_file = "/mnt/d/Uni/Thesis_MultiGeneBlast/key_file.txt"
-    names_profile = fetch_profiles(key_file, pfam_db_folder)
+    #names_profile = fetch_profiles(key_file, pfam_db_folder)
 
     # 2b: Run hmmsearch
     path_db = "/mnt/d/Uni/Thesis_MultiGeneBlast/UP000008308_263358.fasta.gz"
-    run_hmmsearch(names_profile, pfam_db_folder)
+    #run_hmmsearch(names_profile, pfam_db_folder)
 
     # step 3: parse results with biopython package
-
+    parse_hmmer_output()
 
 if __name__ == '__main__':
     main()
