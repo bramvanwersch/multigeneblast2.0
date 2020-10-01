@@ -67,6 +67,7 @@ def fetch_profiles(keys, db_folder):
 
     :param keys: String, Path to file with acc-nr
     :param db_folder: String, path where db are stored
+    :return ls_keys: List, strings with acc-numbers
     """
     print("Fetching profiles from Pfam-A file")
     ls_keys = get_full_accession_number(keys, db_folder)
@@ -76,8 +77,9 @@ def fetch_profiles(keys, db_folder):
         print(ls_keys)
         for key in ls_keys:
             command_fetch_profile = "hmmfetch -o {} {} {}".format(db_folder +
-                                    key, db_folder + "Pfam-A.hmm.gz", key)
+                            key + ".hmm", db_folder + "Pfam-A.hmm.gz", key)
             subprocess.run(command_fetch_profile, shell=True)
+    return ls_keys
 
 
 def run_hmmsearch(hmm_prof, db):
@@ -93,7 +95,7 @@ def run_hmmsearch(hmm_prof, db):
 
 
 def main():
-    # this is for testing, change when implementing in main code #
+    # All paths below are used for testing #
     pfam_db_folder = "/mnt/d/Uni/Thesis_MultiGeneBlast/"
     names_file = ["Pfam-A.hmm.gz", "Pfam-A.hmm.dat.gz"]
 
