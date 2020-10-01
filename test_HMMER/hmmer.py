@@ -74,24 +74,28 @@ def fetch_profiles(keys, db_folder):
     if not ls_keys:
         print("No profiles could be selected from Pfam-A")
     else:
-        print(ls_keys)
         for key in ls_keys:
             command_fetch_profile = "hmmfetch -o {} {} {}".format(db_folder +
-                            key + ".hmm", db_folder + "Pfam-A.hmm.gz", key)
+                              key + ".hmm", db_folder + "Pfam-A.hmm.gz", key)
             subprocess.run(command_fetch_profile, shell=True)
     return ls_keys
 
 
-def run_hmmsearch(hmm_prof, db):
-    """Run hmmsearch of hmmer3
+def run_hmmsearch(profile_names, path, db_name="UP000008308_263358.fasta.gz"):
+    """Run the hmmsearch command
 
-    :param hmm_prof: String, Path to rofile to search
-    :param db: String, Path to db in fasta format
+    :param profile_names: List, String of names of used profiles
+    :param path: String, Path to folder where all db and profiles are
+    :param db_name: String, Name of used database, needs to be in fasta.gz
+                    format
     """
     print("Preforming hmmsearch")
     # -o results.txt -> add to save in file
-    command_run_hmmsearch = "hmmsearch {} {}".format(hmm_prof, db)
-    subprocess.run(command_run_hmmsearch, shell=True)
+    for prof in profile_names:
+        print(prof + ".hmm")
+        command_run_hmmsearch = "hmmsearch -o {} {} {} ".format(prof +
+                            "_results.txt", path + prof + ".hmm", path + db_name)
+        subprocess.run(command_run_hmmsearch, shell=True)
 
 
 def main():
@@ -106,12 +110,11 @@ def main():
     # 2a: Run with pfam accession name(s): use hmmfetch to get profiles from
     # Pfam-A db.
     key_file = "/mnt/d/Uni/Thesis_MultiGeneBlast/key_file.txt"
-    fetch_profiles(key_file, pfam_db_folder)
+    names_profile = fetch_profiles(key_file, pfam_db_folder)
 
     # 2b: Run hmmsearch
-    path_key = "/mnt/d/Uni/Thesis_MultiGeneBlast/key.hmm"
     path_db = "/mnt/d/Uni/Thesis_MultiGeneBlast/UP000008308_263358.fasta.gz"
-    #run_hmmsearch(path_key, path_db)
+    run_hmmsearch(names_profile, pfam_db_folder)
 
     # step 3: parse results with biopython package
 
