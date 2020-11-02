@@ -9,7 +9,9 @@ from constants import *
 from utilities import determine_cpu_nr
 from gui_utility import *
 
+
 MGBPATH = get_mgb_path()
+
 
 def read_input_file_gui(path):
     """
@@ -18,17 +20,17 @@ def read_input_file_gui(path):
     :param path: an abosulte string path to the file
     :return: a list of genes and the size of the query
     """
-    #the user clicked cancel
+    # the user clicked cancel
     if len(path) == 0:
         return [], 0
     root, ext = os.path.splitext(path)
     genes = []
-    dna_seq_lenght = 0
+    dna_seq_length = 0
     if ext.lower() in GENBANK_EXTENSIONS:
         try:
             gbf = GenbankFile(path=path)
             genes = list(gbf.proteins.keys())
-            dna_seq_lenght = gbf.lenght
+            dna_seq_length = gbf.lenght
         except Exception as e:
             showerror("Reading file error", str(e))
 
@@ -37,10 +39,11 @@ def read_input_file_gui(path):
             gb_file_text = embl_to_genbank(path)
             gbf = GenbankFile(file_text=gb_file_text)
             genes = list(gbf.proteins.keys())
-            dna_seq_lenght = gbf.lenght
+            dna_seq_length = gbf.lenght
         except Exception as e:
             showerror("Reading file error", str(e))
-    return genes, dna_seq_lenght
+    return genes, dna_seq_length
+
 
 def checkfasta(infile):
     """
@@ -50,18 +53,19 @@ def checkfasta(infile):
     :param infile: an absolute path to a fasta file
     :return: a boolean telling if the file is valid or not
     """
-    with open(infile,"r") as f:
+    with open(infile, "r") as f:
         content = f.read()
     entries = [">" + entry for entry in content.split(">")][1:]
     if len(entries) < 2:
-        showerror("Fasta read error","File Error","Please provide a FASTA file "
-                "with multiple entries, representing the amino acid sequences of your query genes.")
+        showerror("Fasta read error", "Please provide a FASTA file with multiple entries,"
+                                      " representing the amino acid sequences of your query genes.")
         return False
     for entry in entries:
         entryseq = entry.partition("\n")[2]
-        if (entryseq.count('A') + entryseq.count('a') + entryseq.count('C') + entryseq.count('c') + entryseq.count('G') + entryseq.count('g') + entryseq.count('T') + entryseq.count('t')) > (0.5 * len(entryseq)):
-            showerror("Fasta read error","Nucleotide FASTA sequences provided. "
-                    "Please provide a multi-FASTA file with amino acid sequences.")
+        if (entryseq.count('A') + entryseq.count('a') + entryseq.count('C') + entryseq.count('c') + entryseq.count('G')
+             + entryseq.count('g') + entryseq.count('T') + entryseq.count('t')) > (0.5 * len(entryseq)):
+            showerror("Fasta read error", "Nucleotide FASTA sequences provided. "
+                                          "Please provide a multi-FASTA file with amino acid sequences.")
             return False
     return True
 
@@ -75,12 +79,12 @@ class MainMultiGeneBlastGui(Frame):
         """
         :param master: Tk object
         """
-        Frame.__init__(self, master)
+        super().__init__(master)
         self.master = master
 
         self.grid(padx=20, pady=20)
 
-        #setup the menu widgets
+        # setup the menu widgets
         self.__setup_menu(master)
 
         self.__database_file_label = StringVar()
@@ -99,11 +103,11 @@ class MainMultiGeneBlastGui(Frame):
         self.searchtype_explanation.set("Homology search: Find operons or gene clusters homologous to"
                                         " a known operon or gene cluster")
 
-        #values for homology search when reading a query
+        # values for homology search when reading a query
         self.geneslist = []
         self.dnaseqlength = 0
 
-        #innitiate the widgets of the main window
+        # innitiate the widgets of the main window
         self.__innitialize_widgets()
 
     def __setup_menu(self, master):
@@ -117,8 +121,6 @@ class MainMultiGeneBlastGui(Frame):
 
         filemenu = Menu(menu)
         menu.add_cascade(label="File", menu=filemenu)
-        # filemenu.add_command(label="Open input file", command=self.file_open)
-        # filemenu.add_command(label="Select __database_file_label", command=db_open)
         filemenu.add_command(label="Exit", command=master.quit)
 
         downloadmenu = Menu(menu)
@@ -132,8 +134,6 @@ class MainMultiGeneBlastGui(Frame):
                            command=lambda: self.makedb_file())
         dbmenu.add_command(label="Create database from online GenBank entries",
                            command=lambda: self.makedb_ncbi())
-        # dbmenu.add_command(label="Create database from GenBank subdivisions",
-        #                    command=makedb_gb)
 
         helpmenu = Menu(menu)
         menu.add_cascade(label="Help", menu=helpmenu)
@@ -167,28 +167,28 @@ class MainMultiGeneBlastGui(Frame):
 
         base_selection_frame.grid_columnconfigure(1, minsize=300)
 
-        #Database selection
+        # Database selection
         if "genbank_mf.pal" in os.listdir("."):
             self.__database_file_label.set((os.getcwd() + os.sep + "genbank_mf").replace("\\", "/"))
         else:
             self.__database_file_label.set("<No database selected>")
-        database_label = Label(base_selection_frame, text = "Current database:")
+        database_label = Label(base_selection_frame, text="Current database:")
         database_label.grid(row=1, column=0, sticky=W, padx=5)
-        database_text = Label(base_selection_frame, textvariable = self.__database_file_label)
+        database_text = Label(base_selection_frame, textvariable=self.__database_file_label)
         database_text.grid(row=1, column=1, sticky=W)
 
-        database_button = Button(base_selection_frame, text = "Open database file", command=self.db_open)
-        database_button.grid(row=1,column=2, pady=5, sticky=W)
+        database_button = Button(base_selection_frame, text="Open database file", command=self.db_open)
+        database_button.grid(row=1, column=2, pady=5, sticky=W)
 
-        #Input file selection
+        # Input file selection
         self.__input_file_label.set("<No file selected>")
-        infile_label = Label(base_selection_frame, text = "Current query input file: ")
-        infile_label.grid(row=2,column=0, sticky=W, padx=5)
-        infile_text = Label(base_selection_frame, textvariable = self.__input_file_label)
-        infile_text.grid(row=2,column=1, sticky=W)
+        infile_label = Label(base_selection_frame, text="Current query input file: ")
+        infile_label.grid(row=2, column=0, sticky=W, padx=5)
+        infile_text = Label(base_selection_frame, textvariable=self.__input_file_label)
+        infile_text.grid(row=2, column=1, sticky=W)
 
-        infile_button = Button(base_selection_frame, text = "Open input file", command=self.file_open)
-        infile_button.grid(row=2,column=2, pady=5, sticky=W)
+        infile_button = Button(base_selection_frame, text="Open input file", command=self.file_open)
+        infile_button.grid(row=2, column=2, pady=5, sticky=W)
 
         # Output folder selection
         display_location = MGBPATH
@@ -216,14 +216,14 @@ class MainMultiGeneBlastGui(Frame):
         archradio.grid(row=5, column=1, padx=50, pady=10)
         homradio.select()
 
-        #frame to hold all the search options
+        # frame to hold all the search options
         options_frame = Frame(self)
         options_frame.grid(row=2, column=0)
 
-        ###widgets for homology search
+        # WIDGETS FOR HOMOLOGY SEARCH
         self.homology_frame = LabelFrame(options_frame, borderwidth=2, relief=GROOVE, text="Homology options:")
         self.homology_frame.grid(row=0, columnspan=3, padx=5, pady=10, sticky=W)
-        self.homology_frame.columnconfigure(0, minsize= 300)
+        self.homology_frame.columnconfigure(0, minsize=300)
 
         # Genes selection
         self.gene_selection_lbl = Label(self.homology_frame, text="Genes to search (locus tags / accession numbers):")
@@ -234,19 +234,21 @@ class MainMultiGeneBlastGui(Frame):
         # Start nt selection
         self.nuc_start_lbl = Label(self.homology_frame, text="Nucleotide start position of fragment to search:")
         self.nuc_start_lbl.grid(row=7, column=0, sticky=W, pady=5)
-        self.cstart = ScaleBar(self.homology_frame, 0, self.dnaseqlength, 0, scale_command=self.selectedgenes.clear_selection)
+        self.cstart = ScaleBar(self.homology_frame, 0, self.dnaseqlength, 0,
+                               scale_command=self.selectedgenes.clear_selection)
         self.cstart.grid(row=7, column=1, sticky=W)
 
         # End nt selection
         self.nuc_end_lbl = Label(self.homology_frame, text="Nucleotide end position of fragment to search:")
         self.nuc_end_lbl.grid(row=8, column=0, pady=3, sticky=W)
-        self.cend = ScaleBar(self.homology_frame, 0, self.dnaseqlength, self.dnaseqlength, scale_command=self.selectedgenes.clear_selection)
+        self.cend = ScaleBar(self.homology_frame, 0, self.dnaseqlength, self.dnaseqlength,
+                             scale_command=self.selectedgenes.clear_selection)
         self.cend.grid(row=8, column=1, sticky=W)
 
-        or_label = Label(self.homology_frame, text = "OR")
+        or_label = Label(self.homology_frame, text="OR")
         or_label.grid(row=9, column=1, pady=3)
 
-        ###general input widgets
+        # GENERAL INPUT WIDGETS
         general_widgets_frame = LabelFrame(options_frame, borderwidth=2, relief=GROOVE, text="General options:")
         general_widgets_frame.grid(row=1, columnspan=3, padx=5, pady=10)
         general_widgets_frame.grid_columnconfigure(0, minsize=300)
@@ -301,7 +303,8 @@ class MainMultiGeneBlastGui(Frame):
 
         button_frame = Frame(self)
         button_frame.grid(row=3, column=0)
-        #Run button to start analysis
+
+        # Run button to start analysis
         Button(button_frame, text="Run MultiGeneBlast", command=self.run_multigeneblast).pack(side=BOTTOM, pady=20)
 
     def setup_search_type_widgets(self):
@@ -341,9 +344,10 @@ class MainMultiGeneBlastGui(Frame):
         file into the GUI
         """
         if self.searchtype.get() == "homology":
-            location = tkinter.filedialog.askopenfilename(filetypes=(("GenBank files", ('*.gbk', '*.gb', '*.genbank')),("EMBL files", ('*.embl', '*.emb'))))
+            location = tkinter.filedialog.askopenfilename(filetypes=(("GenBank files", ('*.gbk', '*.gb', '*.genbank')),
+                                                                     ("EMBL files", ('*.embl', '*.emb'))))
 
-            #when canceling
+            # when canceling
             if location == "":
                 return
 
@@ -356,14 +360,14 @@ class MainMultiGeneBlastGui(Frame):
                 location = "<No file selected>"
         else:
             location = tkinter.filedialog.askopenfilename(filetypes=(("FASTA files", ('*.fasta', '*.fas', '*.fa')),
-                                                                     ("All file types", ('*.*'))))
+                                                                     ("All file types", '*.*')))
             # when canceling
             if location == "":
                 return
             if not checkfasta(location):
                 location = "<No file selected>"
 
-        #set the location
+        # set the location
         display_location = location
         if len(location) > 50:
             display_location = "{}...".format(location[:47])
@@ -374,10 +378,10 @@ class MainMultiGeneBlastGui(Frame):
         """
         Select a database and check if all files are present
         """
-        location = tkinter.filedialog.askopenfilename(filetypes=(("MGB database files",('*.pal','*.nal')),("MGB database",())))
+        location = tkinter.filedialog.askopenfilename(filetypes=(("MGB database files", ('*.pal', '*.nal')),
+                                                                 ("MGB database", ())))
         if location == "":
             return
-        root, ext = os.path.splitext(location)
         to_path, db_file = os.path.split(location)
         dbname, ext = os.path.splitext(db_file)
 
@@ -391,8 +395,7 @@ class MainMultiGeneBlastGui(Frame):
         for file in expected_files:
             if file not in db_folder:
                 showerror("Missing database file", "The following file {} is missing"
-                        " for the database with alias file {}".format(file, db_file))
-                location = "<No database selected>"
+                                                   " for the database with alias file {}".format(file, db_file))
                 return
 
         display_location = location
@@ -406,7 +409,7 @@ class MainMultiGeneBlastGui(Frame):
         Select the output directory.
         """
         path = select_out_directory()
-        if path == None:
+        if path is None:
             return
         display_selected = path
         if len(path) > 50:
@@ -419,8 +422,8 @@ class MainMultiGeneBlastGui(Frame):
         Called when clicking the button to run multigeneblast
         """
         command = self.__construct_mgb_command()
-        if command != None:
-            #if command finished succesfully
+        if command is not None:
+            # if command finished succesfully
             if self.__run_mgb_command(command) == 0:
                 self.open_final_webpage()
 
@@ -430,12 +433,13 @@ class MainMultiGeneBlastGui(Frame):
 
         :return: a string that is the full command using the options of the user
         """
-        #first check if in database and out are defined
+        # first check if in database and out are defined
         if self.input_file_path == "" or self.database_file_path == "" or self.__outdir_path == "":
-            showerror("Input incomplete Error", "Please fill in the input query file, the database file and the output directory")
+            showerror("Input incomplete Error",
+                      "Please fill in the input query file, the database file and the output directory")
             return None
 
-        #if there are genes selected use genes, otherwise use locations
+        # if there are genes selected use genes, otherwise use locations
         filter_options = ""
         if self.searchtype.get() == "homology":
 
@@ -462,7 +466,7 @@ class MainMultiGeneBlastGui(Frame):
 
         base_command = "{}{}multigeneblast.py ".format(MGBPATH, os.sep)
 
-        #change some values to adhere to the correct format of the command line tool
+        # change some values to adhere to the correct format of the command line tool
         if self.muscle.getval() == 0:
             muscle_val = "n"
         else:
@@ -473,9 +477,10 @@ class MainMultiGeneBlastGui(Frame):
         else:
             nr_pages = int(nr_pages) + 1
 
-        general_options = '-in "{}" -db "{}" -out "{}" -c {} -hpg {} -msc {} -dkb {} -mpi {} -m {} -sw {} -op {}'.format(self.input_file_path,
-                                                                                                                         self.database_file_path, self.__outdir_path + os.sep + OUT_FOLDER_NAME, self.cores.getval(), self.hitspergene.getval(), self.seqcov.getval(),
-                                                                                                                         self.distancekb.getval(), self.percid.getval(), muscle_val, self.syntenyweight.getval(), nr_pages)
+        general_options = '-in "{}" -db "{}" -out "{}" -c {} -hpg {} -msc {} -dkb {} -mpi {} -m {} -sw {} -op {}'\
+            .format(self.input_file_path, self.database_file_path, self.__outdir_path + os.sep + OUT_FOLDER_NAME,
+                    self.cores.getval(), self.hitspergene.getval(), self.seqcov.getval(), self.distancekb.getval(),
+                    self.percid.getval(), muscle_val, self.syntenyweight.getval(), nr_pages)
         full_command = base_command + filter_options + general_options
         return full_command
 
@@ -488,12 +493,12 @@ class MainMultiGeneBlastGui(Frame):
 
         try:
             os.mkdir(self.__outdir_path + os.sep + OUT_FOLDER_NAME)
-        except:
+        except Exception:
             pass
         try:
             dir_files = os.listdir(self.__outdir_path + os.sep + OUT_FOLDER_NAME)
         except FileNotFoundError:
-            showerror("Outdir Error", "Outir does not exist anymore. Please select a different one.")
+            showerror("Outdir Error", "Outdir does not exist anymore. Please select a different one.")
             return False
         if len(dir_files) > 0:
             if not askyesno("Overwrite files", "The directory already exists files may be overwritten. Continue?"):
@@ -515,8 +520,8 @@ class MainMultiGeneBlastGui(Frame):
                                '"file://' + self.__outdir_path + os.sep + OUT_FOLDER_NAME + os.sep + 'visual' + os.sep +
                                'displaypage1.xhtml" with a web browser\n')
         elif not expected:
-            outbox.text_insert("MultiGeneBlast experienced a problem. Please click"
-                " the button below to send an error report, so we can solve the underlying problem.\n")
+            outbox.text_insert("MultiGeneBlast experienced a problem. Please click the button below to send an error"
+                               " report, so we can solve the underlying problem.\n")
         return exit_code
 
     def open_final_webpage(self):
@@ -524,30 +529,30 @@ class MainMultiGeneBlastGui(Frame):
         Try to open an xhtml file in a browser
         """
         display_page_1 = self.__outdir_path + os.sep + OUT_FOLDER_NAME + os.sep + 'visual' + os.sep + 'displaypage1.xhtml'
-        if sys.platform == ('win32'):
+        if sys.platform == 'win32':
             try:
                 os.startfile(display_page_1)
-            except:
+            except Exception:
                 pass
         else:
             try:
                 firefox = webbrowser.get('firefox')
                 firefox.open_new_tab("file://" + display_page_1)
-            except:
+            except Exception:
                 pass
             try:
                 safari = webbrowser.get('safari')
                 safari.open_new_tab("file://" + display_page_1)
-            except:
+            except Exception:
                 pass
             try:
                 chrome = webbrowser.get('/usr/bin/google-chrome %s')
                 chrome.open_new_tab("file://" + display_page_1)
-            except:
+            except Exception:
                 pass
             try:
                 webbrowser.open_new_tab("file://" + display_page_1)
-            except:
+            except Exception:
                 pass
 
 
@@ -556,15 +561,14 @@ def maingui():
     Starting point of the gui and mainloop
     """
     root = Tk()
-    if sys.platform == ('win32'):
+    if sys.platform == 'win32':
         try:
-            root.iconbitmap(default='mgb.ico')
-        except:
+            root.iconbitmap(default='{}{}visual_copys{}mgb.ico'.format(MGBPATH, os.sep, os.sep))
+        except Exception:
             pass
     root.title('MultiGeneBlast')
-    # root.geometry("%dx%d%+d%+d" % (750, 750, 0, 0))
 
-    mg = MainMultiGeneBlastGui(root)
+    MainMultiGeneBlastGui(root)
     root.mainloop()
 
 
