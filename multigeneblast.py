@@ -1,34 +1,36 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
+
+"""
+The functions used to run multigeneblast. Also the file called to run multigeneblast from the command line
+
+Original creator: Marnix Medena
+Recent contributor: Bram van Wersch
+
+Copyright (c) 2012 Marnix H. Medema
+License: GNU General Public License v3 or later
+A copy of GNU GPL v3 should have been included in this software package in LICENSE.txt.
+"""
+
 
 # imports
-import os
-from os import system
 import tarfile
-import sys
-import time
-import multiprocessing
 from multiprocessing import Process, freeze_support
 import random
-import fileinput
-import subprocess
 import argparse
-import logging
 from collections import OrderedDict
 import pickle as pickle
-import shutil
 import colorsys
-import urllib
-import http
 
-#own imports
+# own imports
 from databases import GenbankFile, embl_to_genbank, Protein
 from visualisation import ClusterCollectionSvg, create_xhtml_file
 from utilities import *
 from constants import *
 
-#constant specifically required for mbg
+# constant specifically required for mbg
 MGBPATH = get_mgb_path()
 EXEC = get_exec_folder()
+
 
 def write_fasta(protein_list, file):
     """
@@ -38,13 +40,14 @@ def write_fasta(protein_list, file):
     :param file: the output file
     """
     try:
-       with open(file,"w") as out_file:
+        with open(file, "w") as out_file:
             for prot in protein_list:
                 out_file.write(prot.fasta_text())
     except Exception:
         logging.critical("No fasta file created for sequences with file name {}".format(file))
         raise MultiGeneBlastException("Cannot open file {}".format(file))
     logging.debug("Saved file {} at {}.".format(file, os.getcwd()))
+
 
 #### STEP 1: PARSE OPTIONS ####
 def get_arguments():
@@ -53,92 +56,69 @@ def get_arguments():
 
     :return: an Option object that holds the options specified by the user
     """
-    parser = argparse.ArgumentParser(description='Run multigeneblast on a '
-                                'specified database using a specified query.',
-                                     epilog="-from, -to and -genes are "
-                                            "mutually exclusive")
-    parser.add_argument("-i", "-in", help="Query file name: GBK/EMBL file for "
-                                "homology search,FASTA file with multiple"
-                                " protein sequences for architecture search",
-                        required=True, type=check_in_file, metavar="file path")
+    parser = argparse.ArgumentParser(description='Run multigeneblast on a specified database using a specified query.',
+                                     epilog="-from, -to and -genes are mutually exclusive")
+    parser.add_argument("-i", "-in", help="Query file name: GBK/EMBL file for homology search,FASTA file with multiple"
+                                          " protein sequences for architecture search", required=True,
+                        type=check_in_file, metavar="file path")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("-f", "-from", help="Start position of query region", type=int
-                       , metavar="Int")
-    #nargs allows one or more arguments
-    group.add_argument("-g", "-genes", help="Accession codes of genes constituting "
-                                      "query multigene module", nargs='+'
-                       , metavar="space-separted gene identifiers")
+    group.add_argument("-f", "-from", help="Start position of query region", type=int, metavar="Int")
+    group.add_argument("-g", "-genes", help="Accession codes of genes constituting query multigene module", nargs='+',
+                       metavar="space-separted gene identifiers")
 
     parser.add_argument("-t", "-to", help="End position of query region", type=int,
                         metavar="Int")
-
-    parser.add_argument("-o", "-out", help="Output folder path in which results will"
-                                     " be stored", type=check_out_folder, metavar="file path")
-    parser.add_argument("-db", "-database", help="Blast database to be queried",
-                        required=True, type=check_db_folder, metavar="file path")
-
-    parser.add_argument("-c", "-cores", help="Number of parallel CPUs to use for "
-                                       "threading (default: all)",
+    parser.add_argument("-o", "-out", help="Output folder path in which results will be stored", type=check_out_folder,
+                        metavar="file path")
+    parser.add_argument("-db", "-database", help="Blast database to be queried", required=True, type=check_db_folder,
+                        metavar="file path")
+    parser.add_argument("-c", "-cores", help="Number of parallel CPUs to use for threading (default: all)",
                         type=determine_cpu_nr, default="all", metavar="Int")
-    parser.add_argument("-hpg", "-hitspergene", help="Number of Blast hits per query "
-                                             "gene to be taken into account "
-                                             "(default: 250), max = 10000",
-                        type=int, choices=range(50,10001), default=250,
-                        metavar="[50 - 10000]")
-    parser.add_argument("-msc", "-minseqcov", help="Minimal %% coverage of a Blast hit"
-                                           " on hit protein sequence to be "
-                                           "taken into account (default: 25)",
-                        type=int, choices=range(0,101), default=25,
-                        metavar="[0 - 100]")
-    parser.add_argument("-mpi", "-minpercid", help="Minimal %% identity of a Blast hit"
-                                           " on hit protein sequence to be "
-                                           "taken into account (default: 30)",
-                        type=int, choices=range(0,101), default=30,
-                        metavar="[0 - 100]")
-    parser.add_argument("-dkb", "-distancekb", help="Maximum kb distance between two"
-                                            " blast hits to be counted as"
-                                            " belonging to the same locus"
-                                            " (default: 10)", default=20,
-                        type=int, choices=range(0,101),
-                        metavar="[0 - 100]")
-    parser.add_argument("-sw", "-syntenywheight", help="Weight of synteny conservation"
-                                               " in hit sorting score: (default"
-                                               ": 0.5)", type=restricted_float,
-                        default=0.5, metavar="Float")
-    parser.add_argument("-m", "-muscle", help="Generate a Muscle multiple sequence"
-                                        " alignments of all hits of each input"
-                                        " gene (default: n)", default="n",
-                        choices=["y","n","Y","N"])
-    parser.add_argument("-op", "-outpages", help="Maximum number of output pages"
-                                          " (with 50 hits each) to be generated"
-                                          " (default: 5)", type=int, default=5,
-                        choices=range(1,41), metavar="[1 - 40]")
-    parser.add_argument("-inf", "-information", help="What level of information"
-                                                     "should be printed while"
-                                                     "running the program "
-                                                     "(default: basic).",
-                        choices=("none", "basic", "all"), default="basic")
+    parser.add_argument("-hpg", "-hitspergene", help="Number of Blast hits per query gene to be taken into account "
+                                                     "(default: 250), max = 10000", type=int, choices=range(50, 10001),
+                        default=250, metavar="[50 - 10000]")
+    parser.add_argument("-msc", "-minseqcov", help="Minimal %% coverage of a Blast hit on hit protein sequence to be "
+                                                   "taken into account (default: 25)", type=int, choices=range(0, 101),
+                        default=25, metavar="[0 - 100]")
+    parser.add_argument("-mpi", "-minpercid", help="Minimal %% identity of a Blast hit on hit protein sequence to be "
+                                                   "taken into account (default: 30)", type=int, choices=range(0, 101),
+                        default=30, metavar="[0 - 100]")
+    parser.add_argument("-dkb", "-distancekb", help="Maximum kb distance between two blast hits to be counted as"
+                                                    " belonging to the same locus (default: 10)", default=20,
+                        type=int, choices=range(0, 101), metavar="[0 - 100]")
+    parser.add_argument("-sw", "-syntenywheight", help="Weight of synteny conservation in hit sorting score: "
+                                                       "(default: 0.5)", type=restricted_float, default=0.5,
+                        metavar="Float")
+    parser.add_argument("-m", "-muscle", help="Generate a Muscle multiple sequence alignments of all hits of each input"
+                                              " gene (default: n)", default="n", choices=["y", "n", "Y", "N"])
+    parser.add_argument("-op", "-outpages", help="Maximum number of output pages (with 50 hits each) to be generated"
+                                                 " (default: 5)", type=int, default=5, choices=range(1, 41),
+                        metavar="[1 - 40]")
+    parser.add_argument("-inf", "-information", help="What level of information should be printed while running the"
+                                                     " program (default: basic).", choices=("none", "basic", "all"),
+                        default="basic")
 
     name_space = parser.parse_args()
 
-    #some final checks for certain arguments, raise error when appropriate
-    #when defining a from without to or a to without a from
+    # some final checks for certain arguments, raise error when appropriate
+    # when defining a from without to or a to without a from
     if (name_space.f is not None and name_space.t is None) or \
-            (name_space.f is None and name_space.t is not  None):
+            (name_space.f is None and name_space.t is not None):
         parser.error("When specifying -from also specify -to.")
 
-    #if the -in argument is a fasta file make sure that no -from, -to or genes are defined
-    #otherwise make sure that they are defined
-    if (any(name_space.i.endswith(ext) for ext in  FASTA_EXTENSIONS) and
-        (name_space.t is not None or name_space.f is not None or name_space.g is not None)):
+    # if the -in argument is a fasta file make sure that no -from, -to or genes are defined
+    # otherwise make sure that they are defined
+    if (any(name_space.i.endswith(ext) for ext in FASTA_EXTENSIONS) and
+            (name_space.t is not None or name_space.f is not None or name_space.g is not None)):
         parser.error("When providing a fasta file (running architecture mode) -f, -t and"
                      " -g arguments cannot be specified")
-    elif (not any(name_space.i.endswith(ext) for ext in  FASTA_EXTENSIONS) and
-        (name_space.t is None and name_space.f is None and name_space.g is None)):
+    elif (not any(name_space.i.endswith(ext) for ext in FASTA_EXTENSIONS) and
+          (name_space.t is None and name_space.f is None and name_space.g is None)):
         parser.error("When providing a genbank or embl file -f, -t or -g should be specified")
 
     user_options = Options(name_space)
     return user_options
+
 
 def check_in_file(path):
     """
@@ -150,7 +130,7 @@ def check_in_file(path):
     :return: the original path
     """
 
-    #make sure relatively defined paths are also correct
+    # make sure relatively defined paths are also correct
     my_path = os.path.abspath(os.path.dirname(__file__))
     path = os.path.join(my_path, path)
 
@@ -161,10 +141,10 @@ def check_in_file(path):
         raise argparse.ArgumentTypeError("Provided query file is not a file.")
     root, ext = os.path.splitext(path)
     if ext.lower() not in GENBANK_EXTENSIONS + EMBL_EXTENSIONS + FASTA_EXTENSIONS:
-        raise argparse.ArgumentTypeError("Please supply input file with valid"
-                                     " GBK / EMBL extension (homology search)"
-                                     " or FASTA extension (architecture search).")
+        raise argparse.ArgumentTypeError("Please supply input file with valid GBK / EMBL extension (homology search)"
+                                         " or FASTA extension (architecture search).")
     return path
+
 
 def check_out_folder(path):
     """
@@ -175,7 +155,7 @@ def check_out_folder(path):
     specified name for the folder contains illegal characters
     :return: the original path
     """
-    #make sure relatively defined paths are also correct
+    # make sure relatively defined paths are also correct
     my_path = os.path.abspath(os.path.dirname(__file__))
     path = os.path.join(my_path, path)
 
@@ -183,10 +163,11 @@ def check_out_folder(path):
     if not os.path.exists(to_path):
         raise argparse.ArgumentTypeError("No valid output directory"
                                          " provided")
-    #assert that the folder name does not contain illegal characters
+    # assert that the folder name does not contain illegal characters
     elif not folder_name.replace("_", "").isalnum():
         raise argparse.ArgumentTypeError("Output directory name is illegal.")
     return path
+
 
 def check_db_folder(path):
     """
@@ -199,7 +180,7 @@ def check_db_folder(path):
     :return: the original path
     """
 
-    #make sure relatively defined paths are also correct
+    # make sure relatively defined paths are also correct
     my_path = os.path.abspath(os.path.dirname(__file__))
     path = os.path.join(my_path, path)
 
@@ -207,7 +188,7 @@ def check_db_folder(path):
         raise argparse.ArgumentTypeError("Database path does not exist")
     to_path, db_file = os.path.split(path)
 
-    #make sure the databae file is of the correct file type
+    # make sure the databae file is of the correct file type
     root, ext = os.path.splitext(path)
     dbname = root.split(os.sep)[-1]
     if ext == ".pal":
@@ -218,7 +199,7 @@ def check_db_folder(path):
         raise argparse.ArgumentTypeError("Incorrect extension {} for database file."
                                          "Should be .pal or .nal".format(ext))
 
-    #make sure the db folder contains all files required
+    # make sure the db folder contains all files required
     db_folder = os.listdir(to_path)
     expected_files = [dbname + ext for ext in expected_extensions]
     for file in expected_files:
@@ -226,6 +207,7 @@ def check_db_folder(path):
             raise argparse.ArgumentTypeError("Expected a file named {} in "
                                              "the database folder".format(file))
     return path
+
 
 def restricted_float(x):
     """
@@ -257,18 +239,16 @@ class Options:
         :param arguments: an Argparser object containing all the options
         specified by the user.
         """
-        #the input file
+        # the input file
         self.infile = arguments.i
         self.run_name = self.__get_run_name()
-        #the output directory
+        # the output directory
         self.outdir = arguments.o
-        #the database to use
-        #TODO make sure this gets configured based on the database input
-        self.db_mode = "local"
+        # the database to use
         self.dbtype, self.db = self.__configure_db_and_type(arguments.db)
 
         self.architecture_mode = self.__check_architecture_mode()
-        #values that define the query
+        # values that define the query
         self.startpos = arguments.f
         self.endpos = arguments.t
         self.ingenes = arguments.g
@@ -308,7 +288,7 @@ class Options:
 
     def __configure_db_and_type(self, database_path):
         to_path, db_file = os.path.split(database_path)
-        #very important to configure. Otherwise BLAST+ cannot find database files
+        # very important to configure. Otherwise BLAST+ cannot find database files
         os.environ['BLASTDB'] = to_path
 
         # make sure the databae file is of the correct file type
@@ -338,13 +318,16 @@ def read_query_file(user_options):
         return query_proteins
     elif any(user_options.infile.lower().endswith(ext) for ext in GENBANK_EXTENSIONS):
         logging.debug("Started parsing genbank query file...")
-        gb_file = GenbankFile(user_options.infile, protein_range=[user_options.startpos, user_options.endpos], allowed_proteins=user_options.ingenes)
+        gb_file = GenbankFile(user_options.infile, protein_range=[user_options.startpos, user_options.endpos],
+                              allowed_proteins=user_options.ingenes)
         query_proteins = gb_file.proteins
         logging.debug("Finished parsing.")
     else:
         logging.debug("Started parsing embl query file")
         genbank_file = embl_to_genbank(user_options.infile)
-        gb_file = GenbankFile(user_options.infile, file_text=genbank_file, protein_range=[user_options.startpos, user_options.endpos], allowed_proteins=user_options.ingenes)
+        gb_file = GenbankFile(user_options.infile, file_text=genbank_file,
+                              protein_range=[user_options.startpos, user_options.endpos],
+                              allowed_proteins=user_options.ingenes)
         query_proteins = gb_file.proteins
         logging.debug("Finished parsing.")
 
@@ -355,6 +338,7 @@ def read_query_file(user_options):
     write_fasta(query_proteins.values(), "query.fasta")
     logging.info("{} proteins have been extracted from the query.".format(len(query_proteins)))
     return query_proteins
+
 
 def query_proteins_from_fasta(fasta_file):
     """
@@ -368,10 +352,10 @@ def query_proteins_from_fasta(fasta_file):
     """
     logging.debug("Started parsing architecture input file")
 
-    #read the fasta file with headers that do not contain forbidden characters
+    # read the fasta file with headers that do not contain forbidden characters
     fasta_entries = fasta_to_dict(fasta_file)
 
-    #make for each fasta sequence a protein object and save them in a dictionary
+    # make for each fasta sequence a protein object and save them in a dictionary
     total_lenght = 0
     query_proteins = {}
     for entry_name in fasta_entries:
@@ -379,7 +363,7 @@ def query_proteins_from_fasta(fasta_file):
         entry_protein = Protein(sequence, total_lenght, entry_name, "+")
         query_proteins[entry_protein.name] = entry_protein
 
-        #+100 for drawing purposes to show the proteins at appropriate places
+        # +100 for drawing purposes to show the proteins at appropriate places
         total_lenght += entry_protein.nt_lenght + 100
     logging.debug("Finished parsing architecture input file")
     return query_proteins
@@ -397,10 +381,8 @@ def internal_blast(user_options, query_proteins):
     coverage and identity as defined by the user.
     """
     logging.info("Finding internal homologs...")
-    internalhomologygroupsdict = {}
-    clusternumber = 1
 
-    #Make Blast db for using the sequences saved in query.fasta in the previous step
+    # Make Blast db for using the sequences saved in query.fasta in the previous step
     make_blast_db_command = "{}{}makeblastdb -in query.fasta -out query_db -dbtype prot".format(EXEC, os.sep)
     logging.debug("Started making internal blast database...")
     try:
@@ -409,7 +391,7 @@ def internal_blast(user_options, query_proteins):
         raise MultiGeneBlastException("Data base can not be created. The input query is most likely invalid.")
     logging.debug("Finished making internal blast database.")
 
-    #Run and parse BLAST search
+    # Run and parse BLAST search
     blast_search_command = "{}{}blastp -db query_db -query query.fasta -outfmt 6" \
                            " -max_target_seqs 1000 -evalue 1e-05 -out internal_input.out" \
                            " -num_threads {}".format(EXEC, os.sep, user_options.cores)
@@ -427,15 +409,15 @@ def internal_blast(user_options, query_proteins):
     except Exception:
         logging.critical("Something went wrong reading the blast output file. Exiting...")
         raise MultiGeneBlastException("Something went wrong reading the blast output file.")
-    #extract blast hits into a dictionary
+    # extract blast hits into a dictionary
     blast_lines = blastoutput.split("\n")[:-1]
     blast_dict = blast_parse(user_options, query_proteins, blast_lines)
 
-    #because query proteins are sorted this is fine
+    # because query proteins are sorted this is fine
     first_protein = list(query_proteins.values())[0]
     last_protein = list(query_proteins.values())[-1]
-    query_cluster = Cluster(first_protein.start, last_protein.stop, first_protein.contig_id, first_protein.contig_description)
-    groups = []
+    query_cluster = Cluster(first_protein.start, last_protein.stop, first_protein.contig_id,
+                            first_protein.contig_description)
     for results in blast_dict.values():
         for blast_result in results:
             query_cluster.add_protein(query_proteins[blast_result.subject], blast_result)
@@ -455,32 +437,32 @@ class BlastResult:
         """
         self.line = tabs
 
-        #protein object that is the query
+        # protein object that is the query
         self.query_protein = query_protein
 
         self.query = tabs[0]
         self.subject = tabs[1]
         self.percent_identity = float(tabs[2])
         self.allignment_lenght = int(tabs[3])
-        #number of mismatches
+        # number of mismatches
         self.mismatch = int(tabs[4])
-        #number of gap openings
+        # number of gap openings
         self.gapopen = int(tabs[5])
 
-        #allignment in query
+        # allignment in query
         self.query_start = int(tabs[6])
         self.query_stop = int(tabs[7])
 
-        #allignment in subject
+        # allignment in subject
         self.subject_start = int(tabs[8])
         self.subject_stop = int(tabs[9])
 
-        #expected value
+        # expected value
         self.evalue = float(tabs[10])
         self.bit_score = float(tabs[11])
 
         # calculated values
-        #percentage of the query that is covered by the subject
+        # percentage of the query that is covered by the subject
         self.percent_coverage = self.allignment_lenght / self.query_protein.aa_lenght * 100
 
     def summary(self):
@@ -506,7 +488,7 @@ def blast_parse(user_options, query_proteins, blast_lines):
     """
     logging.debug("Started parsing blast output...")
 
-    #Filter for unique blast comparissons
+    # Filter for unique blast comparissons
     query_subject_combinations = set()
     unique_blast_results = {}
     for line in blast_lines:
@@ -519,12 +501,12 @@ def blast_parse(user_options, query_proteins, blast_lines):
             blast_result = BlastResult(tabs, query_proteins[query])
             unique_blast_results[blast_result.query + blast_result.subject] = blast_result
 
-    #Filters blastlines to get rid of hits that do not meet criteria and save
-    #hits that do in a dictionary that links a protein name to BlastHit objects.
+    # Filters blastlines to get rid of hits that do not meet criteria and save
+    # hits that do in a dictionary that links a protein name to BlastHit objects.
     internal_homolog_dict = {}
     count = 0
-    #TODO remove the or statement, now here for consistency sake. This statement is in the old version and removing it
-    # removes a number of clusters. It needs to go but will stay for now to keep comparissons accurate
+    # TODO remove the or statement, now here for consistency sake. This statement is in the old version and removing it
+    #  removes a number of clusters. It needs to go but will stay for now to keep comparissons accurate
     for result in unique_blast_results.values():
         if int(result.percent_identity) > user_options.minpercid and\
                 (int(result.percent_coverage) > user_options.minseqcov or result.allignment_lenght > 40):
@@ -536,18 +518,17 @@ def blast_parse(user_options, query_proteins, blast_lines):
     logging.debug("Finished parsing blast output.")
     return internal_homolog_dict
 
-def db_blast(query_proteins, user_options):
+
+def db_blast(user_options):
     """
     Run blast agianst the user defined database
 
-    :param query_proteins: a dictionary of Protein objects
     :param user_options: an Option object with user options
     :return: the blast output
     """
     logging.info("Running NCBI BLAST+ searches on the provided database {}..".format(user_options.db))
     if user_options.dbtype == "prot":
         command_start = "{}{}blastp".format(EXEC, os.sep)
-        outfm = "6"
     else:
         command_start = "{}{}tblastn".format(EXEC, os.sep)
 
@@ -565,8 +546,9 @@ def db_blast(query_proteins, user_options):
         time_passed = time.time() - last_message_time
         if time_passed > 60:
             last_message_time = time.time()
-            logging.info("{:.1f} minutes passed. Blasting still in progress.".format((last_message_time - start_time) / 60))
-    #when the process exits with an error
+            logging.info("{:.1f} minutes passed. Blasting still in progress."
+                         .format((last_message_time - start_time) / 60))
+    # when the process exits with an error
     if db_blast_process.exitcode != 0:
         raise MultiGeneBlastException("Blasting against the provided database returns multiple errors.")
     logging.debug("Finished blasting")
@@ -574,10 +556,11 @@ def db_blast(query_proteins, user_options):
     try:
         with open("{}{}input.out".format(TEMP, os.sep),"r") as f:
             blastoutput = f.read()
-    except:
+    except Exception:
         logging.critical("Cannot open the file that contains the database blast output. Exiting...")
         raise MultiGeneBlastException("Cannot open the file that contains the database blast output.")
     return blastoutput
+
 
 def parse_db_blast(user_options, query_proteins, blast_output):
     """
@@ -603,9 +586,10 @@ def parse_db_blast(user_options, query_proteins, blast_output):
                      "minimum_sequence_coverage ({})"
                      " Extiting...".format(user_options.minpercid,
                                            user_options.minseqcov))
-        #make sure to exit with a non zero code for when using the gui
+        # make sure to exit with a non zero code for when using the gui
         sys.exit(1)
     return blast_dict
+
 
 def filter_nuc_output(blast_output):
     """
@@ -635,20 +619,20 @@ def filter_nuc_output(blast_output):
         c_start, c_stop = int(c_tabs[8]), int(c_tabs[9])
         if c_start > c_stop:
             c_stop, c_start = int(c_tabs[8]), int(c_tabs[9])
-        for line_index in range(len(blast_lines) -1, -1, -1):
+        for line_index in range(len(blast_lines) - 1, - 1, - 1):
             line = blast_lines[line_index]
             tabs = line.split("\t")
             start, stop = int(tabs[8]), int(tabs[9])
             if start > stop:
                 stop, start = int(tabs[8]), int(tabs[9])
-            #no overlap skip
+            # no overlap skip
             if stop - ALLOWED_OVERLAP < c_start or start + ALLOWED_OVERLAP > c_stop:
                 continue
-            #there is overlap and the the size of the line is bigger replace it
+            # there is overlap and the the size of the line is bigger replace it
             elif stop - start > c_stop - c_start:
                 c_tabs = tabs
                 c_start, c_stop = start, stop
-            #overlapping but not bigger remove
+            # overlapping but not bigger remove
             else:
                 blast_lines.pop(line_index)
         if "|" in c_tabs[1]:
@@ -680,6 +664,7 @@ def load_database(blast_dict, user_options):
     else:
         database = load_protein_database(blast_dict, user_options)
     return database
+
 
 def load_protein_database(blast_dict, user_options):
     """
@@ -721,6 +706,7 @@ def load_protein_database(blast_dict, user_options):
     gb_collection = GenbankFile(contigs=contigs)
     return gb_collection
 
+
 def load_nucleotide_database(blast_dict, user_options):
     """
     Load each contig that has at least one blast hit.
@@ -759,6 +745,7 @@ def load_nucleotide_database(blast_dict, user_options):
     file_text = make_genbank_from_nuc_contigs(contigs, hits_per_contig)
     gb_collection = GenbankFile(file_text=file_text)
     return gb_collection
+
 
 def make_genbank_from_nuc_contigs(contigs, hits_per_contig):
     """
@@ -807,12 +794,13 @@ def find_gene_clusters(blast_dict, user_options, database):
     add_additional_proteins(clusters_per_contig, database)
     clusters = []
 
-    #add clusters to one big list and sort them
+    # add clusters to one big list and sort them
     for contig in clusters_per_contig:
         for cluster in clusters_per_contig[contig]:
             cluster.sort()
             clusters.append(cluster)
     return clusters
+
 
 def sort_hits_per_scaffold(blast_dict, database):
     """
@@ -831,21 +819,22 @@ def sort_hits_per_scaffold(blast_dict, database):
     query_per_blast_hit = {}
     for hits in blast_dict.values():
         for hit in hits:
-            #extract the subject proteins from the Blastresults using the database
+            # extract the subject proteins from the Blastresults using the database
             subject_protein = database.proteins[hit.subject]
             if hit.subject in query_per_blast_hit:
                 query_per_blast_hit[hit.subject].append(hit)
             else:
                 query_per_blast_hit[hit.subject] = [hit]
             if subject_protein.contig_id not in hits_per_contig:
-                hits_per_contig[subject_protein.contig_id] = set([subject_protein])
+                hits_per_contig[subject_protein.contig_id] = {subject_protein}
             else:
                 hits_per_contig[subject_protein.contig_id].add(subject_protein)
-    #sort each contig using start and stop locations
+    # sort each contig using start and stop locations
     for scaffold in hits_per_contig:
         hits_per_contig[scaffold] = list(hits_per_contig[scaffold])
         hits_per_contig[scaffold].sort(key=lambda x: (x.start, x.stop))
     return hits_per_contig, query_per_blast_hit
+
 
 def find_blast_clusters(hits_per_contig, query_per_blast_hit, extra_distance):
     """
@@ -860,7 +849,7 @@ def find_blast_clusters(hits_per_contig, query_per_blast_hit, extra_distance):
     :return: a dictionary that contains contigs as keys and lists of Cluster
     objects as values.
     """
-    #find all the clusters
+    # find all the clusters
     logging.debug("Finding clusters using blasthits...")
 
     clusters_per_contig = {}
@@ -877,9 +866,10 @@ def find_blast_clusters(hits_per_contig, query_per_blast_hit, extra_distance):
             next_protein = scaffold_proteins[index + 1]
             blast_hits.append(protein)
             if protein.stop + extra_distance < next_protein.start:
-                c = Cluster(start - extra_distance, protein.stop + extra_distance, protein.contig_id, protein.contig_description)
-                #add all the blast_hits to the cluster together with the query
-                #gene they originate from
+                c = Cluster(start - extra_distance, protein.stop + extra_distance, protein.contig_id,
+                            protein.contig_description)
+                # add all the blast_hits to the cluster together with the query
+                # gene they originate from
                 for hit in blast_hits:
                     for result in query_per_blast_hit[hit.name]:
                         c.add_protein(hit, result)
@@ -887,18 +877,19 @@ def find_blast_clusters(hits_per_contig, query_per_blast_hit, extra_distance):
                 start = next_protein.start
                 blast_hits = [next_protein]
             index += 1
-        #make sure to add the final cluster
-        c = Cluster(start - extra_distance, scaffold_proteins[index].stop + extra_distance, scaffold_proteins[index].contig_id, scaffold_proteins[index].contig_description)
+        # make sure to add the final cluster
+        c = Cluster(start - extra_distance, scaffold_proteins[index].stop + extra_distance,
+                    scaffold_proteins[index].contig_id, scaffold_proteins[index].contig_description)
         blast_hits.append(scaffold_proteins[index])
         for hit in blast_hits:
             for result in query_per_blast_hit[hit.name]:
                 c.add_protein(hit, result)
         clusters.append(c)
-        tot = 0
 
-        #all cluster objects are from the same contig
+        # all cluster objects are from the same contig
         clusters_per_contig[clusters[0].contig] = clusters
     return clusters_per_contig
+
 
 def add_additional_proteins(clusters_per_contig, database):
     """
@@ -916,27 +907,27 @@ def add_additional_proteins(clusters_per_contig, database):
         cluster_index = 0
         clusters = clusters_per_contig[contig]
 
-        #because all clusters are sorted aswell as the proteins one loop suffices
-        #to assign all proteins
+        # because all clusters are sorted aswell as the proteins one loop suffices
+        # to assign all proteins
         for protein in contig_proteins:
             cluster = clusters[cluster_index]
 
-            if (protein.start >= cluster.start and protein.start <= cluster.stop):
+            if protein.start >= cluster.start <= cluster.stop:
                 cluster.add_protein(protein)
-                #if a protein is added make sure to add the same protein to a
-                #different cluster that can be overlapping in the extra region part
+                # if a protein is added make sure to add the same protein to a
+                # different cluster that can be overlapping in the extra region part
                 if cluster_index + 1 < len(clusters):
                     next_cluster = clusters[cluster_index + 1]
-                    if protein.stop >= next_cluster.start and protein.stop <= next_cluster.stop:
+                    if protein.stop >= next_cluster.start <= next_cluster.stop:
                         next_cluster.add_protein(protein)
 
             elif protein.start > cluster.start:
                 cluster_index += 1
-                #when all clusters have been covered
+                # when all clusters have been covered
                 if cluster_index >= len(clusters):
                     break
                 cluster = clusters[cluster_index]
-                if (protein.start >= cluster.start and protein.start <= cluster.stop):
+                if protein.start >= cluster.start <= cluster.stop:
                     cluster.add_protein(protein)
 
 
@@ -948,6 +939,7 @@ class Cluster:
     added.
     """
     COUNTER = 0
+
     def __init__(self, start, stop, contig, contig_description):
         """
         :param start: an integer that is the start of the cluster. Is allowed to
@@ -957,28 +949,28 @@ class Cluster:
         of the contig
         :param contig: the name of the contig this cluster is located on.
         """
-        #track an increasing cluster number
+        # track an increasing cluster number
         self.no = self.COUNTER
         Cluster.COUNTER += 1
 
-        #start and stop are allowed to be negative or bigger then possible
+        # start and stop are allowed to be negative or bigger then possible
         self.start = start
         self.stop = stop
         self.contig = contig
         self.contig_description = contig_description
-        #all proteins in the cluster
+        # all proteins in the cluster
         self.__proteins = OrderedDict()
         self.__protein_indexes = OrderedDict()
-        self.sorted = True
+        self.__sorted = True
 
-        #all protein names that are blast hits linked to the query protein that
-        #that the blast hit was against
+        # all protein names that are blast hits linked to the query protein that
+        # that the blast hit was against
         self.__blast_proteins = OrderedDict()
 
-        #a dictionary for tracking individual parts of the score
+        # a dictionary for tracking individual parts of the score
         self.__score = {"synteny" : 0, "accumulated blast score" : 0, "number unique hits" : 0}
 
-    def add_protein(self, protein, query_blast_hit = False):
+    def add_protein(self, protein, query_blast_hit = None):
         """
         Controlled way of adding proteins to the cluster.
 
@@ -986,13 +978,13 @@ class Cluster:
         :param query_blast_hit: a potential Protein object that is part of the
         query that defines to what query gene the 'protein' has a blast hit.
         """
-        if query_blast_hit:
+        if query_blast_hit is not None:
             if protein.name in self.__blast_proteins:
                 self.__blast_proteins[protein.name].add(query_blast_hit)
             else:
-                #create a set to auto filter duplicates
+                # create a set to auto filter duplicates
                 self.__blast_proteins[protein.name] = {query_blast_hit}
-        if not protein.name in self.__proteins:
+        if protein.name not in self.__proteins:
             self.__proteins[protein.name] = protein
             self.__protein_indexes[protein.name] = len(self.__proteins) - 1
             self.__sorted = False
@@ -1053,7 +1045,7 @@ class Cluster:
         self.__score["accumulated blast score"] = accumulated_blast_score
         self.__score["number unique hits"] = number_unique_hits
 
-    def segmented_score(self, names = ["synteny", "accumulated blast score", "number unique hits"]):
+    def segmented_score(self, names="all"):
         """
         Get a selection of the score values using string names of the score values. The default is all the
         values.
@@ -1061,7 +1053,9 @@ class Cluster:
         :param names: optional 3 names 'synteny', 'accumulated_blast_score' and 'number unique hits'
         :return: a dictionary with the names as keys and the associated scores as numbers as values
         """
-        requested_scores = [val for key, val in self.__score.items () if key in names]
+        if names == "all":
+            names = ["synteny", "accumulated blast score", "number unique hits"]
+        requested_scores = [val for key, val in self.__score.items() if key in names]
         return requested_scores
 
     @property
@@ -1081,9 +1075,12 @@ class Cluster:
         sorted cluster does not do anything.
         """
         if not self.__sorted:
-            self.__proteins = OrderedDict(sorted(self.__proteins.items(), key=lambda item: (item[1].start, item[1].stop)))
+            self.__proteins = OrderedDict(sorted(self.__proteins.items(),
+                                                 key=lambda item: (item[1].start, item[1].stop)))
             self.__protein_indexes = OrderedDict((name, index) for index, name in enumerate(self.__proteins))
-            self.__blast_proteins = OrderedDict(sorted(self.__blast_proteins.items(), key=lambda item: (self.__proteins[item[0]].start, self.__proteins[item[0]].stop)))
+            self.__blast_proteins = OrderedDict(sorted(self.__blast_proteins.items(),
+                                                       key=lambda item: (self.__proteins[item[0]].start,
+                                                                         self.__proteins[item[0]].stop)))
             self.__sorted = True
 
     def index(self, protein_name):
@@ -1112,7 +1109,7 @@ class Cluster:
         :return: a string that contains the information described above
         """
         full_summary = ""
-        #general information
+        # general information
         full_summary += "- Source contig: {}\n".format(self.contig)
         full_summary += "- Number of proteins with BLAST hits to this cluster: {}\n".format(len(self.__blast_proteins))
         full_summary += "- MultiGeneBlast 2.0 score: {:.7f}\n  - synteny score: {}\n  " \
@@ -1120,7 +1117,7 @@ class Cluster:
                         "- Number of unique blast hits: {}\n\n".\
             format(self.score, self.__score["synteny"], self.__score["accumulated blast score"], self.__score["number unique hits"])
 
-        #Table of all proteins in cluster
+        # Table of all proteins in cluster
         full_summary += ">Table of genes in cluster:\n"
         full_summary += "Name\tstart\tstop\tstrand\tannotation\tlocus_tag\n"
 
@@ -1128,7 +1125,7 @@ class Cluster:
             full_summary += "{}\n".format(protein.summary())
         full_summary += "<\n"
 
-        #Table of all the blast hits
+        # Table of all the blast hits
         full_summary += "\n>Table of all blast hits:\n"
         full_summary += "query prot\tsubject prot\tperc ident\tallignment len" \
                         "\tmismatch\tgap open\tquery start\tquery stop\tsubject" \
@@ -1156,8 +1153,8 @@ def score_clusters(clusters, query_proteins, user_options):
     logging.info("Scoring clusters...")
     index_query_proteins = OrderedDict((prot, i) for i, prot in enumerate(query_proteins))
 
-    #calculate the cumulative blast scores over all blast hits of a cluster
-    #TODO figure out why these scores differ slightly from mgb. I have looked but not found :(
+    # calculate the cumulative blast scores over all blast hits of a cluster
+    # TODO figure out why these scores differ slightly from mgb. I have looked but not found :(
     for cluster in clusters:
         cum_blast_score = 0
         hitnr = 0
@@ -1165,7 +1162,7 @@ def score_clusters(clusters, query_proteins, user_options):
         for result_set in cluster.blast_hit_proteins.values():
             for blast_result in result_set:
                 cum_blast_score += blast_result.bit_score / 1_000_000.0
-                #get the best scoring blast result for each query entry
+                # get the best scoring blast result for each query entry
                 if blast_result.query not in hit_positions_dict:
                     hitnr += 1
                     hit_positions_dict[blast_result.query] = blast_result
@@ -1176,7 +1173,7 @@ def score_clusters(clusters, query_proteins, user_options):
 
         synteny_score = 0
         if not user_options.architecture_mode:
-            #make a tuple of index in the query and index in the cluster
+            # make a tuple of index in the query and index in the cluster
             hit_positions = []
             for query_protein in hit_positions_dict:
                 blast_result = hit_positions_dict[query_protein]
@@ -1185,11 +1182,12 @@ def score_clusters(clusters, query_proteins, user_options):
             hit_positions.sort()
             synteny_score = score_synteny(hit_positions)
 
-        #assign the score
+        # assign the score
         cluster.set_score(synteny_score * user_options.syntenyweight, cum_blast_score, hitnr)
 
-    #sort the clusters on score
+    # sort the clusters on score
     clusters.sort(key=lambda x: x.score, reverse=True)
+
 
 def score_synteny(hit_positions):
     """
@@ -1212,16 +1210,15 @@ def score_synteny(hit_positions):
             score += 1
     return score
 
+
 #### STEP 9: WRITE TEXT OUTPUT ####
-def write_txt_output(query_proteins, clusters, blast_output, user_options):
+def write_txt_output(query_proteins, clusters, user_options):
     """
     Write the output into a file containing information on all clusters.
 
     :param query_proteins: a list of Protein objects that where present in the
     provided query
     :param clusters: a list of Cluster objects
-    :param blast_output: a dictionary that contains a key for every query that
-    had a siginificant blast result with the values being BlastResult objects
     :param user_options: an Option object with user define doptions
 
     Note the formatting of the file is defined as follows:
@@ -1236,15 +1233,17 @@ def write_txt_output(query_proteins, clusters, blast_output, user_options):
     file_name = user_options.run_name + TEXT_OUT_NAME
     logging.info("Writing .mgb output file into {}...".format(os.path.join(user_options.outdir, file_name)))
     try:
-        out_file = open("{}{}{}".format(user_options.outdir, os.sep, file_name),"w")
+        out_file = open("{}{}{}".format(user_options.outdir, os.sep, file_name), "w")
     except (OSError, IOError):
-        logging.critical("Writing .mgb file has failed. Can not opern file {}".format(os.path.join(user_options.outdir, file_name)))
-        raise MultiGeneBlastException("Can not open the output file {}.".format(os.path.join(user_options.outdir, file_name)))
+        logging.critical("Writing .mgb file has failed. Can not opern file {}"
+                         .format(os.path.join(user_options.outdir, file_name)))
+        raise MultiGeneBlastException("Can not open the output file {}."
+                                      .format(os.path.join(user_options.outdir, file_name)))
 
-    #write for what database
+    # write for what database
     out_file.write("ClusterBlast scores for: {}{}{}\n\n".format(os.environ["BLASTDB"], os.sep, user_options.db))
 
-    #write all the query proteins
+    # write all the query proteins
     out_file.write(">>Query proteins:\n")
     out_file.write(">Table of query proteins:\n")
     out_file.write("Name\tstart\tstop\tstrand\tannotation\tlocus_tag\n")
@@ -1252,7 +1251,7 @@ def write_txt_output(query_proteins, clusters, blast_output, user_options):
         out_file.write("{}\n".format(protein.summary()))
     out_file.write("<\n")
 
-    #write general information about the clusters
+    # write general information about the clusters
     out_file.write("\n>>Significant clusters:\n")
     out_file.write(">Table of the summary of significant clusters:\n")
     out_file.write("cluster no\tcontig id\tscore\tnumber of unique blast hits\n")
@@ -1260,11 +1259,12 @@ def write_txt_output(query_proteins, clusters, blast_output, user_options):
         out_file.write("{}\n".format(cluster.short_summary()))
     out_file.write("<\n\n")
 
-    #write more comprehensive information for each cluster
+    # write more comprehensive information for each cluster
     for cluster in clusters:
         out_file.write(">> Details Cluster {}\n".format(cluster.no))
         out_file.write("{}\n".format(cluster.summary()))
     out_file.close()
+
 
 #### STEP 10: alligning muscle ####
 def align_muscle(gene_color_dict, database, query_proteins, outdir):
@@ -1276,17 +1276,15 @@ def align_muscle(gene_color_dict, database, query_proteins, outdir):
     :param query_proteins: a dictionary of Protein objects with all the query proteins
     :param outdir: the output directorty specified by the user
     """
-    #Create Muscle alignments of colourgroups
-    musclegroups = []
-    #create folder to store resutls
+    # create folder to store resutls
     logging.info("Started to allign with muscle. This will take a while...")
     try:
         os.mkdir("muscle_info")
-    except(IOError,OSError):
+    except(IOError, OSError):
         pass
     try:
         os.mkdir(outdir + os.sep + "muscle_info")
-    except(IOError,OSError):
+    except(IOError, OSError):
         pass
     color_per_genes = {}
     for gene, color in gene_color_dict.items():
@@ -1299,7 +1297,7 @@ def align_muscle(gene_color_dict, database, query_proteins, outdir):
     count = 1
     total = len(color_per_genes)
     for color, color_group in color_per_genes.items():
-        color = color.replace("#","")
+        color = color.replace("#", "")
         file_name = "{}{}muscle_info" + os.sep + "group{}.fasta".format(TEMP, os.sep, color)
         with open(file_name, "w") as f:
             for prot in color_group:
@@ -1318,15 +1316,17 @@ def align_muscle(gene_color_dict, database, query_proteins, outdir):
             time_passed = time.time() - last_message_time
             if time_passed > 60:
                 last_message_time = time.time()
-                logging.info("{:.1f} minutes passed. Muscle alligning still in process.".format((last_message_time - start_time)/60))
+                logging.info("{:.1f} minutes passed. Muscle alligning still in process."
+                             .format((last_message_time - start_time)/60))
         # when the process exits with an error
         if muscle_process.exitcode != 0:
             logging.warning("Running Muscle returns multiple errors. Muscle output cannot be generated as a result.")
         logging.debug("Finished making muscle allignment {}/{}".format(count, total))
         count += 1
 
+
 #### STEP 11: CREATE SVG VISUAL OUTPUT ####
-def write_svg_files(clusters, gene_color_dict, user_options, query_cluster, blast_dict, page_nr):
+def write_svg_files(clusters, gene_color_dict, user_options, query_cluster, page_nr):
     """
     Write clusters into svgs of comparissons between the query and each
     individual cluster as well as an svg as a complete overview of all clusters
@@ -1336,8 +1336,6 @@ def write_svg_files(clusters, gene_color_dict, user_options, query_cluster, blas
     :param gene_color_dict: a dictionary linking protein names to rgb colors
     :param user_options: an option object with user defined options
     :param query_cluster: a Cluster ibject with the user defined query
-    :param blast_dict: a dictionary that contains a key for every query that
-    had a siginificant blast result with the values being BlastResult objects
     :param page_nr: integer of the current page
     :return: a dictionary of ClusterCollectionSvg objects that contain all the
     information to draw the clusters as well as location information to place
@@ -1351,11 +1349,12 @@ def write_svg_files(clusters, gene_color_dict, user_options, query_cluster, blas
         collection = ClusterCollectionSvg(query_cluster, svg_clusters, gene_color_dict, user_options)
         svg_images["clusterblast_{}".format(cluster.no)] = collection
 
-    #Create svgs for multiple gene cluster alignment
+    # Create svgs for multiple gene cluster alignment
     collection = ClusterCollectionSvg(query_cluster, clusters, gene_color_dict, user_options)
     svg_images["clusterblast_page{}_all".format(page_nr)] = collection
 
     return svg_images
+
 
 def calculate_colorgroups(blast_dict, query_cluster):
     """
@@ -1366,7 +1365,7 @@ def calculate_colorgroups(blast_dict, query_cluster):
     :return: a dictionary that links proteins with blast hits to
     colors so all proteins with the same blast subject have the same color
     """
-    #first get groups internal homologs in the query cluster
+    # first get groups internal homologs in the query cluster
     groups = []
     for key in query_cluster.blast_hit_proteins:
         # create a set to automatically filter for duplicates
@@ -1387,27 +1386,28 @@ def calculate_colorgroups(blast_dict, query_cluster):
         if not added:
             groups.append(group)
 
-    #get all blast proteins associated to the query proteins in the same groups
+    # get all blast proteins associated to the query proteins in the same groups
     color_groups = []
     for st in groups:
         color_group = set()
         for protein_name in st:
-            if not protein_name in blast_dict:
+            if protein_name not in blast_dict:
                 continue
             color_group.add(protein_name)
             for blast_result in blast_dict[protein_name]:
                 color_group.add(blast_result.subject)
         if len(color_group) > 0:
             color_groups.append(list(color_group))
-    #Generate RGB scheme
+    # Generate RGB scheme
     rgb_color_scheme = generate_distinct_colours(len(color_groups))
 
-    #generate a dictionary linking all proteins with blast hits to colors
+    # generate a dictionary linking all proteins with blast hits to colors
     gene_color_dict = OrderedDict()
     for gr_indx, group in enumerate(color_groups):
         for protein_name in group:
             gene_color_dict[protein_name] = rgb_color_scheme[gr_indx]
     return gene_color_dict
+
 
 def generate_distinct_colours(count):
     """
@@ -1429,6 +1429,7 @@ def generate_distinct_colours(count):
     random.shuffle(colours)
     return colours
 
+
 #### MOVE OUTPUT FILES ####
 def move_outputfiles(outdir, pages):
     """
@@ -1439,45 +1440,48 @@ def move_outputfiles(outdir, pages):
     """
     logging.info("Cleaning up the last files and moving output...")
 
-    #create folder for visuals
+    # create folder for visuals
     try:
         os.mkdir(outdir + os.sep + "visual")
-    except:
+    except Exception:
         pass
 
-    #move the page visuals from temp to outdir
+    # move the page visuals from temp to outdir
     for page_indx in range(pages):
         page_nr = page_indx + 1
         try:
             os.remove(outdir + os.sep + "visual" + os.sep + "displaypage{}.xhtml".format(page_nr))
-        except:
+        except Exception:
             pass
         try:
-            shutil.move("displaypage{}.xhtml".format(page_nr), outdir + os.sep + "visual" + os.sep + "displaypage{}.xhtml".format(page_nr))
-        except:
+            shutil.move("displaypage{}.xhtml".format(page_nr), outdir + os.sep + "visual" + os.sep +
+                        "displaypage{}.xhtml".format(page_nr))
+        except Exception:
             pass
 
-    #copy visual files and folders for the xhtml page
+    # copy visual files and folders for the xhtml page
     filestocopy = ["style.css", "jquery.svg.js", "jquery-1.4.2.min.js", "jquery.svgdom.js"]
     for f in filestocopy:
-        #make sure to remove original files
+        # make sure to remove original files
         try:
             os.remove(outdir + os.sep + "visual" + os.sep + f)
-        except:
+        except Exception:
             pass
         try:
             shutil.copy(MGBPATH + os.sep + "visual_copys" + os.sep + f, outdir + os.sep + "visual" + os.sep + f)
         except IOError:
-            raise MultiGeneBlastException("{} cannot be copied from {}. The file is missing.".format(f, MGBPATH + os.sep + "visual_copys"))
+            raise MultiGeneBlastException("{} cannot be copied from {}. The file is missing."
+                                          .format(f, MGBPATH + os.sep + "visual_copys"))
 
     folderstocopy = ["images"]
     for f in folderstocopy:
-        #make sure to remove original files
+        # make sure to remove original files
         try:
             shutil.rmtree(outdir + os.sep + "visual" + os.sep + f)
-        except:
+        except Exception:
             pass
         shutil.copytree(MGBPATH + os.sep + "visual_copys" + os.sep + f, outdir + os.sep + "visual" + os.sep + f)
+
 
 def get_page_sizes(total_clusters, max_pages):
     """
@@ -1502,73 +1506,75 @@ def main():
     Starting point of the program
     """
 
-    #set the current directory to the temporary directory
+    # set the current directory to the temporary directory
     setup_temp_folder()
     starttime = time.time()
 
-    #Step 1: parse options into an Option Object
+    # Step 1: parse options into an Option Object
     user_options = get_arguments()
 
-    #configure a logger to track what is happening over multiple files, make sure to do this after the
-    #option parsing to save the log at the appropriate place(outdir)
+    # configure a logger to track what is happening over multiple files, make sure to do this after the
+    # option parsing to save the log at the appropriate place(outdir)
     setup_logger(user_options.outdir, starttime, user_options.log_level)
     logging.info("Step 1/12: Input has been parsed")
 
-    #Step 2: Read GBK / EMBL file, select genes from requested region and output FASTA file
+    # Step 2: Read GBK / EMBL file, select genes from requested region and output FASTA file
     query_proteins = read_query_file(user_options)
     logging.info("Step 2/12: Query input file has been read and parsed")
 
-    #Step 3: Run internal BLAST
+    # Step 3: Run internal BLAST
     query_cluster = internal_blast(user_options, query_proteins)
     logging.info("Step 3/12: Finished running internal blast")
 
-    #Step 4: Run BLAST on genbank_mf database
-    blast_output = db_blast(query_proteins, user_options)
+    # Step 4: Run BLAST on genbank_mf database
+    blast_output = db_blast(user_options)
     logging.info("Step 4/12: Finished running blast on the specified database.")
 
-    #Step 5: Parse BLAST output
+    # Step 5: Parse BLAST output
     blast_dict = parse_db_blast(user_options, query_proteins, blast_output)
     logging.info("Step 5/12: Finished parsing database blast")
 
-    #Step 6: Load genomic databases into memory
+    # Step 6: Load genomic databases into memory
     database = load_database(blast_dict, user_options)
     logging.info("Step 6/12: Finished loading the relevant parts of the database.")
 
-    #Step 7: Locate blast hits in genome and find clusters
+    # Step 7: Locate blast hits in genome and find clusters
     clusters = find_gene_clusters(blast_dict, user_options, database)
     logging.info("Step 7/12: Finished finding clusters. {} clusters found in total".format(len(clusters)))
 
-    #Step 8: Score Blast output on all loci
+    # Step 8: Score Blast output on all loci
     score_clusters(clusters, query_proteins, user_options)
     logging.info("Step 8/12: All clusters have been scored.")
 
-    #step 9: write the results to a text file
-    write_txt_output(query_proteins, clusters, blast_output, user_options)
+    # step 9: write the results to a text file
+    write_txt_output(query_proteins, clusters,user_options)
     logging.info("Step 9/12: Results have been written to the mgb file.")
 
     logging.info("Creating visual output...")
     page_sizes = get_page_sizes(len(clusters), user_options.pages)
 
-    #get the gene color dict neccesairy for all svgs and potential muscle allignments
+    # get the gene color dict neccesairy for all svgs and potential muscle allignments
     gene_color_dict = calculate_colorgroups(blast_dict, query_cluster)
 
     if user_options.muscle == "y":
-        musclegroups = align_muscle(gene_color_dict, database, query_proteins, user_options.outdir)
+        align_muscle(gene_color_dict, database, query_proteins, user_options.outdir)
     logging.info("Step 10/12: Muscle allignments created (if -muscle 'y')")
 
     for page_indx, page_size in enumerate(page_sizes):
-        logging.debug("Creating visual information for cluster {} to {}".format(page_indx * HITS_PER_PAGE + 1,  min((page_indx + 1) * HITS_PER_PAGE, len(clusters))))
+        logging.debug("Creating visual information for cluster {} to {}".format(page_indx * HITS_PER_PAGE + 1,
+                                                                                min((page_indx + 1) *
+                                                                                    HITS_PER_PAGE, len(clusters))))
         page_clusters = clusters[page_indx * HITS_PER_PAGE: min((page_indx + 1) * HITS_PER_PAGE, len(clusters))]
 
-        svg_images = write_svg_files(page_clusters, gene_color_dict, user_options, query_cluster, blast_dict, page_indx + 1)
+        svg_images = write_svg_files(page_clusters, gene_color_dict, user_options, query_cluster, page_indx + 1)
         logging.info("Step 11/12: Visual images {}/{} created.".format(page_indx + 1, len(page_sizes)))
 
-        #Step 11: Create XHTML output file
-        create_xhtml_file(page_clusters, query_cluster, user_options, svg_images, page_sizes, page_indx, gene_color_dict)
+        # Step 11: Create XHTML output file
+        create_xhtml_file(page_clusters, query_cluster, user_options, svg_images, page_sizes, page_indx,
+                          gene_color_dict)
         logging.info("Step 12/12: XHTML page {}/{} created.".format(page_indx + 1, len(page_sizes)))
 
-
-    #Move all files to specified output folder
+    # Move all files to specified output folder
     move_outputfiles(user_options.outdir, len(page_sizes))
     logging.info("MultiGeneBlast succesfully finished. Output can be found at {}.".format(user_options.outdir))
 
