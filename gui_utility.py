@@ -467,7 +467,8 @@ class MessageBox(Toplevel):
         # TODO make this more proper by sending automatically and add a log file. Logging module offers options to
         #  automatically send on error
         try:
-            webbrowser.open("mailto:multigeneblast@gmail.com?SUBJECT=ErrorReport&BODY=" + urllib.parse.quote(self.errormessage.encode("utf8")))
+            webbrowser.open("mailto:multigeneblast@gmail.com?SUBJECT=ErrorReport&BODY=" +
+                            urllib.parse.quote(self.errormessage.encode("utf8")))
         except Exception:
             webbrowser.open("sourceforge.net/tracker/?func=add&group_id=565495&atid=2293721")
         else:
