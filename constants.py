@@ -1,10 +1,11 @@
 #!/usr/bin/python3
 
-#imports
-import os, sys
+# imports
+import os
+import sys
 import platform
 
-#shared constants between files
+# shared constants between files
 HITS_PER_PAGE = 50
 SCREENWIDTH = 1024
 FASTA_EXTENSIONS = (".fasta",".fas",".fa",".fna")
@@ -15,15 +16,17 @@ PROT_DATABASE_EXTENSIONS = ["_database_index.pickle", "_contigs.tar.gz", ".psq",
 NUC_DATABASE_EXTENSIONS = ["_database_index.pickle", "_contigs.tar.gz", ".nsq", ".nin", ".nhr"]
 CHUNK = 256 * 1024
 
-#smoothing paramater that allows slight overlap between genes when filtering redundant blast hits
+# smoothing paramater that allows slight overlap between genes when filtering redundant blast hits
 ALLOWED_OVERLAP = 500
 
-#name of the folder containing the final results
+# name of the folder containing the final results
 OUT_FOLDER_NAME = "multigeneblast_result"
-#last part of the name of the text output
+
+# last part of the name of the text output
 TEXT_OUT_NAME = "_cluster_text.mgb"
 
-#path constants
+
+# path constants
 def get_mgb_path():
     """
     Get the path to the file where mgb is installed. If multigeneblast is not
@@ -32,7 +35,7 @@ def get_mgb_path():
 
     :return: a string path or exception
     """
-    #Find path to mgb files if run from another directory
+    # Find path to mgb files if run from another directory
     pathfolders = os.getenv('PATH').split(os.pathsep)
     pathfolders.reverse()
     pathfolders.append(os.getcwd())
@@ -40,16 +43,16 @@ def get_mgb_path():
     mgb_path = ""
     for folder in pathfolders:
         try:
-            # print(os.listdir(folder))
-            if "guilib.py" in os.listdir(folder) and "multigeneblast.py" in os.listdir(folder) and "multigeneblast_gui.py" in os.listdir(folder):
+            if "guilib.py" in os.listdir(folder) and "multigeneblast.py" in os.listdir(folder) and \
+                    "multigeneblast_gui.py" in os.listdir(folder):
                 mgb_path = folder
                 break
-        except:
+        except Exception:
             pass
     try:
         if mgb_path == "" and os.sep in sys.argv[0] and "guilib.py" in os.listdir(sys.argv[0].rpartition(os.sep)[0]):
             mgb_path = sys.argv[0].rpartition(os.sep)[0]
-    except:
+    except Exception:
         pass
     if mgb_path == "":
         raise Exception("Error: Please add the MultiGeneBlast installation directory to"
@@ -63,9 +66,9 @@ def get_appdata_path():
 
     :return: a string path or exception
     """
-    #Find path to Application Data
+    # Find path to Application Data
     if platform.system() == "Windows":
-        #roaming appdata folder of windows
+        # roaming appdata folder of windows
         appdata = os.getenv("APPDATA")
     elif platform.system() == "Darwin":
         appdata = os.path.expanduser("~") + "/Library/Application Support"
@@ -76,25 +79,27 @@ def get_appdata_path():
             else:
                 os.mkdir(os.getcwd() + os.sep + "multigeneblast_data")
                 appdata = os.getcwd() + os.sep + "multigeneblast_data"
-        except:
+        except Exception:
             try:
                 if os.path.exists(os.environ['HOME'] + os.sep + "multigeneblast_data"):
                     appdata = os.getcwd() + os.sep + "multigeneblast_data"
                 else:
                     os.mkdir(os.environ['HOME'] + os.sep + "multigeneblast_data")
                     appdata = os.environ['HOME'] + os.sep + "multigeneblast_data"
-            except:
-                raise Exception("No permission to write to installation folder. Please change user or save somewhere else.")
+            except Exception:
+                raise Exception("No permission to write to installation folder. "
+                                "Please change user or save somewhere else.")
     else:
         raise Exception("MultiGeneBlast does not support {}".format(platform.system()))
     if platform.system() == "Darwin" or platform.system() == "Windows":
         try:
             os.mkdir(appdata + os.sep + 'MultiGeneBlast')
             appdata = appdata + os.sep + 'MultiGeneBlast'
-        except:
+        except Exception:
             if os.path.exists(appdata + os.sep + 'MultiGeneBlast'):
                 appdata = appdata + os.sep + 'MultiGeneBlast'
     return appdata
+
 
 def get_temp_data():
     """
@@ -106,7 +111,7 @@ def get_temp_data():
     It is not guaranteed the folder exists. It is common practice to remove the
     folder to clean up files.
     """
-    #Find path to temporary files
+    # Find path to temporary files
     if platform.system() == "Windows":
         temp = os.getenv('TEMP')
     elif platform.system() == "Darwin":
@@ -115,10 +120,11 @@ def get_temp_data():
         try:
             os.mkdir(os.getenv('HOME') + os.sep + ".mgbtemp")
             temp = os.getenv('HOME') + os.sep + ".mgbtemp"
-        except:
+        except Exception:
             temp = APPDATA
-    #return a unique folder name to make sure that no unwanted files are deleted when cleaning the folder
+    # return a unique folder name to make sure that no unwanted files are deleted when cleaning the folder
     return temp + os.sep + "mgb_temp"
+
 
 def get_exec_folder():
     """
@@ -157,7 +163,8 @@ def get_muscle_prog_name():
         else:
             return "muscle3.8.31_i86linux32"
 
-#path constants
+
+# path constants
 CURRENTDIR = os.getcwd()
 APPDATA = get_appdata_path()
 TEMP = get_temp_data()
