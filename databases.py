@@ -1,20 +1,24 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
+
+"""
+Classes for disecting genbank and embl files and putting them in a database format that can be used by multigeneblast
+
+Original creator: Marnix Medena
+Recent contributor: Bram van Wersch
+"""
 
 # imports
-import logging
 import tarfile
 import pickle
-import os
-import shutil
-from string import ascii_letters
 from collections import OrderedDict
 from abc import ABC, abstractmethod
 
-import urllib.request, urllib.error, urllib.parse
-from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
+import urllib.request
+import urllib.error
+import urllib.parse
+
+from urllib.error import URLError
 import http.client
-from http.client import BadStatusLine,HTTPException
 
 from utilities import *
 from constants import GENBANK_EXTENSIONS, EMBL_EXTENSIONS, TEMP, FASTA_EXTENSIONS
@@ -45,6 +49,7 @@ def clean_dna_sequence(dna_seq):
     dna_seq = dna_seq.replace("/", "")
     return dna_seq
 
+
 def embl_to_genbank(embl_filepath):
     """
     Convert an embl file in such a way that the GenbankFile object can read it
@@ -57,7 +62,7 @@ def embl_to_genbank(embl_filepath):
     try:
         with open(embl_filepath, "r") as f:
             file_text = f.read()
-    except Exception as e:
+    except Exception:
         logging.critical("Invalid embl file {}. Exiting...".format(embl_filepath))
         raise MultiGeneBlastException("Invalid embl file {}.".format(embl_filepath))
 
@@ -66,11 +71,13 @@ def embl_to_genbank(embl_filepath):
 
     # do a basic check to see if the embl file is valid
     if "FT   CDS " not in file_text or ("\nSQ" not in file_text):
-        logging.critical("Embl file {} is not properly formatted or contains no sequences. Exiting...".format(embl_filepath))
-        raise MultiGeneBlastException("Embl file {} is not properly formatted or contains no sequences".format(embl_filepath))
+        logging.critical("Embl file {} is not properly formatted or contains no sequences. Exiting..."
+                         .format(embl_filepath))
+        raise MultiGeneBlastException("Embl file {} is not properly formatted or contains no sequences"
+                                      .format(embl_filepath))
     text_lines = file_text.split("\n")
 
-    #change certain line starts
+    # change certain line starts
     line_count = 0
     while line_count < len(text_lines):
         line = text_lines[line_count]
@@ -81,7 +88,7 @@ def embl_to_genbank(embl_filepath):
         elif line.startswith("AC"):
             text_lines[line_count] = line.replace("AC   ", "ACCESSION   ", 1)
         elif line.startswith("DE"):
-            #change all the definition lines to make them readable
+            # change all the definition lines to make them readable
             text_lines[line_count] = line.replace("DE   ", "DEFINITION  ", 1)
             line_count += 1
             def_line = text_lines[line_count]
@@ -93,6 +100,7 @@ def embl_to_genbank(embl_filepath):
     logging.debug("Embl file {} made readable for genbank file object.".format(embl_filepath))
     return "\n".join(text_lines)
 
+
 class Database(ABC):
     """
     Abstraction level for tracking multiple genbank and embl files and writing
@@ -100,10 +108,8 @@ class Database(ABC):
     """
     def __init__(self, base_path, paths):
         logging.info("Started creating database...")
-        #care this is a generator object not a list
+        # care this is a generator object not a list
         self._files = self._read_files(base_path, paths)
-        #TODO make sure that a user is notified when double accessions are introduced. This makes it so certain acessions
-        # are ignored
         if len(self._files) == 0:
             logging.critical("Failed to load any of the provided database files.")
             raise MultiGeneBlastException("Failed to load any of the provided database files.")
@@ -173,13 +179,19 @@ class Database(ABC):
         :return: a list of new gb files that need to be parsed in addition to
         the existing list
         """
-        #If seq_record is a WGS master record, parse out contig accession numbers and download these as separate seq_records
+        # If seq_record is a WGS master record, parse out contig accession numbers and download these as
+        # separate seq_records
+        contig_ranges = None
         if "WGS_SCAFLD  " in text:
             contig_ranges = text.split("WGS_SCAFLD  ")[1].split("\n")[0]
         elif "WGS         " in text:
             contig_ranges = text.split("WGS         ")[1].split("\n")[0]
 
-        #extract all the ranges
+        # failsafe
+        if contig_ranges is None:
+            return []
+
+        # extract all the ranges
         if ";" in contig_ranges:
             ranges = []
             for contig_range in contig_ranges.split(";"):
@@ -193,7 +205,7 @@ class Database(ABC):
         else:
             contig_ranges = [[contig_ranges]]
 
-        #extract all contigs for each range
+        # extract all contigs for each range
         allcontigs = []
         for contig_range in contig_ranges:
             if len(contig_range) == 1:
@@ -210,20 +222,20 @@ class Database(ABC):
                 if char.isdigit():
                     endnumber += char
             nrzeros = 0
-            #certain entries rely on a number of zeroes. This can be at the start of a number
+            # certain entries rely on a number of zeroes. This can be at the start of a number
             for char in startnumber:
                 if char == "0":
                     nrzeros += 1
                 else:
                     break
-            contig_range = [alpha_tag + nrzeros * "0" + str(number) for number in range(int(startnumber), int(endnumber))]
+            contig_range = [alpha_tag + nrzeros * "0" + str(number) for number in
+                            range(int(startnumber), int(endnumber))]
             allcontigs.extend(contig_range)
 
-        #Create contig groups of 50 (reasonable download size per download)
-        nr_groups = len(allcontigs) / 50 + 1
+        # Create contig groups of 50 (reasonable download size per download)
         contig_groups = [allcontigs[i:i+50] for i in range(0, len(allcontigs), 50)]
 
-        #Download contigs and parse into seq_record objects
+        # Download contigs and parse into seq_record objects
         new_files = self.__fetch_urls(contig_groups, '&rettype=gbwithparts&retmode=text', file_name)
         return new_files
 
@@ -246,20 +258,19 @@ class Database(ABC):
             efetch_url = 'http://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id='
             efetch_url = efetch_url + ",".join(contig_group) + url_end
 
-            #fetch the url
+            # fetch the url
             url_finished = False
             nrtries = 0
             output = ""
             while not url_finished or nrtries < 4:
                 try:
                     nrtries += 1
-                    # TODO request are allowed to be fatster and bigger but to be safe 1 per second
                     time.sleep(1)
                     with urllib.request.urlopen(efetch_url) as response:
                         output = response.read()
                         if len(output) > 5:
                             url_finished = True
-                except (IOError, http.client.BadStatusLine, URLError,http.client.HTTPException):
+                except (IOError, http.client.BadStatusLine, URLError, http.client.HTTPException):
                     logging.debug("Entry fetching from NCBI failed. Waiting for connection...")
                     time.sleep(5)
             # write the file to appdata to save it.
@@ -292,7 +303,6 @@ class NucleotideDataBase(Database):
             # allow relative paths to b
             path = os.path.join(base_path, path)
             root, ext = os.path.splitext(path)
-            file = None
             if ext in GENBANK_EXTENSIONS:
                 new_contigs, new_paths = self.__read_genbank_file(path)
                 paths.extend(new_paths)
@@ -328,7 +338,8 @@ class NucleotideDataBase(Database):
         contigs = []
         for key in fasta_dict:
             if not is_dna(fasta_dict[key]):
-                logging.warning("Ignoring fasta entry {} from {}, because it does not contain a DNA sequence.".format(key, file))
+                logging.warning("Ignoring fasta entry {} from {}, because it does not contain a DNA sequence."
+                                .format(key, file))
                 continue
             contigs.append(NucleotideContig(sequence=fasta_dict[key], accession=key, definition="From fasta"))
         return contigs
@@ -359,7 +370,7 @@ class NucleotideDataBase(Database):
         try:
             with open(file, "r") as f:
                 file_text = f.read()
-        except Exception as e:
+        except Exception:
             logging.critical("Invalid genbank file {}. Exiting...".format(file))
             raise MultiGeneBlastException("Invalid genbank file {}.".format(file))
 
@@ -369,7 +380,8 @@ class NucleotideDataBase(Database):
             new_file_paths = self._convert_wgs_master_record(file_text, file_name.rsplit(".", 1)[0])
             logging.debug("{} new genbank file(s) where added containing the contigs.".format(len(new_file_paths)))
             return [], new_file_paths
-        # TODO handle supercontig records. Example of how to handle can be found in the old parse_gbk.py file in dblib folder
+        # TODO handle supercontig records. Example of how to handle can be found in the old parse_gbk.py
+        #  file in dblib folder
         elif "CONTIG      " in file_text:
             logging.warning("Supercontig files are not supported at the moment. Skipping...")
             return [], []
@@ -389,14 +401,14 @@ class NucleotideDataBase(Database):
         """
         index_list = []
 
-        #create a directory for the pickle files, if the directory is there clean it
+        # create a directory for the pickle files, if the directory is there clean it
         try:
             os.mkdir(TEMP + os.sep + "pickles")
         except FileExistsError:
             shutil.rmtree(TEMP + os.sep + "pickles")
             os.mkdir(TEMP + os.sep + "pickles")
 
-        #pickle each contig
+        # pickle each contig
         total_contigs = 0
         covered_accessions = set()
         for index, contig in enumerate(self._files):
@@ -410,7 +422,7 @@ class NucleotideDataBase(Database):
             index_list.append(contig.accession)
         logging.debug("Created {} contig pickles in total.".format(total_contigs))
 
-        #write pickle index file
+        # write pickle index file
         with open("{}{}{}_database_index.pickle".format(outdir, os.sep, dbname), "wb") as f:
             pickle.dump(index_list, f)
 
@@ -440,7 +452,7 @@ class ProteinDataBase(Database):
         files = []
         while len(paths) > 0:
             path = paths.pop()
-            #allow relative paths to b
+            # allow relative paths to b
             path = os.path.join(base_path, path)
             root, ext = os.path.splitext(path)
             file = None
@@ -473,28 +485,27 @@ class ProteinDataBase(Database):
         try:
             with open(file, "r") as f:
                 file_text = f.read()
-        except Exception as e:
+        except Exception:
             logging.critical("Invalid genbank file {}. Exiting...".format(file))
             raise MultiGeneBlastException("Invalid genbank file {}.".format(file))
 
         new_file_paths = []
         # make sure to remove potential old occurances of \r. Acts like a \n
         file_text = file_text.replace("\r", "\n")
-        #if the file is a WGS master file disect it
-        #TODO consider checking if the user has an internet connection
+        # if the file is a WGS master file disect it
         if "WGS_SCAFLD  " in file_text or "WGS         " in file_text:
             logging.debug("Encountered WGS master file. Extracting all contigs...")
             root, file_name = os.path.split(file)
             new_file_paths = self._convert_wgs_master_record(file_text, file_name.rsplit(".", 1)[0])
             logging.debug("{} new genbank file(s) where added containing the contigs.".format(len(new_file_paths)))
             file_text = ""
-        #TODO handle supercontig records. Example of how to handle can be found in the old parse_gbk.py file in dblib folder
         elif "CONTIG      " in file_text:
             file_text = ""
             logging.warning("Supercontig files are not supported at the moment. Skipping...")
-        #do a basic check to see if the genbank file is valid
+        # do a basic check to see if the genbank file is valid
         elif "     CDS             " not in file_text or "\nORIGIN" not in file_text:
-            logging.warning("Genbank file {} is not properly formatted or contains no sequences. Skipping...".format(file))
+            logging.warning("Genbank file {} is not properly formatted or contains no sequences. Skipping..."
+                            .format(file))
         return file_text, new_file_paths
 
     def _write_files(self, outdir, dbname):
@@ -535,7 +546,7 @@ class GenbankFile:
     """
     An Object for easily disecting a genbank file into the individual proteins
     """
-    def __init__(self, path = None, file_text = None, contigs = None, protein_range=[None, None], allowed_proteins=None):
+    def __init__(self, path=None, file_text=None, contigs=None, protein_range=None, allowed_proteins=None):
         """
         :param path: a path to a genbank file
         :param file_text: an optional parameter that will be used as the file text
@@ -546,17 +557,20 @@ class GenbankFile:
         :param allowed_proteins: a list of protein IDs that can be selected from
         the genbank file instead of all proteins
         """
-        if contigs != None:
-            self.contigs = {cont.accession:cont for cont in contigs}
-        elif file_text != None:
+        if protein_range is None:
+            protein_range = [None for _ in range(2)]
+        if contigs is not None:
+            self.contigs = {cont.accession: cont for cont in contigs}
+        elif file_text is not None:
             self.contigs = self.__create_contigs(file_text, protein_range, allowed_proteins)
-        elif path != None:
+        elif path is not None:
             file_text = self.__read_genbank_file(path)
             self.contigs = self.__create_contigs(file_text, protein_range, allowed_proteins)
         else:
             raise MultiGeneBlastException("One of the three options; path, file_text,"
                                           " or contigs need to be selected")
-        self.proteins = self.__list_proteins() #an OrderedDict.
+        # an OrderedDict.
+        self.proteins = self.__list_proteins()
         self.lenght = sum(con.lenght for con in self.contigs.values())
 
     def fasta_text(self):
@@ -598,21 +612,22 @@ class GenbankFile:
         try:
             with open(file, "r") as f:
                 file_text = f.read()
-        except Exception as e:
+        except Exception:
             logging.critical("Invalid genbank file {}. Exiting...".format(file))
             raise MultiGeneBlastException("Invalid genbank file {}.".format(file))
 
         # make sure to remove potential old occurances of \r. Acts like a \n
         file_text = file_text.replace("\r", "\n")
 
-        #if there is a WGS in the genbank record make sure to raise an error.
+        # if there is a WGS in the genbank record make sure to raise an error.
         if "WGS_SCAFLD  " in file_text or "WGS         " in file_text:
             logging.critical("WGS master files cannot be used as query input files.")
             raise MultiGeneBlastException("WGS master files cannot be used as query input files.")
         # do a basic check to see if the genbank file is valid
         if "     CDS             " not in file_text or "\nORIGIN" not in file_text:
             logging.critical("Genbank file {} is not properly formatted or contains no sequences".format(file))
-            raise MultiGeneBlastException("Genbank file {} is not properly formatted or contains no sequences".format(file))
+            raise MultiGeneBlastException("Genbank file {} is not properly formatted or contains no sequences"
+                                          .format(file))
         return file_text
 
     def __create_contigs(self, text, protein_range, allowed_proteins):
@@ -632,29 +647,24 @@ class GenbankFile:
             contigs[contig.accession] = contig
         return contigs
 
+
 class Contig(ABC):
     """
     Base abstraction class for contigs. Reads the header.
     """
     COUNTER = 0
-    def __init__(self, file_text):
-        """
-        :param file_text: string to be read.
-        """
-        gene_defenitions, dna_sequence = file_text.split("\nORIGIN")
-        # Extract DNA sequence and calculate complement of it
-        dna_sequence = clean_dna_sequence(dna_sequence)
 
+    def __init__(self, dna_sequence, gene_information):
+        """
+        :param dna_sequence: The full DNA sequence in string form present in the genbank file for a certain contig
+        :param gene_information: a list of large pieces of text containing the information of individual genes
+        """
         self.lenght = len(dna_sequence)
 
-        # Extract gene information
-        gene_information = gene_defenitions.split("     CDS             ")
-
-        #read general information
+        # read general information
         self.accession = ""
         self.definition = ""
         self.__extract_header(gene_information[0])
-        return dna_sequence, gene_information
 
     def __extract_header(self, header):
         """
@@ -668,11 +678,11 @@ class Contig(ABC):
         for index, line in enumerate(header_lines):
             if line.lower().startswith("accession"):
                 # extract the accesion
-                self.accession = remove_illegal_characters(line.replace("ACCESSION   ",""))
+                self.accession = remove_illegal_characters(line.replace("ACCESSION   ", ""))
             if line.lower().startswith("definition"):
                 self.definition += line.replace("DEFINITION  ", "").strip()
                 for def_line in header_lines[index + 1:]:
-                    #end of definition line
+                    # end of definition line
                     if not def_line.startswith("    "):
                         break
                     self.definition += def_line.strip()
@@ -680,11 +690,11 @@ class Contig(ABC):
         if not is_valid_accession(self.accession):
             logging.debug("Probably invalid GenBank/Refseq accesion {} found.".format(self.accession))
             self.accession = ""
-        #auto generate a unique accession when no valid one is found
+        # auto generate a unique accession when no valid one is found
         if self.accession == "":
             self.accession = "accession{}".format(self.COUNTER)
             Contig.COUNTER += 1
-            logging.debug("The following accession was auto generated: {}. Because no valid accession was found."\
+            logging.debug("The following accession was auto generated: {}. Because no valid accession was found."
                           .format(self.accession))
         if self.definition == "":
             logging.debug("No definition found for contig {}".format(self.accession))
@@ -701,9 +711,16 @@ class NucleotideContig(Contig):
         :param accession: Optional name of an accession. If no name is provided the accession is auto generated
         :param definition: Optional definition to give some extra information
         """
-        if file_text != None:
-            self.dna_sequence, _ = super().__init__(file_text)
-        elif sequence != None:
+        if file_text is not None:
+            gene_defenitions, dna_sequence = file_text.split("\nORIGIN")
+            # Extract DNA sequence and calculate complement of it
+            self.dna_sequence = clean_dna_sequence(dna_sequence)
+
+            # Extract gene information
+            gene_information = gene_defenitions.split("     CDS             ")
+
+            super().__init__(dna_sequence, gene_information)
+        elif sequence is not None:
             self.dna_sequence = sequence
             if accession == "":
                 self.accession = "accession{}".format(self.COUNTER)
@@ -720,7 +737,7 @@ class ProteinContig(Contig):
     """
     Acts as abstraction for a contig present in a genbank file
     """
-    def __init__(self, file_text, protein_range=None, allowed_proteins=None):
+    def __init__(self, file_text, protein_range, allowed_proteins):
         """
         :param file_text: string to be read.
 
@@ -732,12 +749,20 @@ class ProteinContig(Contig):
         :param allowed_proteins: a list of protein names that are allowed
          to be in the contig
         """
-        dna_sequence, gene_information = super().__init__(file_text)
+        gene_defenitions, dna_sequence = file_text.split("\nORIGIN")
+        # Extract DNA sequence and calculate complement of it
+        dna_sequence = clean_dna_sequence(dna_sequence)
+
+        # Extract gene information
+        gene_information = gene_defenitions.split("     CDS             ")
+
+        super().__init__(dna_sequence, gene_information)
 
         c_dna_sequence = complement(dna_sequence)
 
-        #exract all the entries from the genbank file
-        self.entries = self.__extract_entries(gene_information[1:], dna_sequence, c_dna_sequence, protein_range, allowed_proteins)
+        # exract all the entries from the genbank file
+        self.entries = self.__extract_entries(gene_information[1:], dna_sequence, c_dna_sequence, protein_range,
+                                              allowed_proteins)
         self.entries.sort(key=lambda x: (x.protein.start, x.protein.stop))
         self.proteins = self.__get_unique_proteins()
 
@@ -752,9 +777,11 @@ class ProteinContig(Contig):
         protein_dict = OrderedDict()
         for entry in self.entries:
             if entry.protein.name in protein_dict:
-                logging.warning("Double protein entry '{}' for contig '{}'. Skipping...".format(entry.protein.name, self.accession))
+                logging.warning("Double protein entry '{}' for contig '{}'. Skipping...".format(entry.protein.name,
+                                                                                                self.accession))
             elif len(entry.protein.sequence) == 0:
-                logging.warning("Cannot find or reconstruct sequence for entry {}. Skipping...".format(entry.protein.name))
+                logging.warning("Cannot find or reconstruct sequence for entry {}. Skipping..."
+                                .format(entry.protein.name))
             else:
                 protein_dict[entry.protein.name] = entry.protein
         return protein_dict
@@ -775,23 +802,25 @@ class ProteinContig(Contig):
         """
         genbank_entries = []
 
-        #number to check if all allowed proteins have been found or not
-        #this allows the function to stop prematurely if all proteins are found
+        # number to check if all allowed proteins have been found or not
+        # this allows the function to stop prematurely if all proteins are found
         found_proteins = 0
         # ignore the firs hit which is the start of the genbnk file
         for index, gene in enumerate(entries):
             g = GenbankEntry(gene, index + 1, dna_seq, c_dna_seq, self.accession, self.definition)
-            #skip if no valid protein is found
-            if g.protein == None:
+            # skip if no valid protein is found
+            if g.protein is None:
                 continue
-            elif protein_range[0] != None and g.protein.start >= protein_range[0] and g.protein.stop <= protein_range[1]:
+            elif protein_range[0] is not None and g.protein.start >= protein_range[0] and \
+                    g.protein.stop <= protein_range[1]:
                 genbank_entries.append(g)
-            elif allowed_proteins != None and (g.protein.protein_id in allowed_proteins or g.protein.name in allowed_proteins or g.protein.locus_tag in allowed_proteins):
+            elif allowed_proteins is not None and (g.protein.protein_id in allowed_proteins or g.protein.name in
+                                                   allowed_proteins or g.protein.locus_tag in allowed_proteins):
                 genbank_entries.append(g)
                 found_proteins += 1
                 if found_proteins >= len(allowed_proteins):
                     break
-            elif allowed_proteins == None and protein_range[0] == None:
+            elif allowed_proteins is None and protein_range[0] is None:
                 genbank_entries.append(g)
         return genbank_entries
 
@@ -807,17 +836,14 @@ class GenbankEntry:
         name is available
         :param dna_seq: the dna sequence present in the genbank file
         :param c_dna_seq: the complement sequence present in the genbank file
-        :param file_accession: the genbank file accession this entry originated
-        from
+        :param contig_id: a generated id for the contig that the entry belongs to
+        :param contig_description: a description of the contig the entry belongs to
         """
         self.location = None
         self.contig_id = contig_id
         self.contig_description = contig_description
 
-        #relevant attributes that can be present
         self.__codon_start = 1
-
-        #optional parameters that can be found in the entry
         self.locus_tag = ""
         self.gene_name = ""
         self.protein_id = ""
@@ -836,11 +862,10 @@ class GenbankEntry:
         :param nr: a unique integer that can be used to create a genename is no
         name is available
         """
-        #create a list of lines that are part of the coding sequences (CDS)
-        cds_part = self.__CDS_lines(entry_string)
-        protein_id = locus_tag = gene_name = None
+        # create a list of lines that are part of the coding sequences (CDS)
+        cds_part = self.__cds_lines(entry_string)
         for index, line in enumerate(cds_part[1:]):
-            line = line.replace("/","").strip()
+            line = line.replace("/", "").strip()
             if line.lower().startswith("codon_start="):
                 self.__codon_start = int(self.__clean_line(line))
             elif line.lower().startswith("protein_id="):
@@ -857,7 +882,7 @@ class GenbankEntry:
             elif line.lower().startswith("product="):
                 self.annotation = self.__clean_line(line)
 
-        #configure the genename with this order, locus tag, protein_id, gene_name auto generated name
+        # configure the genename with this order, locus tag, protein_id, gene_name auto generated name
         if self.locus_tag:
             self.gene_name = self.locus_tag
         elif self.protein_id:
@@ -867,10 +892,10 @@ class GenbankEntry:
         else:
             self.gene_name = "orf {}".format(nr)
 
-        #extract the locations
+        # extract the locations
         self.locations = self.__get_locations(cds_part[0].strip())
 
-    def __CDS_lines(self, string):
+    def __cds_lines(self, string):
         """
         Extract all the CDS location qualifiers form the string. This separates
         them from other potential qualifiers
@@ -879,7 +904,7 @@ class GenbankEntry:
         :return: a list of lines that are part of the CDS location qualifier
         """
         potential_lines = string.split("\n")
-        #include the first line always
+        # include the first line always
         lines = [potential_lines[0]]
         for line in potential_lines[1:]:
             if not line.startswith("                     "):
@@ -895,9 +920,9 @@ class GenbankEntry:
         :param line: a string containing no newlines
         :return: the cleaned version of the input line
         """
-        #remove unwanted characters and only inlcude the value not the name
+        # remove unwanted characters and only inlcude the value not the name
         try:
-            return line.replace("\\", "_").replace("/", "_").replace('"', '').replace(" ","_").split("=")[1]
+            return line.replace("\\", "_").replace("/", "_").replace('"', '').replace(" ", "_").split("=")[1]
         except IndexError:
             logging.warning("{} does not have the right format, as a consequence will be ignored".format(line))
 
@@ -919,7 +944,7 @@ class GenbankEntry:
             if "join" in string:
                 return self.__disect_join(string)
             else:
-                #split the string without the complement text
+                # split the string without the complement text
                 return [self.__convert_location(string[11:-1])], True
 
         elif string.startswith("join"):
@@ -934,33 +959,33 @@ class GenbankEntry:
         :param string: a location in string format that has a join format
         :return:
         """
-        #remove the join tag
-        complement = False
+        # remove the join tag
+        comp = False
         if string.startswith("complement"):
-            complement = True
+            comp = True
             string = string[11:-1]
         string = string[5:-1]
         individual_strings = string.split(",")
         locations = []
         for s in individual_strings:
             locations.append(self.__convert_location(s))
-        return locations, complement
+        return locations, comp
 
-    def __convert_location(self, s):
+    def __convert_location(self, string):
         """
         Convert the location string s of the format start..stop into two integers
         while removign potential present characters
 
-        :param s: a string containing a location
+        :param string: a string containing a location
         :return: a list of lenght 2 with 2 integers
         """
-        if ".." not in s:
+        if ".." not in string:
             logging.warning("No valid location specifier found for genbank entry {}".format(self.gene_name))
             return None
         try:
-            str_locations = s.replace("<", "").replace(">", "").strip().split("..")
+            str_locations = string.replace("<", "").replace(">", "").strip().split("..")
             return list(map(int, str_locations))
-        #in case the str locations cannot be converted to integers
+        # in case the str locations cannot be converted to integers
         except AttributeError:
             logging.warning("No valid location specifier found for genbank entry {}".format(self.gene_name))
             return None
@@ -974,18 +999,18 @@ class GenbankEntry:
         :param c_dna_seq: the complement sequence present in the genbank file
         :return: a Protein object
         """
-        #loc is a list of start, stop and True or false for reverse complement or not
+        # loc is a list of start, stop and True or false for reverse complement or not
         locations, reverse_complement = self.locations
         strand = "+"
         if reverse_complement:
             strand = "-"
-        #make sure locations are sorted
+        # make sure locations are sorted
         if None in locations:
             logging.warning("Can not process {}. No valid start stop found. Skipping...".format(self.gene_name))
             return
         locations.sort()
 
-        #if a sequence is available use that, otherwise extract it
+        # if a sequence is available use that, otherwise extract it
         if self.protein_code:
             sequence = self.protein_code
         else:
@@ -993,13 +1018,13 @@ class GenbankEntry:
             for loc in locations:
                 start, end = loc
                 if reverse_complement:
-                    nc_seq = c_dna_seq[max(0, (start - 1) - self.__codon_start - 1) : end]
+                    nc_seq = c_dna_seq[max(0, (start - 1) - self.__codon_start - 1): end]
                 else:
                     nc_seq = dna_seq[max(0, (start - 1) - self.__codon_start - 1): end]
                 sequence += nc_seq
             sequence = translate(sequence)
 
-        #the first location and then the start
+        # the first location and then the start
         start = locations[0][0]
         return Protein(sequence, start, self.gene_name, strand,
                        locus_tag=self.locus_tag, annotation=self.annotation,
@@ -1012,8 +1037,8 @@ class Protein:
     A representation of a protein, containing some optional fields that can or
     cannot be specified.
     """
-    def __init__(self, sequence, start, name, strand, end = None, annotation = "",
-                 locus_tag = "", contig_id = "", contig_description = "", protein_id = ""):
+    def __init__(self, sequence, start, name, strand, end=None, annotation="",
+                 locus_tag="", contig_id="", contig_description="", protein_id=""):
         """
         :param sequence: a string that is the amino acid sequence of the protein
         :param start: an integer that is the start coordinate in the the protein
@@ -1034,14 +1059,14 @@ class Protein:
         self.aa_lenght = len(self.sequence)
         self.nt_lenght = self.aa_lenght * 3
 
-        #both in nucleotides
+        # both in nucleotides
         self.start = start
         if end:
             self.stop = end
         else:
             self.stop = self.start + self.nt_lenght
 
-        #gene name, this name should be used when comparing proteins.
+        # gene name, this name should be used when comparing proteins.
         self.name = remove_illegal_characters(name)
         self.annotation = remove_illegal_characters(annotation)
 
