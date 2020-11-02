@@ -1,18 +1,31 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
+
+"""
+Utility functions for multigeneblast
+
+Original creator: Marnix Medena
+Recent contributor: Bram van Wersch
+
+Copyright (c) 2012 Marnix H. Medema
+License: GNU General Public License v3 or later
+A copy of GNU GPL v3 should have been included in this software package in LICENSE.txt.
+"""
+
 
 # imports
 import shutil
-from string import ascii_letters
 import logging
 import subprocess
 import time
-import os, sys
+import os
+import sys
 import datetime
 import multiprocessing
 
 from constants import TEMP
 
-ILLEGAL_CHARACTERS = ["'",'"','=',';',':','[',']','>','<','|','\\',"/",'*','-','.',',','?',')','(','^','#','!','`','~','+','{','}','@','$','%','&']
+ILLEGAL_CHARACTERS = ["'", '"', '=', ';', ':', '[', ']', '>', '<', '|', '\\', "/", '*', '-', '.', ',', '?', ')', '(',
+                      '^', '#', '!', '`', '~', '+', '{', '}', '@', '$', '%', '&']
 
 
 def setup_temp_folder():
@@ -24,13 +37,14 @@ def setup_temp_folder():
     mgb_temp_folder = TEMP
     try:
         shutil.rmtree(mgb_temp_folder)
-    except:
+    except Exception:
         pass
     try:
         os.mkdir(mgb_temp_folder)
-    except:
+    except Exception:
         pass
     os.chdir(mgb_temp_folder)
+
 
 def setup_logger(outdir, starttime, level="basic"):
     """
@@ -51,15 +65,14 @@ def setup_logger(outdir, starttime, level="basic"):
     else:
         level = logging.WARNING
 
-    #if the directory exists simply ignore it, that can be expected
-    dir_exists = False
+    # if the directory exists simply ignore it, that can be expected
     try:
         os.mkdir(outdir)
     except FileExistsError:
         pass
 
     log_file_loc = "{}{}{}".format(outdir, os.sep, 'run.log')
-    #make sure that a potentially existing logfile is emptied
+    # make sure that a potentially existing logfile is emptied
     if os.path.exists(log_file_loc):
         open(log_file_loc, "w").close()
 
@@ -92,12 +105,13 @@ class MyFormatter(logging.Formatter):
 
         :See: logging.Formatter.format()
         """
-        #difference = datetime.datetime.now() - self._start_time
+        # difference = datetime.datetime.now() - self._start_time
         record.passedTime = "{:.3f}".format(time.time() - self._start_time)
         record.currentTime = datetime.datetime.now().time()
         return super(MyFormatter, self).format(record)
 
-def run_commandline_command(command, max_retries = 5):
+
+def run_commandline_command(command, max_retries=5):
     """
     Run a command line command that can be repeadet when a error is returned.
     This function is meant to run the BLAST+ command line tools
@@ -110,15 +124,18 @@ def run_commandline_command(command, max_retries = 5):
     errors
     """
     new_env = os.environ.copy()
-    command_stdout = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=new_env)
+    command_stdout = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE,
+                                      stderr=subprocess.STDOUT, env=new_env)
     command_stdout = command_stdout.stdout.read()
     retries = 0
     while "error" in str(command_stdout.lower()) or "not found" in str(command_stdout.lower()):
-        logging.debug("The following command {} returned the following error {}. Retrying: {}/{}".format(command, command_stdout, retries, max_retries))
+        logging.debug("The following command {} returned the following error {}. Retrying: {}/{}"
+                      .format(command, command_stdout, retries, max_retries))
         if max_retries <= retries:
             logging.critical("Command {} keeps returing an error. Exiting...".format(command))
             raise MultiGeneBlastException()
-        command_stdout = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=new_env)
+        command_stdout = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                          env=new_env)
         command_stdout = command_stdout.stdout.read()
         retries += 1
 
@@ -144,17 +161,18 @@ def determine_cpu_nr(cores):
     if cores.lower() == "all":
         try:
             nrcpus = multiprocessing.cpu_count()
-        except(IOError,OSError,NotImplementedError):
+        except(IOError, OSError, NotImplementedError):
             nrcpus = 1
     else:
         cores = int(cores)
         try:
             nrcpus = multiprocessing.cpu_count()
-        except(IOError,OSError,NotImplementedError):
+        except(IOError, OSError, NotImplementedError):
             nrcpus = 1
         if cores < nrcpus:
             nrcpus = cores
     return nrcpus
+
 
 def remove_illegal_characters(string):
     """
@@ -169,6 +187,7 @@ def remove_illegal_characters(string):
         if letter not in ILLEGAL_CHARACTERS:
             clean_string += letter
     return clean_string
+
 
 def is_valid_accession(accession):
     """
@@ -186,6 +205,7 @@ def is_valid_accession(accession):
             nrletters += 1
     return nrnumbers >= 3 or nrletters >= 1
 
+
 def complement(seq):
     """
     Create the complement strand of a sequence. Use replacing for speed
@@ -202,6 +222,7 @@ def complement(seq):
     seq = seq.replace("x", "g").replace("X", "G")
     return seq
 
+
 def translate(sequence):
     """
     Translate a nucleotide sequence into an amino acid sequence
@@ -209,43 +230,42 @@ def translate(sequence):
     :param sequence: a string that is a nucleotide sequence
     :return: a string that is an amino acid sequence
     """
-    #Translation table standard genetic code; according to http://www.ncbi.nlm.nih.gov/Taxonomy/Utils/wprintgc.cgi
-    transldict = { 'ttt': 'F', 'tct': 'S', 'tat': 'Y', 'tgt': 'C',
-                   'ttc': 'F', 'tcc': 'S', 'tac': 'Y', 'tgc': 'C',
-                   'tta': 'L', 'tca': 'S', 'taa': '*', 'tga': '*',
-                   'ttg': 'L', 'tcg': 'S', 'tag': '*', 'tgg': 'W',
-                   'ctt': 'L', 'cct': 'P', 'cat': 'H', 'cgt': 'R',
-                   'ctc': 'L', 'ccc': 'P', 'cac': 'H', 'cgc': 'R',
-                   'cta': 'L', 'cca': 'P', 'caa': 'Q', 'cga': 'R',
-                   'ctg': 'L', 'ccg': 'P', 'cag': 'Q', 'cgg': 'R',
-                   'att': 'I', 'act': 'T', 'aat': 'N', 'agt': 'S',
-                   'atc': 'I', 'acc': 'T', 'aac': 'N', 'agc': 'S',
-                   'ata': 'I', 'aca': 'T', 'aaa': 'K', 'aga': 'R',
-                   'atg': 'M', 'acg': 'T', 'aag': 'K', 'agg': 'R',
-                   'gtt': 'V', 'gct': 'A', 'gat': 'D', 'ggt': 'G',
-                   'gtc': 'V', 'gcc': 'A', 'gac': 'D', 'ggc': 'G',
-                   'gta': 'V', 'gca': 'A', 'gaa': 'E', 'gga': 'G',
-                   'gtg': 'V', 'gcg': 'A', 'gag': 'E', 'ggg': 'G'}
+    # Translation table standard genetic code; according to http://www.ncbi.nlm.nih.gov/Taxonomy/Utils/wprintgc.cgi
+    transldict = {'ttt': 'F', 'tct': 'S', 'tat': 'Y', 'tgt': 'C',
+                  'ttc': 'F', 'tcc': 'S', 'tac': 'Y', 'tgc': 'C',
+                  'tta': 'L', 'tca': 'S', 'taa': '*', 'tga': '*',
+                  'ttg': 'L', 'tcg': 'S', 'tag': '*', 'tgg': 'W',
+                  'ctt': 'L', 'cct': 'P', 'cat': 'H', 'cgt': 'R',
+                  'ctc': 'L', 'ccc': 'P', 'cac': 'H', 'cgc': 'R',
+                  'cta': 'L', 'cca': 'P', 'caa': 'Q', 'cga': 'R',
+                  'ctg': 'L', 'ccg': 'P', 'cag': 'Q', 'cgg': 'R',
+                  'att': 'I', 'act': 'T', 'aat': 'N', 'agt': 'S',
+                  'atc': 'I', 'acc': 'T', 'aac': 'N', 'agc': 'S',
+                  'ata': 'I', 'aca': 'T', 'aaa': 'K', 'aga': 'R',
+                  'atg': 'M', 'acg': 'T', 'aag': 'K', 'agg': 'R',
+                  'gtt': 'V', 'gct': 'A', 'gat': 'D', 'ggt': 'G',
+                  'gtc': 'V', 'gcc': 'A', 'gac': 'D', 'ggc': 'G',
+                  'gta': 'V', 'gca': 'A', 'gaa': 'E', 'gga': 'G',
+                  'gtg': 'V', 'gcg': 'A', 'gag': 'E', 'ggg': 'G'}
     protseq = ""
     for triplet_start in range(0, len(sequence), 3):
-        triplet = sequence[triplet_start : triplet_start + 3].lower()
+        triplet = sequence[triplet_start: triplet_start + 3].lower()
         if "n" in triplet or triplet not in transldict:
             protseq += "X"
         else:
             protseq += transldict[triplet]
-    if  len(protseq) > 0 and protseq[-1] == "*":
+    if len(protseq) > 0 and protseq[-1] == "*":
         protseq = protseq[:-1]
     return protseq
 
-def fasta_to_dict(file_name, check_headers = True):
+
+def fasta_to_dict(file_name):
     """
     Creates a dictionary containing the name of the fasta sequence as key
     and the sequence as value.
 
     :param file_name: A string that represents a file path towards a fasta
     file containing one or more sequences
-    :param check_headers: Boolean if the headers should be filtered for illegal
-    characters. Default is True
     :return: a dictionary with sequence names as keys and the sequence
     itself as values.
     """
@@ -264,12 +284,12 @@ def fasta_to_dict(file_name, check_headers = True):
     for entry in fasta_entries:
         lines = entry.split("\n")
 
-        #make sure that names do not contain illegal characters. This makes sure no strange results are retrieved from
-        #blast+ tools
+        # make sure that names do not contain illegal characters. This makes sure no strange results are retrieved from
+        # blast+ tools
         name = remove_illegal_characters(lines[0])
-        #make sure no trailing newlines
+        # make sure no trailing newlines
         sequence = "".join(lines[1:]).strip()
-        #skip incomplete entries
+        # skip incomplete entries
         if len(sequence) == 0:
             logging.warning("Invalid fasta format for entry '{}' in file '{}'. Skipping...".format(name, file_name))
         elif name in sequences:
@@ -277,6 +297,7 @@ def fasta_to_dict(file_name, check_headers = True):
         else:
             sequences[name] = sequence
     return sequences
+
 
 def is_dna(sequence):
     """
