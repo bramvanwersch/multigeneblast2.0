@@ -8,12 +8,12 @@ import platform
 # shared constants between files
 HITS_PER_PAGE = 50
 SCREENWIDTH = 1024
-FASTA_EXTENSIONS = (".fasta",".fas",".fa",".fna")
-EMBL_EXTENSIONS = (".embl",".emb")
-GENBANK_EXTENSIONS = (".gbk",".gb",".genbank", ".gbff")
+FASTA_EXTENSIONS = (".fasta", ".fas", ".fa", ".fna", ".faa")
+EMBL_EXTENSIONS = (".embl", ".emb")
+GENBANK_EXTENSIONS = (".gbk", ".gb", ".genbank", ".gbff")
 SVG_CORE_EXTENSION = 5000
-PROT_DATABASE_EXTENSIONS = ["_database_index.pickle", "_contigs.tar.gz", ".psq", ".pin", ".phr"]
-NUC_DATABASE_EXTENSIONS = ["_database_index.pickle", "_contigs.tar.gz", ".nsq", ".nin", ".nhr"]
+PROT_DATABASE_EXTENSIONS = ["_database_index.pickle", "_contigs.tar.gz", ".dmnd"]
+NUC_DATABASE_EXTENSIONS = ["_database_index.pickle", "_contigs.tar.gz", ".dmnd"]
 CHUNK = 256 * 1024
 
 # smoothing paramater that allows slight overlap between genes when filtering redundant blast hits

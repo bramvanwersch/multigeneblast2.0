@@ -110,22 +110,6 @@ def clean_outdir(dbname, outdir, dbtype="prot"):
             logging.debug("Removed {} because it is going to be created.".format(file))
 
 
-def write_nal_pal_file(dbname, outdir, dbtype):
-    """
-    Write a database alias file so Blast+ programs can acces it.
-
-    :param dbname: a string as name of the database
-    :param outdir: a string as path to the output directory
-    :param dbtype: the type of the database, 'prot' or 'nucl'
-    """
-    logging.info("Writing nal/pal file...")
-    ext = ".pal"
-    if dbtype == "nucl":
-        ext = ".nal"
-    with open(outdir + os.sep + dbname + ext, "w") as f:
-        f.write("TITLE " + dbname + "\nDBLIST " + dbname + "\n")
-
-
 def main():
     """
     Main function called when running the program
@@ -141,12 +125,12 @@ def main():
 
     # setup a logger
     setup_logger(outdir, starttime, level=log_level)
-    logging.info("Step 1/6: Parsed options.")
+    logging.info("Step 1/5: Parsed options.")
 
     # make sure to clear all files in the destination folder that have the same
     # name as files that are going to be added
     clean_outdir(dbname, outdir)
-    logging.info("Step 2/6: Cleaned the output directory of potential duplicate files.")
+    logging.info("Step 2/5: Cleaned the output directory of potential duplicate files.")
 
     # create a database object
     base_path = os.path.abspath(os.path.dirname(__file__))
@@ -155,29 +139,25 @@ def main():
     else:
         db = NucleotideDataBase(base_path, inputfiles)
     db.create(outdir, dbname)
-    logging.info("Step 3/6: Created the MultiGeneBlast database")
+    logging.info("Step 3/5: Created the MultiGeneBlast database")
 
     # write the database to fasta for makeblastdb
     logging.info("Writing MultiGeneBlast database to fasta...")
     with open("{}{}{}_dbbuild.fasta".format(TEMP, os.sep, dbname), "w") as f:
         f.write(db.get_fasta())
-    logging.info("Step 4/6: Written MultiGeneBlast database to fasta format.")
+    logging.info("Step 4/5: Written MultiGeneBlast database to fasta format.")
 
     # Create Blast database, set the outdir as the current directory to amke sure that the files end up in the
     # right place
-    logging.info("Creating Blast+ database...")
+    logging.info("Creating Diamond database...")
 
     # make sure to change the working directory for the makeblastdb files to edn up in the right place
     os.chdir(outdir)
-    command = "{}{}makeblastdb -dbtype {} -out {} -in {}{}{}_dbbuild.fasta".format(EXEC, os.sep, db_type, dbname, TEMP,
-                                                                                   os.sep, dbname)
+    command = "{}{}diamond makedb --db {}{}{} --in {}{}{}_dbbuild.fasta".format(EXEC, os.sep, outdir, os.sep, dbname,
+                                                                                TEMP, os.sep, dbname)
 
     run_commandline_command(command, max_retries=0)
-    logging.info("Step 5/6: Blast+ database created.")
-
-    # write nal/pal file as main entry for the database
-    write_nal_pal_file(dbname, outdir, db_type)
-    logging.info("Step 6/6: Created nal/pal file.")
+    logging.info("Step 5/5: Diamond database created.")
 
     logging.info("Database was succesfully created at {}.".format(outdir))
 

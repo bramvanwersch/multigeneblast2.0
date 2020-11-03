@@ -70,7 +70,7 @@ def get_arguments():
                         metavar="Int")
     parser.add_argument("-o", "-out", help="Output folder path in which results will be stored", type=check_out_folder,
                         metavar="file path")
-    parser.add_argument("-db", "-database", help="Blast database to be queried", required=True, type=check_db_folder,
+    parser.add_argument("-db", "-database", help="Diamond database to be queried", required=True, type=check_db_folder,
                         metavar="file path")
     parser.add_argument("-c", "-cores", help="Number of parallel CPUs to use for threading (default: all)",
                         type=determine_cpu_nr, default="all", metavar="Int")
@@ -191,13 +191,11 @@ def check_db_folder(path):
     # make sure the databae file is of the correct file type
     root, ext = os.path.splitext(path)
     dbname = root.split(os.sep)[-1]
-    if ext == ".pal":
+    if ext == ".dmnd":
         expected_extensions = PROT_DATABASE_EXTENSIONS
-    elif ext == ".nal":
-        expected_extensions = NUC_DATABASE_EXTENSIONS
     else:
         raise argparse.ArgumentTypeError("Incorrect extension {} for database file."
-                                         "Should be .pal or .nal".format(ext))
+                                         "Should be .dmnd".format(ext))
 
     # make sure the db folder contains all files required
     db_folder = os.listdir(to_path)
@@ -245,7 +243,7 @@ class Options:
         # the output directory
         self.outdir = arguments.o
         # the database to use
-        self.dbtype, self.db = self.__configure_db_and_type(arguments.db)
+        self.db_name, self.db = self.__configure_db_and_type(arguments.db)
 
         self.architecture_mode = self.__check_architecture_mode()
         # values that define the query
@@ -288,15 +286,10 @@ class Options:
 
     def __configure_db_and_type(self, database_path):
         to_path, db_file = os.path.split(database_path)
-        # very important to configure. Otherwise BLAST+ cannot find database files
-        os.environ['BLASTDB'] = to_path
 
         # make sure the databae file is of the correct file type
         dbname, ext = os.path.splitext(db_file)
-        if ext == ".pal":
-            return "prot", dbname
-        elif ext == ".nal":
-            return "nucl", dbname
+        return dbname, database_path
 
 
 #### STEP 2: READ INPUT FILE ####
@@ -526,14 +519,11 @@ def db_blast(user_options):
     :param user_options: an Option object with user options
     :return: the blast output
     """
-    logging.info("Running NCBI BLAST+ searches on the provided database {}..".format(user_options.db))
-    if user_options.dbtype == "prot":
-        command_start = "{}{}blastp".format(EXEC, os.sep)
-    else:
-        command_start = "{}{}tblastn".format(EXEC, os.sep)
+    logging.info("Running NCBI BLAST+ searches on the provided database {}..".format(user_options.db_name))
+    command_start = "{}{}diamond blastp".format(EXEC, os.sep)
 
-    complete_command = "{} -db {} -query {}{}query.fasta -outfmt 6 -max_target_seqs" \
-                       " {} -evalue 1e-05 -out {}{}input.out -num_threads {}"\
+    complete_command = "{} --db {} --query {}{}query.fasta --outfmt 6 --max-target-seqs" \
+                       " {} --evalue 1e-05 --out {}{}input.out --threads {}"\
         .format(command_start, user_options.db, os.getcwd(), os.sep, user_options.hitspergene,
                 os.getcwd(), os.sep, user_options.cores)
 
@@ -575,10 +565,7 @@ def parse_db_blast(user_options, query_proteins, blast_output):
     blast result with the values being BlastResult objects that have the key as
     query and are above user defined treshholds.
     """
-    if user_options.dbtype == "nucl":
-        blast_lines = filter_nuc_output(blast_output)
-    else:
-        blast_lines = blast_output.split("\n")[:-1]
+    blast_lines = blast_output.split("\n")[:-1]
     blast_dict = blast_parse(user_options, query_proteins, blast_lines)
     if len(blast_dict) == 0:
         logging.info("No blast hits encountered against the provided database."
@@ -659,10 +646,7 @@ def load_database(blast_dict, user_options):
     """
     logging.info("Loading GenBank positional info into memory...")
 
-    if user_options.dbtype == "nucl":
-        database = load_nucleotide_database(blast_dict, user_options)
-    else:
-        database = load_protein_database(blast_dict, user_options)
+    database = load_protein_database(blast_dict, user_options)
     return database
 
 
@@ -679,10 +663,10 @@ def load_protein_database(blast_dict, user_options):
     sets of proteins for each contig, then opens these contigs from the tar
     archive and puts them into a GenbankFile object.
     """
-    db_path = os.environ["BLASTDB"]
+    db_path, _ = os.path.split(user_options.db)
 
     covered_contigs = set()
-    with open("{}{}{}_database_index.pickle".format(db_path, os.sep, user_options.db), "rb") as index_file:
+    with open("{}{}{}_database_index.pickle".format(db_path, os.sep, user_options.db_name), "rb") as index_file:
         list_of_contig_proteins = pickle.load(index_file)
     for results in blast_dict.values():
         for result in results:
@@ -696,10 +680,10 @@ def load_protein_database(blast_dict, user_options):
             if len(covered_contigs) == len(list_of_contig_proteins):
                 break
     contigs = []
-    with tarfile.open("{}{}{}_contigs.tar.gz".format(db_path, os.sep, user_options.db), "r:gz") as tf:
+    with tarfile.open("{}{}{}_contigs.tar.gz".format(db_path, os.sep, user_options.db_name), "r:gz") as tf:
         for contig_nr in covered_contigs:
             for entry in tf:
-                if "{}/{}.pickle".format(user_options.db, contig_nr) == entry.name:
+                if "{}/{}.pickle".format(user_options.db_name, contig_nr) == entry.name:
                     file_obj = tf.extractfile(entry)
                     contigs.append(pickle.load(file_obj))
 
@@ -723,7 +707,7 @@ def load_nucleotide_database(blast_dict, user_options):
     """
     db_path = os.environ["BLASTDB"]
 
-    with open("{}{}{}_database_index.pickle".format(db_path, os.sep, user_options.db), "rb") as index_file:
+    with open("{}{}{}_database_index.pickle".format(db_path, os.sep, user_options.db_name), "rb") as index_file:
         list_of_contig_accessions = pickle.load(index_file)
 
     hits_per_contig = {}
@@ -1241,7 +1225,7 @@ def write_txt_output(query_proteins, clusters, user_options):
                                       .format(os.path.join(user_options.outdir, file_name)))
 
     # write for what database
-    out_file.write("ClusterBlast scores for: {}{}{}\n\n".format(os.environ["BLASTDB"], os.sep, user_options.db))
+    out_file.write("ClusterBlast scores for: {}\n\n".format(user_options.db))
 
     # write all the query proteins
     out_file.write(">>Query proteins:\n")
