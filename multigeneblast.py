@@ -404,7 +404,7 @@ def internal_blast(user_options, query_proteins):
     logging.debug("Finished running internal blastp.")
 
     try:
-        with open("{}{}internal_input.out".format(TEMP, os.sep),"r") as f:
+        with open("{}{}internal_input.out".format(TEMP, os.sep), "r") as f:
             blastoutput = f.read()
     except Exception:
         logging.critical("Something went wrong reading the blast output file. Exiting...")
@@ -554,7 +554,7 @@ def db_blast(user_options):
     logging.debug("Finished blasting")
 
     try:
-        with open("{}{}input.out".format(TEMP, os.sep),"r") as f:
+        with open("{}{}input.out".format(TEMP, os.sep), "r") as f:
             blastoutput = f.read()
     except Exception:
         logging.critical("Cannot open the file that contains the database blast output. Exiting...")
@@ -638,7 +638,7 @@ def filter_nuc_output(blast_output):
         if "|" in c_tabs[1]:
             accession = c_tabs[1].split("|")[1]
         else:
-            accession= c_tabs[1]
+            accession = c_tabs[1]
         subject = "{}_{}".format(accession, count)
         count += 1
         c_tabs[1] = subject
@@ -911,14 +911,13 @@ def add_additional_proteins(clusters_per_contig, database):
         # to assign all proteins
         for protein in contig_proteins:
             cluster = clusters[cluster_index]
-
-            if protein.start >= cluster.start <= cluster.stop:
+            if cluster.start <= protein.start <= cluster.stop:
                 cluster.add_protein(protein)
                 # if a protein is added make sure to add the same protein to a
                 # different cluster that can be overlapping in the extra region part
                 if cluster_index + 1 < len(clusters):
                     next_cluster = clusters[cluster_index + 1]
-                    if protein.stop >= next_cluster.start <= next_cluster.stop:
+                    if next_cluster.start <= protein.stop <= next_cluster.stop:
                         next_cluster.add_protein(protein)
 
             elif protein.start > cluster.start:
@@ -968,9 +967,9 @@ class Cluster:
         self.__blast_proteins = OrderedDict()
 
         # a dictionary for tracking individual parts of the score
-        self.__score = {"synteny" : 0, "accumulated blast score" : 0, "number unique hits" : 0}
+        self.__score = {"synteny": 0, "accumulated blast score": 0, "number unique hits": 0}
 
-    def add_protein(self, protein, query_blast_hit = None):
+    def add_protein(self, protein, query_blast_hit=None):
         """
         Controlled way of adding proteins to the cluster.
 
@@ -1115,7 +1114,8 @@ class Cluster:
         full_summary += "- MultiGeneBlast 2.0 score: {:.7f}\n  - synteny score: {}\n  " \
                         "- accumulated blast bit score / 1.000.000: {:.7f}\n  " \
                         "- Number of unique blast hits: {}\n\n".\
-            format(self.score, self.__score["synteny"], self.__score["accumulated blast score"], self.__score["number unique hits"])
+            format(self.score, self.__score["synteny"], self.__score["accumulated blast score"],
+                   self.__score["number unique hits"])
 
         # Table of all proteins in cluster
         full_summary += ">Table of genes in cluster:\n"
@@ -1547,7 +1547,7 @@ def main():
     logging.info("Step 8/12: All clusters have been scored.")
 
     # step 9: write the results to a text file
-    write_txt_output(query_proteins, clusters,user_options)
+    write_txt_output(query_proteins, clusters, user_options)
     logging.info("Step 9/12: Results have been written to the mgb file.")
 
     logging.info("Creating visual output...")
