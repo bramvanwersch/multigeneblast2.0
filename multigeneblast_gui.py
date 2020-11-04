@@ -391,7 +391,7 @@ class MainMultiGeneBlastGui(Frame):
         if ext == '.nal':
             expected_files = [dbname + ext for ext in NUC_DATABASE_EXTENSIONS]
         else:
-            expected_files = [dbname + ext for ext in DATABASE_EXTENSIONS]
+            expected_files = [dbname + ext for ext in PROT_DATABASE_EXTENSIONS]
         for file in expected_files:
             if file not in db_folder:
                 showerror("Missing database file", "The following file {} is missing"

@@ -192,10 +192,12 @@ def check_db_folder(path):
     root, ext = os.path.splitext(path)
     dbname = root.split(os.sep)[-1]
     if ext == ".dmnd":
-        expected_extensions = DATABASE_EXTENSIONS
+        expected_extensions = PROT_DATABASE_EXTENSIONS
+    elif ext == ".nal":
+        expected_extensions = NUC_DATABASE_EXTENSIONS
     else:
         raise argparse.ArgumentTypeError("Incorrect extension {} for database file."
-                                         "Should be .dmnd".format(ext))
+                                         "Should be .dmnd for protein databases and .nal for nucleotide databases".format(ext))
 
     # make sure the db folder contains all files required
     db_folder = os.listdir(to_path)
@@ -286,10 +288,12 @@ class Options:
 
     def __configure_db_and_type(self, database_path):
         to_path, db_file = os.path.split(database_path)
+        os.environ['BLASTDB'] = to_path
+        print(to_path)
 
         # make sure the databae file is of the correct file type
         dbname, ext = os.path.splitext(db_file)
-        if dbname.endswith("_nuc"):
+        if ext == ".nal":
             dbtype = "nucl"
         else:
             dbtype = "prot"
@@ -525,12 +529,20 @@ def db_blast(user_options):
     :return: the blast output
     """
     logging.info("Running NCBI BLAST+ searches on the provided database {}..".format(user_options.db_name))
-    command_start = "{}{}diamond blastp".format(EXEC, os.sep)
+    if user_options.dbtype == "prot":
+        command_start = "{}{}diamond blastp".format(EXEC, os.sep)
 
-    complete_command = "{} --db {} --query {}{}query.fasta --outfmt 6 --max-target-seqs" \
-                       " {} --evalue 1e-05 --out {}{}input.out --threads {}"\
-        .format(command_start, user_options.db, os.getcwd(), os.sep, user_options.hitspergene,
-                os.getcwd(), os.sep, user_options.cores)
+        complete_command = "{} --db {} --query {}{}query.fasta --outfmt 6 --max-target-seqs" \
+                           " {} --evalue 1e-05 --out {}{}input.out --threads {}"\
+            .format(command_start, user_options.db, os.getcwd(), os.sep, user_options.hitspergene,
+                    os.getcwd(), os.sep, user_options.cores)
+    else:
+        command_start = "{}{}tblastn".format(EXEC, os.sep)
+
+        complete_command = "{} -db {} -query {}{}query.fasta -outfmt 6 -max_target_seqs" \
+                           " {} -evalue 1e-05 -out {}{}input.out -num_threads {}" \
+            .format(command_start, user_options.db_name, os.getcwd(), os.sep, user_options.hitspergene,
+                    os.getcwd(), os.sep, user_options.cores)
 
     logging.debug("Started blasting against the provided database...")
     db_blast_process = Process(target=run_commandline_command, args=[complete_command, 0])
@@ -570,7 +582,10 @@ def parse_db_blast(user_options, query_proteins, blast_output):
     blast result with the values being BlastResult objects that have the key as
     query and are above user defined treshholds.
     """
-    blast_lines = blast_output.split("\n")[:-1]
+    if user_options.dbtype == "nucl":
+        blast_lines = filter_nuc_output(blast_output)
+    else:
+        blast_lines = blast_output.split("\n")[:-1]
     blast_dict = blast_parse(user_options, query_proteins, blast_lines)
     if len(blast_dict) == 0:
         logging.info("No blast hits encountered against the provided database."
@@ -712,7 +727,7 @@ def load_nucleotide_database(blast_dict, user_options):
     text that can be read by a GenbankFile object to create a database with all
     relevant contigs and proteins.
     """
-    db_path, _ = os.path.split(user_options.db)
+    db_path = os.environ["BLASTDB"]
 
     with open("{}{}{}_database_index.pickle".format(db_path, os.sep, user_options.db_name), "rb") as index_file:
         list_of_contig_accessions = pickle.load(index_file)
@@ -753,20 +768,16 @@ def make_genbank_from_nuc_contigs(contigs, hits_per_contig):
     for contig in contigs:
         file_text += "DEFINITION  {}\nACCESSION   {}\n".format(contig.definition.replace("\n", ""), contig.accession)
         for index, hit in enumerate(hits_per_contig[contig.accession]):
-            reading_frame = int(hit.subject[-1])
-            hit.subject = '{}_Blastp_hit_{}'.format(contig.accession, index + 1)
-            hit.subject_stop = hit.subject_stop * 3
-            hit.subject_start = hit.subject_start * 3
             if hit.subject_start > hit.subject_stop:
                 file_text += "     CDS             complement({}..{})\n".format(hit.subject_stop, hit.subject_start)
             else:
                 file_text += "     CDS             {}..{}\n".format(hit.subject_start, hit.subject_stop)
-            file_text += '                     /codon_start={}\n'.format(int((reading_frame % 3) + 1))
-            file_text += '                     /product="{}"\n'.format(hit.subject)
-            file_text += '                     /protein_id="{}_Blastp_hit_{}"\n'.format(contig.accession, index + 1)
-            file_text += '                     /translation="{}"\n'.format(contig.reading_frames[reading_frame - 1][int(hit.subject_start / 3):int(hit.subject_stop / 3) + 1])
-
-        file_text += "\nORIGIN      \n\n"
+            file_text += '                     /locus_tag="{}"\n'.format(hit.subject)
+            file_text += '                     /codon_start=1\n'
+            file_text += '                     /product=tBlastn hit on {}."\n'.format(contig.accession)
+            file_text += '                     /protein_id=tBlastn_hit_{}"\n'.format(index)
+        file_text += "\nORIGIN      \n"
+        file_text += contig.dna_sequence
         file_text += "\n//\n"
     return file_text
 

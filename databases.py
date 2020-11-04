@@ -322,9 +322,8 @@ class NucleotideDataBase(Database):
         """
         fasta_text = ""
         for contig in self._files:
-            for index, frame in enumerate(contig.reading_frames):
-                fasta_text += ">{}_rf{}\n".format(contig.accession, index + 1)
-                fasta_text += "{}\n".format(frame)
+            fasta_text += ">{}\n".format(contig.accession)
+            fasta_text += "{}\n".format(contig.dna_sequence)
         return fasta_text
 
     def __read_fasta_file(self, file):
@@ -715,15 +714,14 @@ class NucleotideContig(Contig):
         if file_text is not None:
             gene_defenitions, dna_sequence = file_text.split("\nORIGIN")
             # Extract DNA sequence and calculate complement of it
-            dna_sequence = clean_dna_sequence(dna_sequence)
+            self.dna_sequence = clean_dna_sequence(dna_sequence)
 
             # Extract gene information
             gene_information = gene_defenitions.split("     CDS             ")
 
             super().__init__(dna_sequence, gene_information)
         elif sequence is not None:
-            dna_sequence = sequence
-            self.lenght = len(dna_sequence)
+            self.dna_sequence = sequence
             if accession == "":
                 self.accession = "accession{}".format(self.COUNTER)
                 Contig.COUNTER += 1
@@ -733,17 +731,6 @@ class NucleotideContig(Contig):
         else:
             raise MultiGeneBlastException("When creating a NucleotideContig you either have to supply a "
                                           "file text or sequence.")
-        self.reading_frames = self.__get_reading_frames(dna_sequence)
-
-    def __get_reading_frames(self, dna_seq):
-        rf1 = translate(dna_seq)
-        rf2 = translate(dna_seq[1:])
-        rf3 = translate(dna_seq[2:])
-        reverse_seq = dna_seq[::-1]
-        rf4 = translate(reverse_seq)
-        rf5 = translate(reverse_seq[1:])
-        rf6 = translate(reverse_seq[2:])
-        return rf1, rf2, rf3, rf4, rf5, rf6
 
 
 class ProteinContig(Contig):

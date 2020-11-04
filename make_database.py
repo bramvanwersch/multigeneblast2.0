@@ -98,7 +98,7 @@ def clean_outdir(dbname, outdir):
     """
     files = os.listdir(outdir)
 
-    remove_files = [dbname + ext for ext in DATABASE_EXTENSIONS]
+    remove_files = [dbname + ext for ext in PROT_DATABASE_EXTENSIONS]
     for file in files:
         if file in remove_files:
             os.remove(outdir + os.sep + file)
@@ -117,11 +117,6 @@ def main():
 
     # parse options
     dbname, outdir, inputfiles, db_type, log_level = get_arguments()
-
-    if db_type == "nucl" and not dbname.endswith("_nuc"):
-        dbname = dbname + "_nuc"
-    elif db_type == "prot" and dbname.endswith("_nuc"):
-        dbname = dbname[:-4]
 
     # setup a logger
     setup_logger(outdir, starttime, level=log_level)
@@ -147,17 +142,26 @@ def main():
         f.write(db.get_fasta())
     logging.info("Step 4/5: Written MultiGeneBlast database to fasta format.")
 
-    # Create Blast database, set the outdir as the current directory to amke sure that the files end up in the
-    # right place
-    logging.info("Creating Diamond database...")
-
     # make sure to change the working directory for the makeblastdb files to edn up in the right place
     os.chdir(outdir)
-    command = "{}{}diamond makedb --db {}{}{} --in {}{}{}_dbbuild.fasta".format(EXEC, os.sep, outdir, os.sep, dbname,
-                                                                                TEMP, os.sep, dbname)
+    if db_type == "prot":
+        logging.info("Creating Diamond database...")
 
-    run_commandline_command(command, max_retries=0)
-    logging.info("Step 5/5: Diamond database created.")
+        command = "{}{}diamond makedb --db {}{}{} --in {}{}{}_dbbuild.fasta".format(EXEC, os.sep, outdir, os.sep, dbname,
+                                                                                TEMP, os.sep, dbname)
+        run_commandline_command(command, max_retries=0)
+        logging.info("Step 5/5: Diamond database created.")
+    else:
+        logging.info("Creating nucleotide database...")
+
+        command = "{}{}makeblastdb -dbtype {} -out {} -in {}{}{}_dbbuild.fasta".format(EXEC, os.sep, db_type, dbname, TEMP,
+                                                                                       os.sep, dbname)
+        run_commandline_command(command, max_retries=0)
+        logging.info("Step 5/5: nucleotide database created.")
+
+        # write the .nal file
+        with open(outdir + os.sep + dbname + ".nal", "w") as f:
+            f.write("TITLE " + dbname + "\nDBLIST " + dbname + "\n")
 
     logging.info("Database was succesfully created at {}.".format(outdir))
 
