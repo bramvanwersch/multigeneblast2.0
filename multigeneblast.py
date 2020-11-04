@@ -192,7 +192,7 @@ def check_db_folder(path):
     root, ext = os.path.splitext(path)
     dbname = root.split(os.sep)[-1]
     if ext == ".dmnd":
-        expected_extensions = PROT_DATABASE_EXTENSIONS
+        expected_extensions = DATABASE_EXTENSIONS
     else:
         raise argparse.ArgumentTypeError("Incorrect extension {} for database file."
                                          "Should be .dmnd".format(ext))

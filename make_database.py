@@ -87,7 +87,7 @@ def check_out_folder(path):
     return path
 
 
-def clean_outdir(dbname, outdir, dbtype="prot"):
+def clean_outdir(dbname, outdir):
     """
     Clean the output directory if files that have the same name as files that
     are going to be added
@@ -98,12 +98,7 @@ def clean_outdir(dbname, outdir, dbtype="prot"):
     """
     files = os.listdir(outdir)
 
-    if dbtype == "prot":
-        database_alias_file = dbname + ".pal"
-    else:
-        database_alias_file = dbname + ".nal"
-    remove_files = [dbname + ext for ext in PROT_DATABASE_EXTENSIONS]
-    remove_files.append(database_alias_file)
+    remove_files = [dbname + ext for ext in DATABASE_EXTENSIONS]
     for file in files:
         if file in remove_files:
             os.remove(outdir + os.sep + file)
@@ -122,6 +117,11 @@ def main():
 
     # parse options
     dbname, outdir, inputfiles, db_type, log_level = get_arguments()
+
+    if db_type == "nucl" and not dbname.endswith("_nuc"):
+        dbname = dbname + "_nuc"
+    elif db_type == "prot" and dbname.endswith("_nuc"):
+        dbname = dbname[:-4]
 
     # setup a logger
     setup_logger(outdir, starttime, level=log_level)

@@ -15,7 +15,7 @@ A copy of GNU GPL v3 should have been included in this software package in LICEN
 
 import os
 import shutil
-from constants import PROT_DATABASE_EXTENSIONS, NUC_DATABASE_EXTENSIONS
+from constants import DATABASE_EXTENSIONS
 
 
 def test_protein_database(command):
@@ -27,7 +27,7 @@ def test_protein_database(command):
 
     # check if all files are present
     db_folder_list = os.listdir(db_folder)
-    expected_files = ["test" + ext for ext in PROT_DATABASE_EXTENSIONS]
+    expected_files = ["test" + ext for ext in DATABASE_EXTENSIONS]
     for file in expected_files:
         assert file in db_folder_list
 
@@ -44,7 +44,7 @@ def test_nucleotide_database(command):
 
     # check if all files are present
     db_folder_list = os.listdir(db_folder)
-    expected_files = ["test" + ext for ext in NUC_DATABASE_EXTENSIONS]
+    expected_files = ["test_nuc" + ext for ext in DATABASE_EXTENSIONS]
     for file in expected_files:
         assert file in db_folder_list
 
