@@ -243,7 +243,7 @@ class Options:
         # the output directory
         self.outdir = arguments.o
         # the database to use
-        self.db_name, self.db = self.__configure_db_and_type(arguments.db)
+        self.db_name, self.db, self.dbtype = self.__configure_db_and_type(arguments.db)
 
         self.architecture_mode = self.__check_architecture_mode()
         # values that define the query
@@ -289,7 +289,11 @@ class Options:
 
         # make sure the databae file is of the correct file type
         dbname, ext = os.path.splitext(db_file)
-        return dbname, database_path
+        if dbname.endswith("_nuc"):
+            dbtype = "nucl"
+        else:
+            dbtype = "prot"
+        return dbname, database_path, dbtype
 
 
 #### STEP 2: READ INPUT FILE ####
@@ -376,7 +380,7 @@ def internal_blast(user_options, query_proteins):
     logging.info("Finding internal homologs...")
 
     # Make Blast db for using the sequences saved in query.fasta in the previous step
-    make_blast_db_command = "{}{}makeblastdb -in query.fasta -out query_db -dbtype prot".format(EXEC, os.sep)
+    make_blast_db_command = "{}{}diamond makedb --in query.fasta --db {}{}query_db".format(EXEC, os.sep, TEMP, os.sep)
     logging.debug("Started making internal blast database...")
     try:
         run_commandline_command(make_blast_db_command, max_retries=5)
@@ -385,9 +389,10 @@ def internal_blast(user_options, query_proteins):
     logging.debug("Finished making internal blast database.")
 
     # Run and parse BLAST search
-    blast_search_command = "{}{}blastp -db query_db -query query.fasta -outfmt 6" \
-                           " -max_target_seqs 1000 -evalue 1e-05 -out internal_input.out" \
-                           " -num_threads {}".format(EXEC, os.sep, user_options.cores)
+
+    blast_search_command = "{}{}diamond blastp --db {}{}query_db --query {}{}query.fasta --outfmt 6" \
+                           " --max-target-seqs 1000 --evalue 1e-05 --out {}{}internal_input.out" \
+                           " --threads {}".format(EXEC, os.sep, TEMP, os.sep, TEMP, os.sep, TEMP, os.sep, user_options.cores)
 
     logging.debug("Running internal blastp...")
     try:

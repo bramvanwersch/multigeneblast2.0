@@ -517,7 +517,9 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, user_op
             link = "http://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE=Proteins&amp;PROGRAM=blastp&amp;BLAST_" \
                    "PROGRAMS=blastp&amp;QUERY={}&amp;LINK_LOC=protein&amp;PAGE_TYPE=BlastSearch"\
                 .format(protein.protein_id)
-            if protein.locus_tag != "" and is_valid_accession(protein.locus_tag):
+            if user_options.dbtype == "nucl":
+                html_outfile.write('<br/>Accession: {} \n'.format(protein.protein_id))
+            elif protein.locus_tag != "" and is_valid_accession(protein.locus_tag):
                 html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}" target="'
                                    '_blank">{}</a>\n'.format(protein.locus_tag, protein.locus_tag))
             html_outfile.write("<br/>Location: {}-{}\n".format(protein.start, protein.stop))
@@ -531,7 +533,7 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, user_op
                     html_outfile.write("<br/>BlastP bit score: {}\n<br/>Sequence coverage: {:.1f} %\n"
                                        .format(blast_result.bit_score, blast_result.percent_coverage))
                     html_outfile.write("<br/>E-value: {}\n<br/>".format(blast_result.evalue))
-            if is_valid_accession(protein.protein_id):
+            if is_valid_accession(protein.protein_id) and user_options.dbtype != "nucl":
                 html_outfile.write('<br/><a href="{}" target="_blank"> NCBI BlastP on this gene </a>\n'.format(link))
             # muscle allignment
             if protein.name in gene_color_dict:
@@ -643,7 +645,9 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, user_op
             link = "http://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE=Proteins&amp;PROGRAM=blastp&amp;BLAST" \
                    "_PROGRAMS=blastp&amp;QUERY={}&amp;LINK_LOC=protein&amp;PAGE_TYPE=BlastSearch"\
                 .format(protein.protein_id)
-            if protein.locus_tag != "" and is_valid_accession(protein.locus_tag):
+            if user_options.dbtype == "nucl":
+                html_outfile.write('<br/>Accession: {} \n'.format(protein.protein_id))
+            elif protein.locus_tag != "" and is_valid_accession(protein.locus_tag):
                 html_outfile.write('<br/>Accession: <a href="http://www.ncbi.nlm.nih.gov/protein/{}" '
                                    'target="_blank">{}</a>\n'.format(protein.locus_tag, protein.locus_tag))
             html_outfile.write("<br/>Location: {}-{}\n".format(protein.start, protein.stop))
@@ -657,7 +661,7 @@ def write_xhtml_output(html_outfile, clusters, query_cluster, page_indx, user_op
                     html_outfile.write("<br/>BlastP bit score: {}\n<br/>Sequence coverage: {:.1f} %\n"
                                        .format(blast_result.bit_score, blast_result.percent_coverage))
                     html_outfile.write("<br/>E-value: {}\n<br/>".format(blast_result.evalue))
-            if is_valid_accession(protein.protein_id):
+            if is_valid_accession(protein.protein_id) and user_options.dbtype != "nucl":
                 html_outfile.write('<br/><a href="{}" target="_blank"> NCBI BlastP on this gene </a>\n'.format(link))
             if protein.name in gene_color_dict:
                 color = gene_color_dict[protein.name].replace("#", "")
