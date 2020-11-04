@@ -5,6 +5,10 @@ Script that can be used to make databases that are compatible for searches with 
 
 Original creator: Marnix Medena
 Recent contributor: Bram van Wersch
+
+Copyright (c) 2012 Marnix H. Medema
+License: GNU General Public License v3 or later
+A copy of GNU GPL v3 should have been included in this software package in LICENSE.txt.
 """
 
 import argparse
@@ -87,7 +91,7 @@ def check_out_folder(path):
     return path
 
 
-def clean_outdir(dbname, outdir):
+def clean_outdir(dbname, outdir, dbtype):
     """
     Clean the output directory if files that have the same name as files that
     are going to be added
@@ -98,7 +102,10 @@ def clean_outdir(dbname, outdir):
     """
     files = os.listdir(outdir)
 
-    remove_files = [dbname + ext for ext in PROT_DATABASE_EXTENSIONS]
+    if dbtype == "prot":
+        remove_files = [dbname + ext for ext in PROT_DATABASE_EXTENSIONS]
+    else:
+        remove_files = [dbname + ext for ext in NUC_DATABASE_EXTENSIONS]
     for file in files:
         if file in remove_files:
             os.remove(outdir + os.sep + file)
@@ -124,7 +131,7 @@ def main():
 
     # make sure to clear all files in the destination folder that have the same
     # name as files that are going to be added
-    clean_outdir(dbname, outdir)
+    clean_outdir(dbname, outdir, dbtype=db_type)
     logging.info("Step 2/5: Cleaned the output directory of potential duplicate files.")
 
     # create a database object

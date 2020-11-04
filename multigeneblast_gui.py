@@ -1,4 +1,16 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
+
+"""
+Functions for running the GUI of multigeneblast
+
+Original creator: Marnix Medena
+Recent contributor: Bram van Wersch
+
+Copyright (c) 2012 Marnix H. Medema
+License: GNU General Public License v3 or later
+A copy of GNU GPL v3 should have been included in this software package in LICENSE.txt.
+"""
+
 
 from multiprocessing import freeze_support
 from tkinter import *
@@ -167,11 +179,7 @@ class MainMultiGeneBlastGui(Frame):
 
         base_selection_frame.grid_columnconfigure(1, minsize=300)
 
-        # Database selection
-        if "genbank_mf.pal" in os.listdir("."):
-            self.__database_file_label.set((os.getcwd() + os.sep + "genbank_mf").replace("\\", "/"))
-        else:
-            self.__database_file_label.set("<No database selected>")
+        self.__database_file_label.set("<No database selected>")
         database_label = Label(base_selection_frame, text="Current database:")
         database_label.grid(row=1, column=0, sticky=W, padx=5)
         database_text = Label(base_selection_frame, textvariable=self.__database_file_label)
@@ -528,7 +536,8 @@ class MainMultiGeneBlastGui(Frame):
         """
         Try to open an xhtml file in a browser
         """
-        display_page_1 = self.__outdir_path + os.sep + OUT_FOLDER_NAME + os.sep + 'visual' + os.sep + 'displaypage1.xhtml'
+        display_page_1 = self.__outdir_path + os.sep + OUT_FOLDER_NAME + os.sep + 'visual' + os.sep + \
+                         'displaypage1.xhtml'
         if sys.platform == 'win32':
             try:
                 os.startfile(display_page_1)

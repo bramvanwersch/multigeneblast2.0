@@ -5,6 +5,10 @@ Classes for disecting genbank and embl files and putting them in a database form
 
 Original creator: Marnix Medena
 Recent contributor: Bram van Wersch
+
+Copyright (c) 2012 Marnix H. Medema
+License: GNU General Public License v3 or later
+A copy of GNU GPL v3 should have been included in this software package in LICENSE.txt.
 """
 
 # imports

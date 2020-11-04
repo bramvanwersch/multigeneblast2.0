@@ -6,9 +6,9 @@ The functions used to run multigeneblast. Also the file called to run multigeneb
 Original creator: Marnix Medena
 Recent contributor: Bram van Wersch
 
-Copyright (c) 2012 Marnix H. Medema
-License: GNU General Public License v3 or later
-A copy of GNU GPL v3 should have been included in this software package in LICENSE.txt.
+                                                                                                                        Copyright (c) 2012 Marnix H. Medema
+                                                                                                                        License: GNU General Public License v3 or later
+                                                                                                                        A copy of GNU GPL v3 should have been included in this software package in LICENSE.txt.
 """
 
 
@@ -196,8 +196,8 @@ def check_db_folder(path):
     elif ext == ".nal":
         expected_extensions = NUC_DATABASE_EXTENSIONS
     else:
-        raise argparse.ArgumentTypeError("Incorrect extension {} for database file."
-                                         "Should be .dmnd for protein databases and .nal for nucleotide databases".format(ext))
+        raise argparse.ArgumentTypeError("Incorrect extension {} for database file. Should be .dmnd for protein"
+                                         " databases and .nal for nucleotide databases".format(ext))
 
     # make sure the db folder contains all files required
     db_folder = os.listdir(to_path)
@@ -396,7 +396,8 @@ def internal_blast(user_options, query_proteins):
 
     blast_search_command = "{}{}diamond blastp --db {}{}query_db --query {}{}query.fasta --outfmt 6" \
                            " --max-target-seqs 1000 --evalue 1e-05 --out {}{}internal_input.out" \
-                           " --threads {}".format(EXEC, os.sep, TEMP, os.sep, TEMP, os.sep, TEMP, os.sep, user_options.cores)
+                           " --threads {}".format(EXEC, os.sep, TEMP, os.sep, TEMP, os.sep, TEMP, os.sep,
+                                                  user_options.cores)
 
     logging.debug("Running internal blastp...")
     try:
@@ -482,8 +483,8 @@ def blast_parse(user_options, query_proteins, blast_lines):
 
     :param user_options: a Option object containing the options supplied by the user
     :param query_proteins: a dictionary that links gene_names against Protein objects
-    :param blast_lines: the output produced by NCBI BLAST+ blastp algorithm version
-    2.2.18 split on newlines
+    :param blast_lines: the output produced by NCBI BLAST+ tblastn or diamond blast
+    output, split on newlines
     :return: a dictionary that contains a key for every query that had a siginificant
     blast result with the values being BlastResult objects that have the key as
     query and are above user defined treshholds.
@@ -528,8 +529,9 @@ def db_blast(user_options):
     :param user_options: an Option object with user options
     :return: the blast output
     """
-    logging.info("Running NCBI BLAST+ searches on the provided database {}..".format(user_options.db_name))
     if user_options.dbtype == "prot":
+        logging.info("Running Diamond blast searches on the provided database {}..".format(user_options.db_name))
+
         command_start = "{}{}diamond blastp".format(EXEC, os.sep)
 
         complete_command = "{} --db {} --query {}{}query.fasta --outfmt 6 --max-target-seqs" \
@@ -537,6 +539,8 @@ def db_blast(user_options):
             .format(command_start, user_options.db, os.getcwd(), os.sep, user_options.hitspergene,
                     os.getcwd(), os.sep, user_options.cores)
     else:
+        logging.info("Running NCBI tBLASTn+ searches on the provided database {}..".format(user_options.db_name))
+
         command_start = "{}{}tblastn".format(EXEC, os.sep)
 
         complete_command = "{} -db {} -query {}{}query.fasta -outfmt 6 -max_target_seqs" \

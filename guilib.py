@@ -5,6 +5,10 @@ Classes used by several classes from the gui.
 
 Original creator: Marnix Medena
 Recent contributor: Bram van Wersch
+
+Copyright (c) 2012 Marnix H. Medema
+License: GNU General Public License v3 or later
+A copy of GNU GPL v3 should have been included in this software package in LICENSE.txt.
 """
 
 
@@ -515,7 +519,7 @@ class MakeDatabase(Toplevel):
         """
         Function called when the make_database_button is pressed
         """
-        if self.dbname.get() + ".pal" in os.listdir(self.__outdir_path) or\
+        if self.dbname.get() + ".dmnd" in os.listdir(self.__outdir_path) or\
                 self.dbname.get() + ".nal" in os.listdir(self.__outdir_path):
             answer = askyesno('Database name exists',
                               'A database with this name already exists. Overwrite?')
@@ -562,7 +566,7 @@ class MakeDatabase(Toplevel):
         exit_code, expected = run_extrenal_command(command, outbox, self)
         if exit_code == 0:
             if self.dbtype.getval() == 0:
-                outbox.text_insert("Database created. You can now use this database by selecting '{}.pal' by clicking"
+                outbox.text_insert("Database created. You can now use this database by selecting '{}.dmnd' by clicking"
                                    " 'open database file' in the main window.\n".format(self.dbname.get()))
             else:
                 outbox.text_insert("Database created. You can now use this database by selecting '{}.nal' by clicking "
@@ -794,7 +798,7 @@ class MakeOnlineDatabase(Toplevel):
         self.update()
         exit_code, expected = run_extrenal_command(command, outbox, self.master)
         if exit_code == 0:
-            outbox.text_insert("Database created. You can now use this database by selecting '{}.pal' by clicking"
+            outbox.text_insert("Database created. You can now use this database by selecting '{}.dmnd' by clicking"
                                " 'open database file' in the main window.\n".format(self.dbname.get()))
         elif not expected:
             outbox.text_insert("MultiGeneBlast experienced a problem while creating the database. Please click"
