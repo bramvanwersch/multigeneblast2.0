@@ -378,7 +378,7 @@ class MainMultiGeneBlastGui(Frame):
         """
         Select a database and check if all files are present
         """
-        location = tkinter.filedialog.askopenfilename(filetypes=(("MGB database files", ('*.pal', '*.nal')),
+        location = tkinter.filedialog.askopenfilename(filetypes=(("MGB database files", ('*.dmnd', '*.nal')),
                                                                  ("MGB database", ())))
         if location == "":
             return
