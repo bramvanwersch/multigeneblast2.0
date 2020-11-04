@@ -650,8 +650,10 @@ def load_database(blast_dict, user_options):
     :return: a GenbankFile object containing all the contigs with blast hits.
     """
     logging.info("Loading GenBank positional info into memory...")
-
-    database = load_protein_database(blast_dict, user_options)
+    if user_options.dbtype == "prot":
+        database = load_protein_database(blast_dict, user_options)
+    else:
+        database = load_nucleotide_database(blast_dict, user_options)
     return database
 
 
@@ -710,7 +712,7 @@ def load_nucleotide_database(blast_dict, user_options):
     text that can be read by a GenbankFile object to create a database with all
     relevant contigs and proteins.
     """
-    db_path = os.environ["BLASTDB"]
+    db_path, _ = os.path.split(user_options.db)
 
     with open("{}{}{}_database_index.pickle".format(db_path, os.sep, user_options.db_name), "rb") as index_file:
         list_of_contig_accessions = pickle.load(index_file)
@@ -724,11 +726,11 @@ def load_nucleotide_database(blast_dict, user_options):
             else:
                 hits_per_contig[accession] = [result]
     contigs = []
-    with tarfile.open("{}{}{}_contigs.tar.gz".format(db_path, os.sep, user_options.db), "r:gz") as tf:
+    with tarfile.open("{}{}{}_contigs.tar.gz".format(db_path, os.sep, user_options.db_name), "r:gz") as tf:
         for accession in hits_per_contig:
             accession_index = list_of_contig_accessions.index(accession)
             for entry in tf:
-                if "{}/{}.pickle".format(user_options.db, accession_index) == entry.name:
+                if "{}/{}.pickle".format(user_options.db_name, accession_index) == entry.name:
                     file_obj = tf.extractfile(entry)
                     contigs.append(pickle.load(file_obj))
     file_text = make_genbank_from_nuc_contigs(contigs, hits_per_contig)
@@ -751,16 +753,20 @@ def make_genbank_from_nuc_contigs(contigs, hits_per_contig):
     for contig in contigs:
         file_text += "DEFINITION  {}\nACCESSION   {}\n".format(contig.definition.replace("\n", ""), contig.accession)
         for index, hit in enumerate(hits_per_contig[contig.accession]):
+            reading_frame = int(hit.subject[-1])
+            hit.subject = '{}_Blastp_hit_{}'.format(contig.accession, index + 1)
+            hit.subject_stop = hit.subject_stop * 3
+            hit.subject_start = hit.subject_start * 3
             if hit.subject_start > hit.subject_stop:
                 file_text += "     CDS             complement({}..{})\n".format(hit.subject_stop, hit.subject_start)
             else:
                 file_text += "     CDS             {}..{}\n".format(hit.subject_start, hit.subject_stop)
-            file_text += '                     /locus_tag="{}"\n'.format(hit.subject)
-            file_text += '                     /codon_start=1\n'
-            file_text += '                     /product=tBlastn hit on {}."\n'.format(contig.accession)
-            file_text += '                     /protein_id=tBlastn_hit_{}"\n'.format(index)
-        file_text += "\nORIGIN      \n"
-        file_text += contig.dna_sequence
+            file_text += '                     /codon_start={}\n'.format(int((reading_frame % 3) + 1))
+            file_text += '                     /product="{}"\n'.format(hit.subject)
+            file_text += '                     /protein_id="{}_Blastp_hit_{}"\n'.format(contig.accession, index + 1)
+            file_text += '                     /translation="{}"\n'.format(contig.reading_frames[reading_frame - 1][int(hit.subject_start / 3):int(hit.subject_stop / 3) + 1])
+
+        file_text += "\nORIGIN      \n\n"
         file_text += "\n//\n"
     return file_text
 
