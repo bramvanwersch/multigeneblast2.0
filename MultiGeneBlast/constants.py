@@ -87,7 +87,7 @@ def get_appdata_path():
         appdata = os.path.expanduser("~") + "/Library/Application Support"
     elif platform.system() == "Linux":
         try:
-            if os.path.exists(os.getcwd() + os.sep + "multigeneblast_data"):
+            if os.path.exists(get_mgb_path() + os.sep + "multigeneblast_data"):
                 appdata = get_mgb_path() + os.sep + "multigeneblast_data"
             else:
                 os.mkdir(get_mgb_path() + os.sep + "multigeneblast_data")
