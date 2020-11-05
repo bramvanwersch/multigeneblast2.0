@@ -67,7 +67,7 @@ def get_mgb_path():
             mgb_path = sys.argv[0].rpartition(os.sep)[0]
     except Exception:
         pass
-    if mgb_path == "":
+    if mgb_path == "" or not os.path.exists(mgb_path):
         raise Exception("Error: Please add the MultiGeneBlast installation directory to"
                         " your $PATH environment variable before running the executable from another folder.")
     return mgb_path
