@@ -15,10 +15,9 @@ import argparse
 import logging
 import time
 
-from MultiGeneBlast.databases import ProteinDataBase, NucleotideDataBase
-from MultiGeneBlast.constants import *
-from MultiGeneBlast.utilities import remove_illegal_characters, setup_logger, run_commandline_command,\
-    setup_temp_folder
+from databases import ProteinDataBase, NucleotideDataBase
+from constants import *
+from utilities import remove_illegal_characters, setup_logger, run_commandline_command, setup_temp_folder
 
 MGBPATH = get_mgb_path()
 EXEC = get_exec_folder()

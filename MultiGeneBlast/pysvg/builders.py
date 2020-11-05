@@ -4,7 +4,7 @@
 (C) 2008, 2009 Kerim Mansour
 For licensing information please refer to license.txt
 '''
-from MultiGeneBlast.pysvg.shape import *
+from pysvg.shape import *
 
 
 class ShapeBuilder:

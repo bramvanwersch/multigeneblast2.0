@@ -6,7 +6,7 @@ For licensing information please refer to license.txt
 '''
 from xml.dom import minidom
 from xml.dom import Node
-from MultiGeneBlast.pysvg.structure import *
+from pysvg.structure import *
 
 
 def calculateMethodName(attr):

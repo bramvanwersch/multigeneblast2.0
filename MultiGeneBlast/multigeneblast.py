@@ -22,10 +22,10 @@ import pickle as pickle
 import colorsys
 
 # own imports
-from MultiGeneBlast.databases import GenbankFile, embl_to_genbank, Protein
-from MultiGeneBlast.visualisation import ClusterCollectionSvg, create_xhtml_file
-from MultiGeneBlast.utilities import *
-from MultiGeneBlast.constants import *
+from databases import GenbankFile, embl_to_genbank, Protein
+from visualisation import ClusterCollectionSvg, create_xhtml_file
+from utilities import *
+from constants import *
 
 # constant specifically required for mbg
 MGBPATH = get_mgb_path()
