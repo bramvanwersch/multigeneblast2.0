@@ -64,7 +64,7 @@ def get_mgb_path():
             pass
     try:
         if mgb_path == "" and os.sep in sys.argv[0] and "guilib.py" in os.listdir(sys.argv[0].rpartition(os.sep)[0]):
-            mgb_path = sys.argv[0].rpartition(os.sep)[0]
+            mgb_path = os.path.join(os.getcwd(), sys.argv[0].rpartition(os.sep)[0])
     except Exception:
         pass
     if mgb_path == "" or not os.path.exists(mgb_path):
