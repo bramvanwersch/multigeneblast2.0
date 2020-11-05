@@ -6,15 +6,8 @@ For licensing information please refer to license.txt
 '''
 from xml.dom import minidom
 from xml.dom import Node
-from pysvg.animate import *
-from pysvg.filter import *
-from pysvg.gradient import *
-from pysvg.linking import *
-from pysvg.script import *
-from pysvg.shape import *
-from pysvg.structure import *
-from pysvg.style import *
-from pysvg.text import *
+from MultiGeneBlast.pysvg.structure import *
+
 
 def calculateMethodName(attr):
     name=attr

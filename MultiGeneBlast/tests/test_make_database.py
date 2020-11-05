@@ -15,7 +15,7 @@ A copy of GNU GPL v3 should have been included in this software package in LICEN
 
 import os
 import shutil
-from constants import PROT_DATABASE_EXTENSIONS, NUC_DATABASE_EXTENSIONS
+from MultiGeneBlast.constants import PROT_DATABASE_EXTENSIONS, NUC_DATABASE_EXTENSIONS
 
 
 def test_protein_database(command):

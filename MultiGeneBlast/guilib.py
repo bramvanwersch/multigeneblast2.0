@@ -20,9 +20,9 @@ import urllib.request
 import urllib.error
 import urllib.parse
 
-from utilities import ILLEGAL_CHARACTERS
-from constants import APPDATA, GENBANK_EXTENSIONS, EMBL_EXTENSIONS, get_mgb_path, CHUNK, FASTA_EXTENSIONS
-from gui_utility import *
+from MultiGeneBlast.utilities import ILLEGAL_CHARACTERS
+from MultiGeneBlast.constants import APPDATA, GENBANK_EXTENSIONS, EMBL_EXTENSIONS, get_mgb_path, CHUNK, FASTA_EXTENSIONS
+from MultiGeneBlast.gui_utility import *
 
 MGBPATH = get_mgb_path()
 

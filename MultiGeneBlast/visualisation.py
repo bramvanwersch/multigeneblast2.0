@@ -16,11 +16,11 @@ A copy of GNU GPL v3 should have been included in this software package in LICEN
 import logging
 from collections import OrderedDict
 
-from pysvg.builders import *
+from MultiGeneBlast.pysvg.builders import ShapeBuilder
+from MultiGeneBlast.pysvg.structure import g, svg
 
-from constants import *
-from utilities import is_valid_accession
-from utilities import MultiGeneBlastException
+from MultiGeneBlast.constants import *
+from MultiGeneBlast.utilities import is_valid_accession, MultiGeneBlastException
 
 # constant specifically required for mbg
 MGBPATH = get_mgb_path()

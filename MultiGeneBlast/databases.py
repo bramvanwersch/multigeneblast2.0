@@ -24,8 +24,8 @@ import urllib.parse
 from urllib.error import URLError
 import http.client
 
-from utilities import *
-from constants import GENBANK_EXTENSIONS, EMBL_EXTENSIONS, TEMP, FASTA_EXTENSIONS
+from MultiGeneBlast.utilities import *
+from MultiGeneBlast.constants import GENBANK_EXTENSIONS, EMBL_EXTENSIONS, TEMP, FASTA_EXTENSIONS
 
 
 def clean_dna_sequence(dna_seq):

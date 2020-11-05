@@ -15,11 +15,11 @@ A copy of GNU GPL v3 should have been included in this software package in LICEN
 from multiprocessing import freeze_support
 from tkinter import *
 
-from guilib import *
-from databases import GenbankFile, embl_to_genbank
-from constants import *
-from utilities import determine_cpu_nr
-from gui_utility import *
+from MultiGeneBlast.guilib import *
+from MultiGeneBlast.databases import GenbankFile, embl_to_genbank
+from MultiGeneBlast.constants import *
+from MultiGeneBlast.utilities import determine_cpu_nr
+from MultiGeneBlast.gui_utility import *
 
 
 MGBPATH = get_mgb_path()

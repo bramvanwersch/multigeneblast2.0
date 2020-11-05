@@ -22,7 +22,7 @@ import sys
 import datetime
 import multiprocessing
 
-from constants import TEMP
+from MultiGeneBlast.constants import TEMP
 
 ILLEGAL_CHARACTERS = ["'", '"', '=', ';', ':', '[', ']', '>', '<', '|', '\\', "/", '*', '-', '.', ',', '?', ')', '(',
                       '^', '#', '!', '`', '~', '+', '{', '}', '@', '$', '%', '&']
