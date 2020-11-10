@@ -600,6 +600,7 @@ class MakeOnlineDatabase(Toplevel):
         self.dbname = StringVar()
         self.dbname.set("<Enter a name for your database>")
         self.search_frame = None
+        self.dbtype = None
 
         self.__outdir_label = StringVar()
         self.__outdir_label.set(APPDATA)
@@ -648,6 +649,10 @@ class MakeOnlineDatabase(Toplevel):
         outdir_label.grid(row=1, column=1, padx=3, pady=5)
         Button(dbname_frame, text="Select output folder", command=self.select_out_directory).grid(row=1, column=2,
                                                                                                   padx=3, pady=5)
+        text = Label(dbname_frame, text="Make raw nucleotide database for tblastn-searching:")
+        text.grid(row=2, column=1, padx=5, sticky=W)
+        self.dbtype = CheckBox(dbname_frame, "")
+        self.dbtype.grid(row=2, column=2, padx=5, sticky=W)
 
         button_frame2 = Frame(self)
         button_frame2.grid(row=9, column=0)
@@ -782,8 +787,13 @@ class MakeOnlineDatabase(Toplevel):
         :return: a string that is the full command to run make_database.py
         """
         base_command = "{}{}make_database.py ".format(MGBPATH, os.sep)
-        required_information = "-o {} -n {} -i {} ".format(self.__outdir_path, self.dbname.get(),
-                                                           self.__outdir_path + os.sep + self.dbname.get() + ".gbk")
+        if self.dbtype.getval() == 0:
+            dbtype = "prot"
+        else:
+            dbtype = "nucl"
+        required_information = "-o {} -n {} -i {} -t {}".format(self.__outdir_path, self.dbname.get(),
+                                                                self.__outdir_path + os.sep + self.dbname.get() +
+                                                                ".gbk", dbtype)
         full_command = base_command + required_information
         return full_command
 
@@ -798,8 +808,12 @@ class MakeOnlineDatabase(Toplevel):
         self.update()
         exit_code, expected = run_extrenal_command(command, outbox, self.master)
         if exit_code == 0:
-            outbox.text_insert("Database created. You can now use this database by selecting '{}.dmnd' by clicking"
-                               " 'open database file' in the main window.\n".format(self.dbname.get()))
+            if self.dbtype.getval() == 0:
+                outbox.text_insert("Database created. You can now use this database by selecting '{}.dmnd' by clicking"
+                                   " 'open database file' in the main window.\n".format(self.dbname.get()))
+            else:
+                outbox.text_insert("Database created. You can now use this database by selecting '{}.nal' by clicking "
+                                   "'open database file' in the main window.\n".format(self.dbname.get()))
         elif not expected:
             outbox.text_insert("MultiGeneBlast experienced a problem while creating the database. Please click"
                                " the button below to send an error report, so we can solve the underlying problem.\n")

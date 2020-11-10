@@ -153,14 +153,14 @@ def main():
     if db_type == "prot":
         logging.info("Creating Diamond database...")
 
-        command = "{}{}diamond makedb --db {}{}{} --in {}{}{}_dbbuild.fasta".format(EXEC, os.sep, outdir, os.sep, dbname,
+        command = '"{}{}diamond" makedb --db "{}{}{}" --in "{}{}{}_dbbuild.fasta"'.format(EXEC, os.sep, outdir, os.sep, dbname,
                                                                                 TEMP, os.sep, dbname)
         run_commandline_command(command, max_retries=0)
         logging.info("Step 5/5: Diamond database created.")
     else:
         logging.info("Creating nucleotide database...")
 
-        command = "{}{}makeblastdb -dbtype {} -out {} -in {}{}{}_dbbuild.fasta".format(EXEC, os.sep, db_type, dbname, TEMP,
+        command = '"{}{}makeblastdb" -dbtype {} -out "{}" -in "{}{}{}_dbbuild.fasta"'.format(EXEC, os.sep, db_type, dbname, TEMP,
                                                                                        os.sep, dbname)
         run_commandline_command(command, max_retries=0)
         logging.info("Step 5/5: nucleotide database created.")

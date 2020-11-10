@@ -384,7 +384,7 @@ def internal_blast(user_options, query_proteins):
     logging.info("Finding internal homologs...")
 
     # Make Blast db for using the sequences saved in query.fasta in the previous step
-    make_blast_db_command = "{}{}diamond makedb --in query.fasta --db {}{}query_db".format(EXEC, os.sep, TEMP, os.sep)
+    make_blast_db_command = '"{}{}diamond" makedb --in query.fasta --db "{}{}query_db"'.format(EXEC, os.sep, TEMP, os.sep)
     logging.debug("Started making internal blast database...")
     try:
         run_commandline_command(make_blast_db_command, max_retries=5)
@@ -394,9 +394,9 @@ def internal_blast(user_options, query_proteins):
 
     # Run and parse BLAST search
 
-    blast_search_command = "{}{}diamond blastp --db {}{}query_db --query {}{}query.fasta --outfmt 6" \
-                           " --max-target-seqs 1000 --evalue 1e-05 --out {}{}internal_input.out" \
-                           " --threads {}".format(EXEC, os.sep, TEMP, os.sep, TEMP, os.sep, TEMP, os.sep,
+    blast_search_command = '"{}{}diamond" blastp --db "{}{}query_db" --query "{}{}query.fasta" --outfmt 6' \
+                           ' --max-target-seqs 1000 --evalue 1e-05 --out "{}{}internal_input.out"' \
+                           ' --threads {}'.format(EXEC, os.sep, TEMP, os.sep, TEMP, os.sep, TEMP, os.sep,
                                                   user_options.cores)
 
     logging.debug("Running internal blastp...")
@@ -508,11 +508,9 @@ def blast_parse(user_options, query_proteins, blast_lines):
     # hits that do in a dictionary that links a protein name to BlastHit objects.
     internal_homolog_dict = {}
     count = 0
-    # TODO remove the or statement, now here for consistency sake. This statement is in the old version and removing it
-    #  removes a number of clusters. It needs to go but will stay for now to keep comparissons accurate
     for result in unique_blast_results.values():
-        if int(result.percent_identity) > user_options.minpercid and\
-                (int(result.percent_coverage) > user_options.minseqcov or result.allignment_lenght > 40):
+        if int(result.percent_identity) > user_options.minpercid and \
+                int(result.percent_coverage) > user_options.minseqcov:
             count += 1
             if result.query not in internal_homolog_dict:
                 internal_homolog_dict[result.query] = [unique_blast_results[result.query + result.subject]]
@@ -532,19 +530,19 @@ def db_blast(user_options):
     if user_options.dbtype == "prot":
         logging.info("Running Diamond blast searches on the provided database {}..".format(user_options.db_name))
 
-        command_start = "{}{}diamond blastp".format(EXEC, os.sep)
+        command_start = '"{}{}diamond" blastp'.format(EXEC, os.sep)
 
-        complete_command = "{} --db {} --query {}{}query.fasta --outfmt 6 --max-target-seqs" \
-                           " {} --evalue 1e-05 --out {}{}input.out --threads {}"\
+        complete_command = '{} --db {} --query "{}{}query.fasta" --outfmt 6 --max-target-seqs' \
+                           ' {} --evalue 1e-05 --out "{}{}input.out" --threads {}'\
             .format(command_start, user_options.db, os.getcwd(), os.sep, user_options.hitspergene,
                     os.getcwd(), os.sep, user_options.cores)
     else:
         logging.info("Running NCBI tBLASTn+ searches on the provided database {}..".format(user_options.db_name))
 
-        command_start = "{}{}tblastn".format(EXEC, os.sep)
+        command_start = '"{}{}tblastn"'.format(EXEC, os.sep)
 
-        complete_command = "{} -db {} -query {}{}query.fasta -outfmt 6 -max_target_seqs" \
-                           " {} -evalue 1e-05 -out {}{}input.out -num_threads {}" \
+        complete_command = '{} -db {} -query "{}{}query.fasta" -outfmt 6 -max_target_seqs' \
+                           ' {} -evalue 1e-05 -out "{}{}input.out" -num_threads {}' \
             .format(command_start, user_options.db_name, os.getcwd(), os.sep, user_options.hitspergene,
                     os.getcwd(), os.sep, user_options.cores)
 
@@ -1164,7 +1162,6 @@ def score_clusters(clusters, query_proteins, user_options):
     index_query_proteins = OrderedDict((prot, i) for i, prot in enumerate(query_proteins))
 
     # calculate the cumulative blast scores over all blast hits of a cluster
-    # TODO figure out why these scores differ slightly from mgb. I have looked but not found :(
     for cluster in clusters:
         cum_blast_score = 0
         hitnr = 0
