@@ -52,7 +52,7 @@ def run_extrenal_command(command, outbox, base_frame):
         # expected error. Notify user of it.
         if "raise MultiGeneBlastException" in error_lines[-1] or "raise MultiGeneBlastException" in error_lines[-2] \
                 or "raise MultiGeneBlastException" in error_lines[-3]:
-            outbox.text_insert("\nMultigeneblast exitied because an input variable was not complete. Make sure to fix "
+            outbox.text_insert("\nMultigeneblast exited because an input variable was not complete. Make sure to fix "
                                "it and run Multigeneblast again OR if you think this is not a problem with the input "
                                "please click the button below to send an error report.")
             expected = True

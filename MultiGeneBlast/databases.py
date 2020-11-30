@@ -356,7 +356,7 @@ class NucleotideDataBase(Database):
         :return: a list of NucleotideContig objects
         """
         file_text = embl_to_genbank(file)
-        contigs_text = file_text.split("//\n")[:-1]
+        contigs_text = file_text.split("\n//")[:-1]
         contigs = []
         for contig_text in contigs_text:
             contigs.append(NucleotideContig(contig_text))
@@ -390,7 +390,7 @@ class NucleotideDataBase(Database):
             logging.warning("Supercontig files are not supported at the moment. Skipping...")
             return [], []
         else:
-            contigs_text = file_text.split("//\n")[:-1]
+            contigs_text = file_text.split("\n//")[:-1]
             contigs = []
             for contig_text in contigs_text:
                 contigs.append(NucleotideContig(contig_text))
@@ -646,7 +646,7 @@ class GenbankFile:
         :return: a dictionary of ProteinContig objects
         """
         contigs = {}
-        for cont in text.split("//\n")[:-1]:
+        for cont in text.split("\n//")[:-1]:
             contig = ProteinContig(cont, protein_range, allowed_proteins)
             contigs[contig.accession] = contig
         return contigs
@@ -990,7 +990,7 @@ class GenbankEntry:
             str_locations = string.replace("<", "").replace(">", "").strip().split("..")
             return list(map(int, str_locations))
         # in case the str locations cannot be converted to integers
-        except AttributeError:
+        except (AttributeError, ValueError):
             logging.warning("No valid location specifier found for genbank entry {}".format(self.gene_name))
             return None
 
