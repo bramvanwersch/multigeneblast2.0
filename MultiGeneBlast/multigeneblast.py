@@ -289,7 +289,6 @@ class Options:
     def __configure_db_and_type(self, database_path):
         to_path, db_file = os.path.split(database_path)
         os.environ['BLASTDB'] = to_path
-        print(to_path)
 
         # make sure the databae file is of the correct file type
         dbname, ext = os.path.splitext(db_file)
